@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  .tabular-nums, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Printable isolated styling */
+@media print {
+  @page {
+    size: auto;
+    margin: 8mm;
+  }
+  
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    height: auto !important;
+    min-height: 100% !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Reset layout containers so they don't clip or collapse */
+  #root, 
+  .h-screen, 
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Elements to explicitly hide on paper print */
+  .no-print, 
+  header, 
+  aside, 
+  nav, 
+  .toast-container,
+  [role="alert"],
+  button,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* =========================================================================
+     UNIVERSAL PRINT ISOLATION:
+     Saat ada modal dokumen terbuka (.printable-modal-overlay),
+     sembunyikan seluruh konten latar belakang (tabel data, filter, tabs, dll.).
+     HANYA cetak dokumen di dalam modal tersebut dari bagian paling atas kertas!
+     ========================================================================= */
+  body:has(.printable-modal-overlay) main > *:not(.printable-modal-overlay):not(:has(.printable-modal-overlay)),
+  body:has(.printable-modal-overlay) main > div > *:not(.printable-modal-overlay):not(:has(.printable-modal-overlay)),
+  body:has(.printable-modal-overlay) .print-bg-content,
+  body:has(.printable-modal-overlay) .print-hide-on-modal {
+    display: none !important;
+  }
+
+  body:has(.printable-modal-overlay) main {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body:not(:has(.printable-modal-overlay)) main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* If a modal is open, ensure it fills the page without clipping or overlay darkening */
+  .printable-modal-overlay {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    inset: auto !important;
+    z-index: auto !important;
+    overflow: visible !important;
+  }
+
+  .printable-modal-card {
+    position: static !important;
+    display: block !important;
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .printable-scroll-area {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+
+  .printable-content {
+    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Table printing best practices */
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Page orientation controls */
+  body.print-landscape,
+  .print-landscape {
+    page: landscape;
+  }
+  body.print-portrait,
+  .print-portrait {
+    page: portrait;
+  }
+}
+
+@page landscape {
+  size: landscape;
+  margin: 8mm;
+}
+
+@page portrait {
+  size: portrait;
+  margin: 8mm;
+}
+
+/* Notification & Toast custom animations */
+@keyframes toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.animate-wiggle {
+  animation: wiggle 1.2s ease-in-out infinite;
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 1.8s ease-in-out infinite;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* =========================================================================
+   DARK MODE & COMPACT DENSITY THEME SUPPORT
+   ========================================================================= */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0b1120 !important;
+  color: #f8fafc !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #0b1120 !important;
+}
+
+html.dark header {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-color: #1e293b !important;
+}
+
+html.dark .bg-white:not(.printable-content) {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+html.dark .bg-slate-50:not(.printable-content) {
+  background-color: #182234 !important;
+}
+
+html.dark .border-slate-200,
+html.dark .border-slate-100 {
+  border-color: #334155 !important;
+}
+
+html.dark .text-slate-900:not(.printable-content *) {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-800:not(.printable-content *),
+html.dark .text-slate-700:not(.printable-content *) {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-600:not(.printable-content *) {
+  color: #94a3b8 !important;
+}
+
+html.dark .hover\:bg-slate-50:hover {
+  background-color: #334155 !important;
+}
+
+html.dark .hover\:bg-slate-100:hover {
+  background-color: #334155 !important;
+}
+
+/* Compact Table Density Mode */
+html.compact-mode body {
+  font-size: 12.5px;
+}
+
+html.compact-mode td,
+html.compact-mode th {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+

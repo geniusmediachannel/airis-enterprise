@@ -1,0 +1,8 @@
+{
+  "name": "Remix AIRIS - PT. Anugerah Illahi Rabbi",
+  "description": "Sistem Manajemen Terpadu Manufaktur AMDK, Distribusi, QC SNI, HRD, dan Akuntansi Keuangan Lengkap dengan Integrasi Supabase dan Excel",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
