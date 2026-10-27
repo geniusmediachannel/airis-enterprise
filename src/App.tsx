@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { BottomNav } from './components/BottomNav';
@@ -145,54 +145,62 @@ export default function App() {
   const reloadDebounceRef = useRef<any>(null);
   const isReloadingRef = useRef<boolean>(false);
 
+  const runReloadCore = useCallback(() => {
+    if (isReloadingRef.current) return;
+    isReloadingRef.current = true;
+    try {
+      sanitizeProductionsInStorage();
+      // Otomatis cek dan terapkan perubahan harga terjadwal (Bahan Penolong & Produk)
+      checkAndApplyScheduledPriceChanges();
+      // Auto-sync operational modules into Keuangan (skip cloud upload & skip notify loop)
+      syncAllModulesToFinance({ autoPostToGeneralJournal: true, skipCloudSync: true, skipNotify: true });
+
+      setProducts(getTableData<ProductItem>('MD_Produk', []));
+      setCustomers(getTableData<CustomerItem>('MD_Pelanggan', []));
+      setSuppliers(getTableData<SupplierItem>('MD_Supplier', []));
+      setRawMaterials(getTableData<RawMaterialItem>('MD_BahanPenolong', []));
+      setBoms(getTableData<BOMItem>('MD_BOM', []));
+      setEmployees(getTableData<EmployeeItem>('MD_Karyawan', []));
+      setUsers(getTableData<UserAccount>('MD_UserAkses', []));
+      setSpecialPrices(getTableData<SpecialPriceItem>('MD_HargaKhusus', []));
+      setSpks(getTableData<SPKItem>('SPK', []));
+      setProductions(getTableData<ProductionItem>('Produksi', []));
+      setDistributions(getTableData<DistributionItem>('Distribusi', []));
+      setDistributionItems(getTableData<DistributionProductDetail>('Distribusi_Item', []));
+      setPurchases(getTableData<RawMaterialPurchase>('Pembelian_Bahan', []));
+      setMutations(getTableData<RawMaterialMutation>('Mutasi_Bahan', []));
+      setQcHeaders(getTableData<QCHeader>('Data_QC', []));
+      setQcDetails(getTableData<QCDetailCycle>('Data_QC_Detail', []));
+      setAttendances(getTableData<AttendanceRecord>('Data_Presensi', []));
+      setOvertimes(getTableData<OvertimeRecord>('Data_Lembur', []));
+      setKasbons(getTableData<KasbonRecord>('Data_Kasbon', []));
+      setPayrollHistory(getTableData<PayrollHistoryItem>('Histori_Penggajian', []));
+      setCoas(getTableData<COAItem>('Master_COA', []));
+      setJournals(getTableData<GeneralJournalItem>('Jurnal_Umum', []));
+      setDraftJournals(getTableData<DraftJournalItem>('Draf_Jurnal', []));
+      setAssets(getTableData<FixedAssetItem>('Data_Aset_Tetap', []));
+      setReceivables(getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []));
+      
+      const notifs = calculateRealtimeNotifications();
+      setNotifications(notifs);
+    } finally {
+      isReloadingRef.current = false;
+    }
+  }, []);
+
   // Reload all state from adapter with debounce & infinite loop guard (Anti-Lag / Anti-Hang)
-  const reloadData = useCallback(() => {
+  const reloadData = useCallback((immediate: boolean = false) => {
     if (reloadDebounceRef.current) {
       clearTimeout(reloadDebounceRef.current);
     }
+    if (immediate) {
+      runReloadCore();
+      return;
+    }
     reloadDebounceRef.current = setTimeout(() => {
-      if (isReloadingRef.current) return;
-      isReloadingRef.current = true;
-      try {
-        sanitizeProductionsInStorage();
-        // Otomatis cek dan terapkan perubahan harga terjadwal (Bahan Penolong & Produk)
-        checkAndApplyScheduledPriceChanges();
-        // Auto-sync operational modules into Keuangan (skip cloud upload & skip notify loop)
-        syncAllModulesToFinance({ autoPostToGeneralJournal: true, skipCloudSync: true, skipNotify: true });
-
-        setProducts(getTableData<ProductItem>('MD_Produk', []));
-        setCustomers(getTableData<CustomerItem>('MD_Pelanggan', []));
-        setSuppliers(getTableData<SupplierItem>('MD_Supplier', []));
-        setRawMaterials(getTableData<RawMaterialItem>('MD_BahanPenolong', []));
-        setBoms(getTableData<BOMItem>('MD_BOM', []));
-        setEmployees(getTableData<EmployeeItem>('MD_Karyawan', []));
-        setUsers(getTableData<UserAccount>('MD_UserAkses', []));
-        setSpecialPrices(getTableData<SpecialPriceItem>('MD_HargaKhusus', []));
-        setSpks(getTableData<SPKItem>('SPK', []));
-        setProductions(getTableData<ProductionItem>('Produksi', []));
-        setDistributions(getTableData<DistributionItem>('Distribusi', []));
-        setDistributionItems(getTableData<DistributionProductDetail>('Distribusi_Item', []));
-        setPurchases(getTableData<RawMaterialPurchase>('Pembelian_Bahan', []));
-        setMutations(getTableData<RawMaterialMutation>('Mutasi_Bahan', []));
-        setQcHeaders(getTableData<QCHeader>('Data_QC', []));
-        setQcDetails(getTableData<QCDetailCycle>('Data_QC_Detail', []));
-        setAttendances(getTableData<AttendanceRecord>('Data_Presensi', []));
-        setOvertimes(getTableData<OvertimeRecord>('Data_Lembur', []));
-        setKasbons(getTableData<KasbonRecord>('Data_Kasbon', []));
-        setPayrollHistory(getTableData<PayrollHistoryItem>('Histori_Penggajian', []));
-        setCoas(getTableData<COAItem>('Master_COA', []));
-        setJournals(getTableData<GeneralJournalItem>('Jurnal_Umum', []));
-        setDraftJournals(getTableData<DraftJournalItem>('Draf_Jurnal', []));
-        setAssets(getTableData<FixedAssetItem>('Data_Aset_Tetap', []));
-        setReceivables(getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []));
-        
-        const notifs = calculateRealtimeNotifications();
-        setNotifications(notifs);
-      } finally {
-        isReloadingRef.current = false;
-      }
+      runReloadCore();
     }, 200);
-  }, []);
+  }, [runReloadCore]);
 
   useEffect(() => {
     // 0. Recovery helper accessible from browser console
@@ -221,8 +229,8 @@ export default function App() {
       document.documentElement.classList.remove('compact-mode');
     }
 
-    // 2. Load data
-    reloadData();
+    // 2. Load data immediately on first render
+    reloadData(true);
 
     // 3. Listen for internal DB updates
     const handleDbUpdate = () => {
