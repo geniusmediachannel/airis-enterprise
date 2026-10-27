@@ -84,10 +84,15 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export function saveSupabaseConfig(config: SupabaseConfig): void {
-  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(config));
-  if (config.url && config.anonKey) {
+  let url = config.url ? config.url.trim().replace(/\/+$/, '') : '';
+  if (url.endsWith('.supabase.com')) {
+    url = url.replace(/\.supabase\.com$/, '.supabase.co');
+  }
+  const cleanConfig = { ...config, url, anonKey: config.anonKey ? config.anonKey.trim() : '' };
+  localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(cleanConfig));
+  if (cleanConfig.url && cleanConfig.anonKey) {
     try {
-      supabaseInstance = createClient(config.url, config.anonKey);
+      supabaseInstance = createClient(cleanConfig.url, cleanConfig.anonKey);
       // Begitu tersambung, otomatis lakukan pull seluruh data cloud
       setTimeout(() => {
         syncAllTablesFromSupabase().catch(console.warn);
@@ -104,10 +109,15 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
 
 export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
-    if (!url || !key) {
+    let cleanUrl = url ? url.trim().replace(/\/+$/, '') : '';
+    if (cleanUrl.endsWith('.supabase.com')) {
+      cleanUrl = cleanUrl.replace(/\.supabase\.com$/, '.supabase.co');
+    }
+    const cleanKey = key ? key.trim() : '';
+    if (!cleanUrl || !cleanKey) {
       return { success: false, message: 'URL dan Anon Key wajib diisi!' };
     }
-    const testClient = createClient(url, key);
+    const testClient = createClient(cleanUrl, cleanKey);
     const { data, error } = await testClient.from('Master_COA').select('*').limit(1);
     if (error) {
       if (error.message.includes('FetchError') || error.message.includes('Failed to fetch')) {

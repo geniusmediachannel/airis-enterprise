@@ -51,7 +51,14 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
     setTesting(true);
     setTestResult(null);
 
-    const res = await testSupabaseConnection(url.trim(), anonKey.trim());
+    let cleanUrl = url.trim().replace(/\/+$/, '');
+    if (cleanUrl.endsWith('.supabase.com')) {
+      cleanUrl = cleanUrl.replace(/\.supabase\.com$/, '.supabase.co');
+      setUrl(cleanUrl);
+    }
+    const cleanKey = anonKey.trim();
+
+    const res = await testSupabaseConnection(cleanUrl, cleanKey);
     setTesting(false);
 
     if (res.success) {
@@ -60,8 +67,8 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
         message: 'Koneksi ke Supabase berhasil! Menyelaraskan seluruh data multi-device...',
       });
       saveFn({
-        url: url.trim(),
-        anonKey: anonKey.trim(),
+        url: cleanUrl,
+        anonKey: cleanKey,
         isConnected: true,
         autoSync: true,
       });
