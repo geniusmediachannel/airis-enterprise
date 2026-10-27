@@ -4,6 +4,7 @@
  */
 
 export type UserRole = 
+  | 'HyperAdmin'
   | 'SuperAdmin' 
   | 'Admin Master' 
   | 'Admin Produksi' 
@@ -12,15 +13,40 @@ export type UserRole =
   | 'HRD'
   | 'Admin Dokumen';
 
+export interface AppLicenseSettings {
+  isActive: boolean; // Saklar aktif/kunci manual oleh HyperAdmin
+  expiryDate: string; // Format YYYY-MM-DD
+  billingEmail: string; // Default: 'gemiusmediachannel@gmail.com'
+  packageType?: string; // misal 'Lisensi Enterprise Tahunan'
+  lockedMessage?: string;
+  lastUpdatedBy?: string;
+  lastUpdatedAt?: string;
+}
+
+export interface LicenseStatusResult {
+  isExpired: boolean;
+  isLockedManual: boolean;
+  daysRemaining: number;
+  status: 'active' | 'warning' | 'expired';
+  expiryDateFormatted: string;
+  message: string;
+  billingEmail: string;
+}
+
 export interface UserAccount {
   ID_User: string;
   Username: string;
   Nama?: string;
   Password?: string;
   Role: UserRole;
+  Roles?: UserRole[]; // Multi-role support: 1 karyawan dapat merangkap beberapa divisi (misal: Produksi & HRD)
   ID_Karyawan: string;
-  Status_Akun: 'Aktif' | 'Terblokir';
+  Status_Akun: 'Aktif' | 'Terblokir' | 'Menunggu Persetujuan' | 'Ditolak';
   Email?: string;
+  Tanggal_Daftar?: string;
+  Alasan_Daftar?: string;
+  Disetujui_Oleh?: string;
+  Tanggal_Persetujuan?: string;
 }
 
 export interface AuthSession {

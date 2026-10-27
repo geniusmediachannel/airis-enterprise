@@ -4,8 +4,9 @@ import {
   AlertCircle, LogIn, UserPlus, X, RefreshCw, Database
 } from 'lucide-react';
 import { UserRole, UserAccount } from '../types';
-import { signIn, signUp, DEFAULT_ACCOUNTS } from '../services/supabaseAuth';
+import { signIn, signUp } from '../services/supabaseAuth';
 import { getSupabaseConfig } from '../services/dbAdapter';
+import { showToast } from './ToastContainer';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -49,10 +50,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     if (res.success && res.session?.user) {
       setSuccessMsg(res.message);
+      showToast(
+        'Login Berhasil!',
+        `Selamat datang, ${res.session.user.Nama || res.session.user.Username}! Anda login sebagai ${res.session.user.Role}.`,
+        'success',
+        4000
+      );
       onLoginSuccess(res.session.user);
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, 800);
     } else {
       setErrorMsg(res.message);
     }
@@ -77,11 +84,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } else {
       setErrorMsg(res.message);
     }
-  };
-
-  const quickLoginAs = (account: typeof DEFAULT_ACCOUNTS[0]) => {
-    setUsername(account.Username);
-    setPassword(account.PasswordPlain);
   };
 
   return (
@@ -175,26 +177,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {loading ? <RefreshCw size={14} className="animate-spin" /> : <LogIn size={14} />}
                 <span>{loading ? 'Memverifikasi...' : 'Masuk ke Sistem AIRIS'}</span>
               </button>
-
-              {/* Quick Login Presets for rapid demo/testing */}
-              <div className="pt-2 border-t border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
-                  Akses Cepat Peran Pengguna:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {DEFAULT_ACCOUNTS.map(acc => (
-                    <button
-                      key={acc.Username}
-                      type="button"
-                      onClick={() => quickLoginAs(acc)}
-                      className="px-2 py-1.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded text-left transition-colors flex items-center justify-between"
-                    >
-                      <span className="font-semibold text-slate-800">{acc.Username}</span>
-                      <span className="text-[10px] text-blue-600 font-medium">{acc.Role}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-3">

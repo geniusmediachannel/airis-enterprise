@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Database, Plus, Search, Edit2, Trash2, Download, 
   Printer, CheckCircle2, AlertCircle, X, Save, FileSpreadsheet,
-  FileDown, RefreshCw, TrendingUp, TrendingDown, Calendar, CalendarClock, History, Tag, ArrowRight, Clock
+  FileDown, RefreshCw, TrendingUp, TrendingDown, Calendar, CalendarClock, History, Tag, ArrowRight, Clock,
+  ShieldCheck, UserCheck, UserX, Layers, Check
 } from 'lucide-react';
 import { 
   ProductItem, CustomerItem, SupplierItem, RawMaterialItem, 
@@ -15,6 +16,8 @@ import {
   getAllPriceHistories, recordRawMaterialPriceChange, recordProductPriceChange, 
   deletePriceHistory, getPrecedingReferencePrice, recalculateChainedPriceHistories 
 } from '../services/priceService';
+import { AVAILABLE_DIVISIONS, getUserRoles } from '../services/permissionService';
+import { approveUserAccount, rejectUserAccount } from '../services/supabaseAuth';
 import { confirmAction } from './ConfirmDialog';
 import { showToast } from './ToastContainer';
 
@@ -172,6 +175,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         ID_User: `USR-${String(users.length + 1).padStart(2, '0')}`, 
         Username: '', 
         Role: 'Admin Produksi', 
+        Roles: ['Admin Produksi'],
         ID_Karyawan: employees[0]?.ID_Karyawan || '', 
         Status_Akun: 'Aktif' 
       };
@@ -182,8 +186,43 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
   const handleOpenEdit = (item: any) => {
     setEditingItem(item);
-    setFormData({ ...item });
+    if (activeTab === 'user') {
+      const existingRoles = item.Roles && item.Roles.length > 0 ? item.Roles : [item.Role || 'Admin Produksi'];
+      setFormData({ ...item, Roles: existingRoles });
+    } else {
+      setFormData({ ...item });
+    }
     setShowModal(true);
+  };
+
+  const handleApproveUser = async (userItem: UserAccount) => {
+    const ok = await confirmAction({
+      title: 'Persetujuan Akun Pengguna',
+      message: `Setujui dan aktifkan akun "${userItem.Username}" (${userItem.Roles?.join(', ') || userItem.Role})? Pengguna akan langsung dapat masuk ke sistem.`,
+      confirmText: 'Ya, Setujui & Aktifkan',
+      cancelText: 'Batal',
+      type: 'success'
+    });
+    if (!ok) return;
+
+    approveUserAccount(userItem.ID_User);
+    onRefresh();
+    showToast('Akun Disetujui', `Akun ${userItem.Username} berhasil diaktifkan.`, 'success');
+  };
+
+  const handleRejectUser = async (userItem: UserAccount) => {
+    const ok = await confirmAction({
+      title: 'Tolak Pendaftaran Akun',
+      message: `Tolak permohonan akun "${userItem.Username}"? Pengguna tidak akan dapat masuk ke sistem.`,
+      confirmText: 'Ya, Tolak Permohonan',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    rejectUserAccount(userItem.ID_User);
+    onRefresh();
+    showToast('Akun Ditolak', `Permohonan akun ${userItem.Username} telah ditolak.`, 'info');
   };
 
   const handleSave = () => {
@@ -501,6 +540,11 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     return [...list].sort((a, b) => b.Tanggal_Berlaku.localeCompare(a.Tanggal_Berlaku));
   }, [priceHistories, priceFilterType, priceFilterMonth, priceSearchQuery]);
 
+  // Jumlah Akun yang Menunggu Persetujuan SuperAdmin
+  const pendingUsersCount = useMemo(() => {
+    return users.filter(u => u.Status_Akun === 'Menunggu Persetujuan').length;
+  }, [users]);
+
   const handleDelete = async (id: string) => {
     let tableName = '';
     let currentList: any[] = [];
@@ -740,19 +784,28 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
           { id: 'bom', label: `BOM / Resep (${boms.length})` },
           { id: 'karyawan', label: `Karyawan (${employees.length})` },
           { id: 'harga_khusus', label: `Harga Khusus (${specialPrices.length})` },
-          { id: 'user', label: `User Akses (${users.length})` },
+          { 
+            id: 'user', 
+            label: `User Akses (${users.length})`,
+            badge: pendingUsersCount > 0 ? `${pendingUsersCount} Persetujuan` : null
+          },
           { id: 'histori_harga', label: `Histori Harga (${priceHistories.length})` }
         ].map(t => (
           <button
             key={t.id}
             onClick={() => { setActiveTab(t.id as any); setSearchQuery(''); }}
-            className={`px-3.5 py-2 border-b-2 font-semibold transition-colors whitespace-nowrap ${
+            className={`px-3.5 py-2 border-b-2 font-semibold transition-colors whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === t.id
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            {t.label}
+            <span>{t.label}</span>
+            {t.badge && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1232,46 +1285,186 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
           )}
 
           {activeTab === 'user' && (
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-3">ID User</th>
-                  <th className="p-3">Username</th>
-                  <th className="p-3">Hak Akses (Role)</th>
-                  <th className="p-3">Karyawan Terkait</th>
-                  <th className="p-3 text-center">Status Akun</th>
-                  <th className="p-3 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.map(u => {
-                  const emp = employees.find(e => e.ID_Karyawan === u.ID_Karyawan);
-                  return (
-                    <tr key={u.ID_User} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-blue-700">{u.ID_User}</td>
-                      <td className="p-3 font-semibold text-slate-900">{u.Username}</td>
-                      <td className="p-3 font-medium text-blue-800">{u.Role}</td>
-                      <td className="p-3 font-mono text-slate-600">
-                        {emp?.Nama_Karyawan ? `${emp.Nama_Karyawan} (${u.ID_Karyawan})` : u.ID_Karyawan}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          u.Status_Akun === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                        }`}>
-                          {u.Status_Akun}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => handleOpenEdit(u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Akun"><Edit2 size={14} /></button>
-                          <button onClick={() => handleDelete(u.ID_User)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Hapus Akun"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div>
+              {/* Banner Alert jika ada Akun Menunggu Persetujuan SuperAdmin */}
+              {pendingUsersCount > 0 && (
+                <div className="mb-4 p-3.5 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-900">
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                    </span>
+                    <div>
+                      <span className="font-bold">Permohonan Akun Karyawan Menunggu Persetujuan:</span>
+                      <span className="ml-1 text-amber-800">
+                        Terdapat <strong>{pendingUsersCount}</strong> akun baru yang baru diajukan dan memerlukan verifikasi persetujuan SuperAdmin sebelum dapat masuk ke sistem.
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-[10px] font-bold text-amber-900 uppercase tracking-wide shrink-0">
+                    Perlu Tindakan
+                  </span>
+                </div>
+              )}
+
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">ID User</th>
+                    <th className="p-3">Pengguna</th>
+                    <th className="p-3">Divisi Tugas (Multi-Role)</th>
+                    <th className="p-3">Karyawan Terkait</th>
+                    <th className="p-3 text-center">Status Akun</th>
+                    <th className="p-3 text-center">Aksi & Persetujuan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {users
+                    .filter(u => {
+                      if (!searchQuery.trim()) return true;
+                      const q = searchQuery.toLowerCase();
+                      return (
+                        u.Username?.toLowerCase().includes(q) ||
+                        u.Nama?.toLowerCase().includes(q) ||
+                        u.Role?.toLowerCase().includes(q) ||
+                        u.Roles?.some(r => r.toLowerCase().includes(q))
+                      );
+                    })
+                    .sort((a, b) => {
+                      // Utamakan akun yang menunggu persetujuan di urutan paling atas
+                      if (a.Status_Akun === 'Menunggu Persetujuan' && b.Status_Akun !== 'Menunggu Persetujuan') return -1;
+                      if (b.Status_Akun === 'Menunggu Persetujuan' && a.Status_Akun !== 'Menunggu Persetujuan') return 1;
+                      return a.Username.localeCompare(b.Username);
+                    })
+                    .map(u => {
+                      const emp = employees.find(e => e.ID_Karyawan === u.ID_Karyawan);
+                      const userRolesList = u.Roles && u.Roles.length > 0 ? u.Roles : [u.Role];
+                      const isPending = u.Status_Akun === 'Menunggu Persetujuan';
+
+                      return (
+                        <tr 
+                          key={u.ID_User} 
+                          className={`transition-colors ${
+                            isPending ? 'bg-amber-50/60 hover:bg-amber-100/50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className="p-3 font-mono font-bold text-blue-700">{u.ID_User}</td>
+                          <td className="p-3">
+                            <div className="font-bold text-slate-900">{u.Username}</div>
+                            {u.Nama && <div className="text-[11px] text-slate-500">{u.Nama}</div>}
+                            {u.Email && <div className="text-[10px] text-slate-400 font-mono">{u.Email}</div>}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-wrap gap-1">
+                              {userRolesList.map(r => (
+                                <span
+                                  key={r}
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                    r === 'SuperAdmin'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : r === 'Admin Produksi'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                      : r === 'Admin Gudang'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : r === 'Kasir/Finance'
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : r === 'HRD'
+                                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                      : r === 'Admin Dokumen'
+                                      ? 'bg-teal-50 text-teal-700 border-teal-200'
+                                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                                  }`}
+                                >
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+                            {u.Alasan_Daftar && (
+                              <div className="text-[10px] text-slate-400 mt-1 italic line-clamp-1">
+                                Catatan: &ldquo;{u.Alasan_Daftar}&rdquo;
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <div className="font-semibold text-slate-800">
+                              {emp?.Nama_Karyawan || u.Nama || '-'}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400">
+                              {u.ID_Karyawan}
+                            </div>
+                            {u.Tanggal_Daftar && (
+                              <div className="text-[10px] text-slate-400">
+                                Daftar: {u.Tanggal_Daftar.slice(0, 10)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {isPending ? (
+                              <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse inline-flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                Menunggu Persetujuan
+                              </span>
+                            ) : u.Status_Akun === 'Aktif' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                Aktif
+                              </span>
+                            ) : u.Status_Akun === 'Ditolak' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                                Ditolak
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                {u.Status_Akun}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Tombol Persetujuan Cepat untuk SuperAdmin */}
+                              {isPending && (
+                                <>
+                                  <button
+                                    onClick={() => handleApproveUser(u)}
+                                    className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs font-semibold flex items-center gap-1 cursor-pointer"
+                                    title="Setujui dan Aktifkan Akun Ini"
+                                  >
+                                    <UserCheck size={14} />
+                                    <span className="text-[10px]">Setujui</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectUser(u)}
+                                    className="p-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg shadow-2xs font-semibold flex items-center gap-1 cursor-pointer"
+                                    title="Tolak Pendaftaran Akun Ini"
+                                  >
+                                    <UserX size={14} />
+                                    <span className="text-[10px]">Tolak</span>
+                                  </button>
+                                </>
+                              )}
+
+                              <button 
+                                onClick={() => handleOpenEdit(u)} 
+                                className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded cursor-pointer" 
+                                title="Edit Akun"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(u.ID_User)} 
+                                className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer" 
+                                title="Hapus Akun"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {activeTab === 'histori_harga' && (
@@ -2065,51 +2258,123 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
               {/* TAB USER AKSES FORM */}
               {activeTab === 'user' && (
                 <>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">ID User</label>
-                    <input type="text" value={formData.ID_User || ''} readOnly className="w-full px-3 py-1.5 border rounded-lg bg-slate-50 font-mono" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">ID User</label>
+                      <input type="text" value={formData.ID_User || ''} readOnly className="w-full px-3 py-1.5 border rounded-lg bg-slate-50 font-mono text-slate-500" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Username Login *</label>
+                      <input
+                        type="text"
+                        value={formData.Username || ''}
+                        onChange={e => setFormData({ ...formData, Username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
+                        placeholder="hurufkecil/angka"
+                        className="w-full px-3 py-1.5 border rounded-lg font-semibold font-mono"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Username Login</label>
-                    <input
-                      type="text"
-                      value={formData.Username || ''}
-                      onChange={e => setFormData({ ...formData, Username: e.target.value })}
-                      placeholder="Username untuk login"
-                      className="w-full px-3 py-1.5 border rounded-lg font-semibold"
-                    />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                      <input
+                        type="text"
+                        value={formData.Nama || ''}
+                        onChange={e => setFormData({ ...formData, Nama: e.target.value })}
+                        placeholder="Nama Lengkap Karyawan"
+                        className="w-full px-3 py-1.5 border rounded-lg font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Kata Sandi (Password)</label>
+                      <input
+                        type="password"
+                        value={formData.Password || ''}
+                        onChange={e => setFormData({ ...formData, Password: e.target.value })}
+                        placeholder={editingItem ? 'Kosongkan jika tidak diubah' : 'Minimal 4 karakter'}
+                        className="w-full px-3 py-1.5 border rounded-lg"
+                      />
+                    </div>
                   </div>
-                  {/* Role Dropdown */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Hak Akses (Role)</label>
-                    <select
-                      value={formData.Role || 'Admin Produksi'}
-                      onChange={e => setFormData({ ...formData, Role: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold text-blue-900"
-                    >
-                      <option value="SuperAdmin">SuperAdmin</option>
-                      <option value="Admin Master">Admin Master</option>
-                      <option value="Admin Produksi">Admin Produksi</option>
-                      <option value="Admin Gudang">Admin Gudang</option>
-                      <option value="Kasir/Finance">Kasir/Finance</option>
-                      <option value="HRD">HRD</option>
-                    </select>
-                  </div>
+
                   {/* Dropdown ID Karyawan */}
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Pilih Data Karyawan</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Hubungkan Data Karyawan</label>
                     <select
                       value={formData.ID_Karyawan || ''}
-                      onChange={e => setFormData({ ...formData, ID_Karyawan: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
+                      onChange={e => {
+                        const id = e.target.value;
+                        const emp = employees.find(k => k.ID_Karyawan === id);
+                        setFormData({ 
+                          ...formData, 
+                          ID_Karyawan: id,
+                          Nama: formData.Nama || emp?.Nama_Karyawan || ''
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium"
                     >
+                      <option value="">Pilih Karyawan Terdaftar</option>
                       {employees.map(e => (
                         <option key={e.ID_Karyawan} value={e.ID_Karyawan}>
-                          {e.ID_Karyawan} - {e.Nama_Karyawan} ({e.Jabatan})
+                          {e.ID_Karyawan} - {e.Nama_Karyawan} ({e.Departemen} - {e.Jabatan})
                         </option>
                       ))}
                     </select>
                   </div>
+
+                  {/* Pilihan Multi-Divisi (Merangkap Beberapa Divisi) */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <Layers size={14} className="text-blue-600" />
+                        <span>Divisi Penugasan (Bisa Merangkap Beberapa Divisi)</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        {(formData.Roles || [formData.Role || 'Admin Produksi']).length} Divisi
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {AVAILABLE_DIVISIONS.map(div => {
+                        const currentRoles: UserRole[] = formData.Roles || (formData.Role ? [formData.Role] : ['Admin Produksi']);
+                        const isChecked = currentRoles.includes(div.role);
+
+                        return (
+                          <label
+                            key={div.role}
+                            className={`p-2 rounded-lg border text-xs flex items-center gap-2 cursor-pointer transition-all ${
+                              isChecked
+                                ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                let updatedRoles: UserRole[];
+                                if (isChecked) {
+                                  if (currentRoles.length === 1) return; // Pertahankan minimal 1 role
+                                  updatedRoles = currentRoles.filter(r => r !== div.role);
+                                } else {
+                                  updatedRoles = [...currentRoles, div.role];
+                                }
+                                setFormData({
+                                  ...formData,
+                                  Roles: updatedRoles,
+                                  Role: updatedRoles[0] || 'Admin Produksi'
+                                });
+                              }}
+                              className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                            />
+                            <span>{div.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Status Akun Dropdown */}
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Status Akun</label>
@@ -2118,8 +2383,10 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       onChange={e => setFormData({ ...formData, Status_Akun: e.target.value })}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
                     >
-                      <option value="Aktif">Aktif</option>
-                      <option value="Terblokir">Terblokir</option>
+                      <option value="Aktif">Aktif (Dapat Masuk)</option>
+                      <option value="Menunggu Persetujuan">Menunggu Persetujuan (Perlu Approval)</option>
+                      <option value="Terblokir">Terblokir (Tidak Dapat Masuk)</option>
+                      <option value="Ditolak">Ditolak (Permohonan Ditolak)</option>
                     </select>
                   </div>
                 </>

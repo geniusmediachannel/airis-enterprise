@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { 
   Bell, Database, Upload, 
   Menu, User, Droplets, ChevronDown, ShieldCheck, X, FileSpreadsheet,
-  LogIn, LogOut, KeyRound, Settings, History, Eye, Lock
+  LogIn, LogOut, KeyRound, Settings, History, Eye, Lock,
+  AlertTriangle, Clock, ShieldAlert, Mail, ExternalLink,
+  Check, Minus
 } from 'lucide-react';
 import { SupabaseConfig, UserAccount } from '../types';
-import { canEditModule, getAuthorizedRolesForModule } from '../services/permissionService';
+import { canEditModule, getAuthorizedRolesForModule, isHyperAdmin } from '../services/permissionService';
+import { checkLicenseStatus, generateBillingMailto } from '../services/licenseService';
 
 interface HeaderProps {
   currentView: string;
@@ -22,6 +25,8 @@ interface HeaderProps {
   onLogout: () => void;
   onOpenSettings?: () => void;
   onNavigateToAccessLog?: () => void;
+  onOpenHyperAdminModal?: () => void;
+  onOpenTransferModal?: () => void;
 }
 
 const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -58,12 +63,16 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileSidebar,
   onLogout,
   onOpenSettings,
-  onNavigateToAccessLog
+  onNavigateToAccessLog,
+  onOpenHyperAdminModal,
+  onOpenTransferModal
 }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const viewInfo = VIEW_TITLES[currentView] || { title: 'Enterprise', subtitle: 'PT. Anugerah Illahi Rabbi' };
-  const isWritable = canEditModule(currentUser?.Role, currentView);
+  const isWritable = canEditModule(currentUser, currentView);
   const authorizedRole = getAuthorizedRolesForModule(currentView);
+  const license = checkLicenseStatus();
+  const isUserHyper = isHyperAdmin(currentUser);
 
   return (
     <header className="h-14 sm:h-16 px-3 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200/90 sticky top-0 z-30 shadow-xs flex items-center justify-between gap-2 sm:gap-4 transition-all">
@@ -90,25 +99,23 @@ export const Header: React.FC<HeaderProps> = ({
                 {viewInfo.title}
               </h1>
 
-              {/* Indikator Kecil Wewenang Pengerjaan vs Mode Lihat Saja */}
+              {/* Indikator Kecil Wewenang Pengerjaan (Centang Hijau) vs Mode Lihat (Strip Abu-Abu) */}
               {currentView !== 'dashboard' && (
                 isWritable ? (
                   <span
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs shrink-0"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/90 shadow-2xs shrink-0"
                     title={`Wewenang Pengerjaan Aktif (${currentUser?.Role}): Anda dapat menambah, mengubah, dan mengelola data modul ini.`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="hidden sm:inline">Wewenang Aktif</span>
-                    <span className="sm:hidden">Editor</span>
+                    <Check size={11} strokeWidth={3} className="text-emerald-600" />
+                    <span>Wewenang</span>
                   </span>
                 ) : (
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs shrink-0"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-300/80 shadow-2xs shrink-0"
                     title={`Mode Lihat Saja: Anda hanya dapat memantau data. Input & edit dikhususkan untuk ${authorizedRole}.`}
                   >
-                    <Eye size={11} className="text-amber-600 shrink-0" />
-                    <span className="hidden sm:inline">Mode Lihat Saja</span>
-                    <span className="sm:hidden">Lihat</span>
+                    <Minus size={11} strokeWidth={2.5} className="text-slate-400" />
+                    <span>Lihat</span>
                   </span>
                 )
               )}
@@ -120,8 +127,46 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Sisi Kanan: Action Pills Rapi & Terorganisir */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      {/* Sisi Kanan: Penanda Masa Aktif, Hyper Admin Pill, Notifikasi & Profil */}
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+        {/* Penanda Masa Aktif Aplikasi (Sisa <= 7 Hari / Warning) */}
+        {license.isWarning && !license.isExpired && (
+          <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs shadow-2xs">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span className="font-semibold text-[11px]">
+              Masa aktif aplikasi <strong className="text-amber-800 font-extrabold underline">sisa {license.daysRemaining} hari lagi</strong> ({license.expiryDateFormatted}).
+            </span>
+            <button
+              type="button"
+              onClick={onOpenTransferModal}
+              className="ml-0.5 px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] inline-flex items-center gap-1 transition-colors shadow-xs cursor-pointer"
+              title={`Kirim bukti transfer pembayaran lisensi ke ${license.billingEmail}`}
+            >
+              <Mail size={11} />
+              <span>Kirim Bukti Transfer</span>
+            </button>
+          </div>
+        )}
+
+        {/* Tombol Panel Hyper Admin (Khusus Pengguna HyperAdmin) */}
+        {isUserHyper && onOpenHyperAdminModal && (
+          <button
+            type="button"
+            onClick={onOpenHyperAdminModal}
+            className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-slate-900 to-cyan-950 text-cyan-300 border border-cyan-500/40 text-xs font-bold shadow-xs hover:border-cyan-400 flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+            title="Kelola Masa Aktif & Lisensi Aplikasi (Hyper Admin)"
+          >
+            <ShieldAlert size={14} className="text-cyan-400" />
+            <span className="hidden sm:inline">Masa Aktif Aplikasi</span>
+            <span className="text-[10px] bg-cyan-500/20 px-1 rounded text-cyan-200 font-mono">
+              {license.daysRemaining}h
+            </span>
+          </button>
+        )}
+
         {/* Notification Bell dengan Badge Counter & Pulse */}
         <button
           onClick={onToggleNotificationDrawer}
@@ -155,8 +200,10 @@ export const Header: React.FC<HeaderProps> = ({
               <User size={15} />
             </div>
             <div className="hidden lg:block text-left">
-              <div className="text-xs font-bold text-slate-900 leading-tight truncate max-w-[100px]">{currentUser.Username}</div>
-              <div className="text-[10px] text-blue-600 font-semibold leading-tight truncate">{currentUser.Role}</div>
+              <div className="text-xs font-bold text-slate-900 leading-tight truncate max-w-[120px]">{currentUser.Nama || currentUser.Username}</div>
+              <div className="text-[10px] text-blue-600 font-semibold leading-tight truncate max-w-[120px]">
+                {currentUser.Roles && currentUser.Roles.length > 1 ? currentUser.Roles.join(' & ') : currentUser.Role}
+              </div>
             </div>
             <ChevronDown size={12} className="text-slate-400 hidden lg:block" />
           </button>
@@ -167,9 +214,11 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
               <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 text-xs animation-fade-in">
                 <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
-                  <div className="font-bold text-slate-900 text-sm">{currentUser.Username}</div>
-                  <div className="text-[11px] text-blue-600 font-semibold">{currentUser.Role}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">PT. Anugerah Illahi Rabbi</div>
+                  <div className="font-bold text-slate-900 text-sm">{currentUser.Nama || currentUser.Username}</div>
+                  <div className="text-[11px] text-blue-600 font-semibold">
+                    {currentUser.Roles && currentUser.Roles.length > 1 ? currentUser.Roles.join(' & ') : currentUser.Role}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">PT. Anugerah Illahi Rabbi • ID: {currentUser.ID_User}</div>
                 </div>
 
                 <div className="px-4 py-2 text-[11px] text-slate-600 flex items-center gap-1.5 border-b border-slate-100">
@@ -178,6 +227,19 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="pt-1">
+                  {isUserHyper && onOpenHyperAdminModal && (
+                    <button
+                      onClick={() => {
+                        onOpenHyperAdminModal();
+                        setShowProfileMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-cyan-800 font-bold flex items-center gap-2 cursor-pointer border-b border-slate-100"
+                    >
+                      <ShieldAlert size={14} className="text-cyan-600" />
+                      <span>Panel Hyper Admin (Masa Aktif)</span>
+                    </button>
+                  )}
+
                   {onOpenSettings && (
                     <button
                       onClick={() => {

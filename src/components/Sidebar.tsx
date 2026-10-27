@@ -3,10 +3,11 @@ import {
   LayoutDashboard, Database, Factory, Truck, 
   Boxes, FlaskConical, Scale, Users, FileSpreadsheet, 
   ChevronRight, Shield, X, Settings, Sliders, History,
-  Eye, Edit3
+  Eye, Edit3, ShieldAlert, Clock, Mail, Check, Minus
 } from 'lucide-react';
 import { UserAccount } from '../types';
-import { canAccessMenu, canEditModule } from '../services/permissionService';
+import { canAccessMenu, canEditModule, isHyperAdmin } from '../services/permissionService';
+import { checkLicenseStatus } from '../services/licenseService';
 
 interface SidebarProps {
   currentView: string;
@@ -19,6 +20,8 @@ interface SidebarProps {
   onCloseMobile?: () => void;
   badgeCounts?: Record<string, number>;
   onOpenSettings?: () => void;
+  onOpenHyperAdminModal?: () => void;
+  onOpenTransferModal?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,10 +35,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   badgeCounts,
   onOpenSettings,
+  onOpenHyperAdminModal,
+  onOpenTransferModal
 }) => {
   const navigateFn = onSelectView || onNavigate || (() => {});
   const closeFn = onCloseMobile || onClose;
   const isDrawerOpen = isOpenMobile || isOpen;
+  const isUserHyper = isHyperAdmin(currentUser);
+  const license = checkLicenseStatus();
   const menuItems = [
     {
       id: 'dashboard',
@@ -160,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-xs font-semibold text-white truncate">{currentUser.Nama || currentUser.Username}</p>
               <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
                 <Shield className="w-2.5 h-2.5 text-blue-400 inline" />
-                {currentUser.Role}
+                {currentUser.Roles && currentUser.Roles.length > 1 ? currentUser.Roles.join(' & ') : currentUser.Role}
               </p>
             </div>
           </div>
@@ -176,8 +183,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = isItemActive(item.id);
-          const isWritable = canEditModule(currentUser?.Role, item.id);
-          const isSuper = currentUser?.Role === 'SuperAdmin';
+          const isWritable = canEditModule(currentUser, item.id);
+          const isSuper = (currentUser?.Roles || [currentUser?.Role]).includes('SuperAdmin');
           
           return (
             <button
@@ -210,29 +217,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     {item.badge}
                   </span>
-                ) : isWritable && !isSuper && item.id !== 'dashboard' ? (
+                ) : (isWritable || isSuper) && item.id !== 'dashboard' ? (
                   <span
-                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+                    className={`px-1.5 py-0.5 rounded-md flex items-center justify-center font-bold ${
                       isActive
-                        ? 'bg-white/20 text-white'
-                        : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                        ? 'bg-emerald-500/30 text-emerald-200'
+                        : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                     }`}
-                    title="Wewenang Pengerjaan Anda (Input & Edit)"
+                    title="Wewenang Pengerjaan Aktif (Input, Edit & Pengelolaan Data)"
                   >
-                    <Edit3 className="w-2.5 h-2.5" />
-                    Wewenang
+                    <Check size={12} strokeWidth={3} className="text-emerald-400" />
                   </span>
-                ) : !isWritable && item.id !== 'dashboard' ? (
+                ) : !isWritable && !isSuper && item.id !== 'dashboard' ? (
                   <span
-                    className={`text-[9px] font-medium px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+                    className={`px-1.5 py-0.5 rounded-md flex items-center justify-center font-bold ${
                       isActive
-                        ? 'bg-white/20 text-white'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700/50'
+                        ? 'bg-white/10 text-slate-300'
+                        : 'bg-slate-800/80 text-slate-500 border border-slate-700/40'
                     }`}
-                    title="Hanya Dapat Melihat Data (Read-Only)"
+                    title="Mode Lihat Saja (Read-Only)"
                   >
-                    <Eye className="w-2.5 h-2.5" />
-                    Lihat
+                    <Minus size={12} strokeWidth={2.5} className="text-slate-500" />
                   </span>
                 ) : null}
               </div>
@@ -240,6 +245,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </div>
+
+      {/* Penanda Masa Aktif Aplikasi (< 7 Hari) untuk Seluruh User - Di atas Pengaturan Sistem */}
+      {(license.daysRemaining <= 7 || license.isExpired) && (
+        <div className="p-2.5 border-t border-amber-900/50 bg-gradient-to-r from-slate-950 via-amber-950/20 to-slate-950">
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenTransferModal) onOpenTransferModal();
+              if (closeFn) closeFn();
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 text-amber-200 hover:text-white border border-amber-500/50 shadow-xs transition-all duration-150 group cursor-pointer"
+            title="Masa aktif aplikasi tersisa kurang dari 7 hari. Klik untuk kirim bukti transfer ke gemiusmediachannel@gmail.com."
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors shrink-0">
+                <Clock size={15} className="animate-pulse text-amber-400" />
+              </div>
+              <div className="truncate text-left">
+                <span className="text-xs font-bold block leading-tight text-amber-300 group-hover:text-white flex items-center gap-1.5">
+                  Masa Aktif: Sisa {license.daysRemaining} Hari
+                </span>
+                <span className="text-[10px] text-amber-400/90 block leading-tight truncate">
+                  Klik untuk kirim bukti transfer
+                </span>
+              </div>
+            </div>
+            <Mail size={13} className="text-amber-400 group-hover:text-white shrink-0 ml-1" />
+          </button>
+        </div>
+      )}
+
+      {/* Khusus Hyper Admin: Panel Pengaturan Masa Aktif & Kontrol Lisensi */}
+      {isUserHyper && onOpenHyperAdminModal && (
+        <div className="p-2.5 border-t border-cyan-900/60 bg-gradient-to-r from-slate-950 to-cyan-950/30">
+          <button
+            type="button"
+            onClick={() => {
+              onOpenHyperAdminModal();
+              if (closeFn) closeFn();
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/40 text-cyan-200 hover:text-white border border-cyan-500/40 shadow-xs transition-all duration-150 group cursor-pointer"
+            title="Kelola Masa Aktif & Kunci Lisensi Aplikasi"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors shrink-0">
+                <ShieldAlert size={15} />
+              </div>
+              <div className="truncate text-left">
+                <span className="text-xs font-bold block leading-tight text-cyan-200 group-hover:text-white">
+                  Panel Hyper Admin
+                </span>
+                <span className="text-[10px] text-cyan-400/80 block leading-tight truncate">
+                  Atur Masa Aktif ({license.daysRemaining}h)
+                </span>
+              </div>
+            </div>
+            <ChevronRight size={13} className="text-cyan-500/60 group-hover:text-cyan-300 shrink-0 ml-1" />
+          </button>
+        </div>
+      )}
 
       {/* Tombol Konfigurasi & Pengaturan Aplikasi */}
       <div className="p-2.5 border-t border-slate-800 bg-slate-900/40">

@@ -20,10 +20,15 @@ import { ConfirmDialog, confirmAction } from './components/ConfirmDialog';
 import { AuthModal } from './components/AuthModal';
 import { LoginPage } from './components/LoginPage';
 import { AccessLogView } from './components/AccessLogView';
+import { LicenseLockScreen } from './components/LicenseLockScreen';
+import { HyperAdminModal } from './components/HyperAdminModal';
+import { LicenseTransferModal } from './components/LicenseTransferModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
-  canAccessMenu, canEditModule, getAuthorizedRolesForModule, getDefaultViewForRole 
+  canAccessMenu, canEditModule, getAuthorizedRolesForModule, getDefaultViewForRole,
+  isHyperAdmin
 } from './services/permissionService';
+import { checkLicenseStatus } from './services/licenseService';
 import { Eye, Lock, ShieldCheck } from 'lucide-react';
 
 import { 
@@ -66,6 +71,11 @@ export default function App() {
   const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showHyperAdminModal, setShowHyperAdminModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  // Status Lisensi & Masa Aktif Aplikasi (AIRIS App License)
+  const [licenseStatus, setLicenseStatus] = useState(() => checkLicenseStatus());
 
   // Current logged in auth session
   const [session, setSession] = useState<AuthSession>(() => getStoredSession());
@@ -247,9 +257,10 @@ export default function App() {
   }, [pushPermission]);
 
   // Deteksi apakah pengguna memiliki wewenang untuk MENGERJAKAN (input, edit, hapus) di modul saat ini
+  // Mendukung multi-role: jika karyawan merangkap beberapa divisi, hak aksesnya digabungkan!
   const isWritable = useMemo(() => {
-    return canEditModule(currentUser?.Role, currentView);
-  }, [currentUser?.Role, currentView]);
+    return canEditModule(currentUser, currentView);
+  }, [currentUser, currentView]);
 
   const handleRequestPush = async () => {
     const res = await requestWebPushPermission();
@@ -362,6 +373,31 @@ export default function App() {
   }), [spks, productions, notifications, draftJournals]);
 
   const unreadNotifCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
+  const isUserHyper = currentUser ? isHyperAdmin(currentUser) : false;
+
+  // Proteksi Masa Aktif Aplikasi: Jika kedaluwarsa atau dikunci manual, tampilkan Layar Kunci Total
+  if (licenseStatus.isExpired && !isUserHyper) {
+    return (
+      <ErrorBoundary viewName="Sistem Terkunci">
+        <LicenseLockScreen
+          licenseStatus={licenseStatus}
+          onHyperAdminUnlock={(hyperUser) => {
+            const newSession: AuthSession = {
+              user: hyperUser,
+              isAuthenticated: true,
+              isSupabaseAuth: false
+            };
+            setSession(newSession);
+            setLicenseStatus(checkLicenseStatus());
+            setShowHyperAdminModal(true);
+            reloadData();
+            showToast('Otorisasi Hyper Admin', 'Selamat datang Hyper Admin. Panel konfigurasi masa aktif telah dibuka.', 'info');
+          }}
+        />
+        <ToastContainer />
+      </ErrorBoundary>
+    );
+  }
 
   // If user is not authenticated, show modern enterprise login page
   if (!session.isAuthenticated || !currentUser) {
@@ -398,6 +434,8 @@ export default function App() {
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenHyperAdminModal={() => setShowHyperAdminModal(true)}
+        onOpenTransferModal={() => setShowTransferModal(true)}
       />
 
       {/* Main Content Area */}
@@ -429,6 +467,8 @@ export default function App() {
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettingsModal(true)}
           onNavigateToAccessLog={() => setCurrentView('log_akses')}
+          onOpenHyperAdminModal={() => setShowHyperAdminModal(true)}
+          onOpenTransferModal={() => setShowTransferModal(true)}
         />
 
         {/* Dynamic View Container dengan Interceptor Proteksi Mode Lihat Saja */}
@@ -636,6 +676,27 @@ export default function App() {
         onClose={() => setShowNotificationDrawer(false)}
         notifications={notifications}
         onNavigateTo={setCurrentView}
+      />
+
+      {/* Modal Kontrol Hyper Admin (Masa Aktif & Lisensi) */}
+      <HyperAdminModal
+        isOpen={showHyperAdminModal}
+        onClose={() => setShowHyperAdminModal(false)}
+        onLicenseUpdated={(newStatus) => {
+          setLicenseStatus(newStatus);
+          showToast(
+            'Masa Aktif Diperbarui',
+            `Lisensi aplikasi sekarang berlaku hingga ${newStatus.expiryDateFormatted}.`,
+            'success'
+          );
+        }}
+      />
+
+      {/* Modal Dialog Kirim Bukti Transfer Lisensi untuk Seluruh Pengguna */}
+      <LicenseTransferModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        licenseStatus={licenseStatus}
       />
 
       {/* Floating Interactive Toast System */}
