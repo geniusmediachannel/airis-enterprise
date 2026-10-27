@@ -7,8 +7,10 @@ import {
   Check, Minus
 } from 'lucide-react';
 import { SupabaseConfig, UserAccount } from '../types';
-import { canEditModule, getAuthorizedRolesForModule, isHyperAdmin } from '../services/permissionService';
+import { canEditModule, getAuthorizedRolesForModule, isHyperAdmin, isSuperAdmin } from '../services/permissionService';
 import { checkLicenseStatus, generateBillingMailto } from '../services/licenseService';
+import { syncAllTablesFromSupabase } from '../services/dbAdapter';
+import { showToast } from './ToastContainer';
 
 interface HeaderProps {
   currentView: string;
@@ -68,11 +70,34 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTransferModal
 }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const viewInfo = VIEW_TITLES[currentView] || { title: 'Enterprise', subtitle: 'PT. Anugerah Illahi Rabbi' };
   const isWritable = canEditModule(currentUser, currentView);
   const authorizedRole = getAuthorizedRolesForModule(currentView);
   const license = checkLicenseStatus();
   const isUserHyper = isHyperAdmin(currentUser);
+  const canManageDb = isSuperAdmin(currentUser);
+
+  const handleCloudButtonClick = async () => {
+    if (canManageDb) {
+      onOpenSupabaseModal();
+    } else {
+      // Untuk role staf non-SuperAdmin: sinkronkan data instan tanpa membuka dialog konfigurasi kredensial
+      setIsSyncingCloud(true);
+      try {
+        const res = await syncAllTablesFromSupabase();
+        if (res.success) {
+          showToast('Data Cloud Diselaraskan', 'Seluruh data operasional pabrik berhasil disinkronkan dengan Supabase Cloud.', 'success');
+        } else {
+          showToast('Sinkronisasi', res.message || 'Gagal menyelaraskan data cloud.', 'warning');
+        }
+      } catch (err: any) {
+        showToast('Sinkronisasi', err?.message || 'Terjadi kesalahan saat sinkronisasi cloud.', 'error');
+      } finally {
+        setIsSyncingCloud(false);
+      }
+    }
+  };
 
   return (
     <header className="h-14 sm:h-16 px-3 sm:px-6 bg-white/95 backdrop-blur-md border-b border-slate-200/90 sticky top-0 z-30 shadow-xs flex items-center justify-between gap-2 sm:gap-4 transition-all">
@@ -170,17 +195,22 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Tombol Status Sinkronisasi Supabase Cloud */}
         <button
           type="button"
-          onClick={onOpenSupabaseModal}
+          onClick={handleCloudButtonClick}
+          disabled={isSyncingCloud}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
             supabaseConfig.isConnected
               ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
               : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 animate-pulse'
           }`}
-          title={supabaseConfig.isConnected ? 'Supabase Cloud Terhubung (Klik untuk melihat status & sinkronisasi multi-device)' : 'Supabase Cloud Belum Terhubung (Klik untuk konfigurasi)'}
+          title={
+            canManageDb
+              ? (supabaseConfig.isConnected ? 'Supabase Cloud Terhubung (Klik untuk pengaturan & sinkronisasi)' : 'Supabase Cloud Offline (Klik untuk konfigurasi)')
+              : (supabaseConfig.isConnected ? 'Supabase Cloud Terhubung (Klik untuk menyelaraskan data terkini)' : 'Supabase Cloud Offline')
+          }
         >
-          <Database size={14} className={supabaseConfig.isConnected ? 'text-emerald-600' : 'text-amber-600'} />
+          <Database size={14} className={`${isSyncingCloud ? 'animate-spin' : ''} ${supabaseConfig.isConnected ? 'text-emerald-600' : 'text-amber-600'}`} />
           <span className="hidden md:inline">
-            {supabaseConfig.isConnected ? 'Cloud Aktif' : 'Cloud Offline'}
+            {isSyncingCloud ? 'Menyelaraskan...' : (supabaseConfig.isConnected ? 'Cloud Aktif' : 'Cloud Offline')}
           </span>
           <span className={`w-2 h-2 rounded-full ${supabaseConfig.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
         </button>

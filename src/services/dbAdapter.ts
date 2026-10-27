@@ -361,6 +361,42 @@ export const ALL_DATABASE_TABLES = [
 ];
 
 /**
+ * Tarik seluruh baris dari tabel Supabase dengan paginasi cerdas
+ * (menembus batas limit 1.000 baris bawaan Supabase PostgREST)
+ */
+async function fetchAllRowsFromTable<T = any>(client: SupabaseClient, tableName: string): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  let allRows: T[] = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await client
+      .from(tableName)
+      .select('*')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      console.warn(`[SupabaseSync] Error fetching ${tableName} range ${from}-${from + PAGE_SIZE - 1}:`, error.message);
+      break;
+    }
+
+    if (data && Array.isArray(data)) {
+      allRows = allRows.concat(data as T[]);
+      if (data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        from += PAGE_SIZE;
+      }
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allRows;
+}
+
+/**
  * Tarik satu tabel tertentu secara instan dari Supabase Cloud
  */
 export async function fetchSingleTableFromSupabase<T = any>(tableName: string): Promise<T[] | null> {
@@ -368,13 +404,13 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
   if (!client) return null;
 
   try {
-    const { data, error } = await client.from(tableName).select('*');
-    if (!error && Array.isArray(data)) {
+    const data = await fetchAllRowsFromTable<T>(client, tableName);
+    if (data && data.length > 0) {
       memoryTableCache[tableName] = data;
       try {
         localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(data));
       } catch (e) {}
-      return data as T[];
+      return data;
     }
   } catch (err) {
     console.warn(`[Sync] Gagal fetch tabel ${tableName}:`, err);
@@ -402,14 +438,19 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
   try {
     const promises = ALL_DATABASE_TABLES.map(async (table) => {
       try {
-        const { data, error } = await client.from(table).select('*');
-        if (!error && Array.isArray(data)) {
-          if (data.length > 0) {
-            memoryTableCache[table] = data;
-            try {
-              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(data));
-            } catch (e) {}
-            tablesWithData++;
+        const rows = await fetchAllRowsFromTable(client, table);
+        if (rows.length > 0) {
+          memoryTableCache[table] = rows;
+          try {
+            localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(rows));
+          } catch (e) {}
+          tablesWithData++;
+        } else {
+          // Jika Supabase kosong untuk tabel ini (0 baris), tetapi browser saat ini memiliki data lokal:
+          // Lakukan inisialisasi / auto-push data lokal ke Supabase agar Supabase langsung terisi!
+          const localData = getTableData(table, []);
+          if (localData.length > 0) {
+            syncToSupabaseTable(table, localData).catch(() => {});
           }
         }
       } catch (e) {
@@ -833,7 +874,10 @@ const DEFAULT_DISTRIBUSI: DistributionItem[] = [
   { ID_Distribusi: 'DST-652B', Tanggal: '2026-10-03', ID_Pelanggan: 'PLG-PARJOKO', Nama_Pelanggan: 'PARJOKO', Level_Pelanggan: 'Agen', Pengirim: '-', Penerima: '-', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '652/X/26', No_Invoice: 'INV-652B/X/26', Keterangan: '' },
   { ID_Distribusi: 'DST-653', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-JIWAN', Nama_Pelanggan: 'D. PR NU JIWAN', Level_Pelanggan: 'Distributor', Pengirim: 'AGUS', Penerima: '-', Tujuan: 'JIWAN KARANGNONGKO', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '653/X/26', No_Invoice: 'INV-653/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' },
   { ID_Distribusi: 'DST-654', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-SUPRAPTO', Nama_Pelanggan: 'AGEN SUPRAPTO', Level_Pelanggan: 'Agen', Pengirim: 'RADIT', Penerima: '-', Tujuan: 'KARANGANOM', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '654/X/26', No_Invoice: 'INV-654/X/26', Keterangan: '' },
-  { ID_Distribusi: 'DST-655', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-KLATENUTARA', Nama_Pelanggan: 'D. MWC NU KLATEN UTARA', Level_Pelanggan: 'Distributor', Pengirim: 'RENGGA', Penerima: 'RENGGA', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '655/X/26', No_Invoice: 'INV-655/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' }
+  { ID_Distribusi: 'DST-655', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-KLATENUTARA', Nama_Pelanggan: 'D. MWC NU KLATEN UTARA', Level_Pelanggan: 'Distributor', Pengirim: 'RENGGA', Penerima: 'RENGGA', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '655/X/26', No_Invoice: 'INV-655/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' },
+  { ID_Distribusi: 'DST-656', Tanggal: '2026-10-06', ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', Level_Pelanggan: 'Distributor', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Hendra', Tujuan: 'Klaten', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '656/X/26', No_Invoice: 'INV-656/X/26', Keterangan: 'Pesanan Reguler Toko' },
+  { ID_Distribusi: 'DST-657', Tanggal: '2026-10-08', ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', Level_Pelanggan: 'Agen', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Ahmad', Tujuan: 'Prambanan', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '657/X/26', No_Invoice: 'INV-657/X/26', Keterangan: 'Pengiriman Galon & Botol' },
+  { ID_Distribusi: 'DST-658', Tanggal: '2026-10-10', ID_Pelanggan: 'PLG-0003', Nama_Pelanggan: 'Koperasi Karyawan BMT', Level_Pelanggan: 'Reseller', Pengirim: 'Agus', Penerima: 'Ibu Rina', Tujuan: 'Klaten Utara', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '658/X/26', No_Invoice: 'INV-658/X/26', Keterangan: 'Pesanan Air Cup 120ml' }
 ];
 
 const DEFAULT_DISTRIBUSI_ITEMS: DistributionProductDetail[] = [
@@ -871,6 +915,13 @@ const DEFAULT_DISTRIBUSI_ITEMS: DistributionProductDetail[] = [
   { ID_Detail: 'DET-655-1', ID_Distribusi: 'DST-655', ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Qty: 50, Harga_Satuan: 16500, Subtotal: 825000 },
   { ID_Detail: 'DET-655-2', ID_Distribusi: 'DST-655', ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Qty: 20, Harga_Satuan: 27500, Subtotal: 550000 },
   { ID_Detail: 'DET-655-3', ID_Distribusi: 'DST-655', ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Qty: 30, Harga_Satuan: 42666, Subtotal: 1280000 },
+  // 656
+  { ID_Detail: 'DET-656-1', ID_Distribusi: 'DST-656', ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Qty: 200, Harga_Satuan: 14500, Subtotal: 2900000 },
+  // 657
+  { ID_Detail: 'DET-657-1', ID_Distribusi: 'DST-657', ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Qty: 50, Harga_Satuan: 10000, Subtotal: 500000 },
+  { ID_Detail: 'DET-657-2', ID_Distribusi: 'DST-657', ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Qty: 150, Harga_Satuan: 30000, Subtotal: 4500000 },
+  // 658
+  { ID_Detail: 'DET-658-1', ID_Distribusi: 'DST-658', ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Qty: 60, Harga_Satuan: 14000, Subtotal: 840000 },
 ];
 
 const DEFAULT_QC: QCHeader[] = [

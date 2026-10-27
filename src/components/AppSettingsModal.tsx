@@ -11,9 +11,10 @@ import {
 } from 'lucide-react';
 import { SupabaseConfig, UserAccount } from '../types';
 import { 
-  getTableData, resetAllDatabase,
+  getTableData, resetAllDatabase, syncAllTablesFromSupabase,
   OPERATIONAL_PURGE_MODULES, previewOperationalPurge, executeOperationalPurge
 } from '../services/dbAdapter';
+import { isSuperAdmin } from '../services/permissionService';
 import { DEFAULT_ACCOUNTS } from '../services/supabaseAuth';
 import { 
   downloadExcelTemplate, ExcelTemplateType,
@@ -600,22 +601,49 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                         ? `Project Cloud: ${supabaseConfig.url || 'Supabase Enterprise'}`
                         : 'Data tersimpan otomatis dan persisten di memori browser (IndexedDB & LocalStorage).'}
                     </p>
+                    {!isSuperAdmin(currentUser) && (
+                      <p className="text-[10px] text-slate-500 italic mt-0.5">
+                        * Kredensial URL &amp; API Key dikelola terpusat oleh Super Admin / Hyper Admin demi keamanan sistem.
+                      </p>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenSupabaseModal();
-                      onClose();
-                    }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs ${
-                      supabaseConfig.isConnected
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        : 'bg-amber-600 hover:bg-amber-700 text-white'
-                    }`}
-                  >
-                    Konfigurasi Supabase
-                  </button>
+                  {isSuperAdmin(currentUser) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenSupabaseModal();
+                        onClose();
+                      }}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs ${
+                        supabaseConfig.isConnected
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : 'bg-amber-600 hover:bg-amber-700 text-white'
+                      }`}
+                    >
+                      Konfigurasi Supabase
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await syncAllTablesFromSupabase();
+                          if (res.success) {
+                            showToast('Data Cloud Diselaraskan', 'Seluruh data berhasil disinkronkan dengan Supabase Cloud.', 'success');
+                          } else {
+                            showToast('Sinkronisasi', res.message || 'Gagal sinkronisasi data.', 'warning');
+                          }
+                        } catch (err: any) {
+                          showToast('Sinkronisasi', err?.message || 'Gagal sinkronisasi.', 'error');
+                        }
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
+                    >
+                      <RefreshCw size={13} />
+                      <span>Sinkronkan Data Cloud</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Section Header */}

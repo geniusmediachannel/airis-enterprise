@@ -268,6 +268,20 @@ export default function App() {
       });
     }
 
+    // 7b. Interval background polling (setiap 12 detik) untuk memastikan 100% realtime multi-device & multi-browser
+    const realtimePollInterval = setInterval(() => {
+      const curCfg = getSupabaseConfig();
+      if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
+        syncAllTablesFromSupabase({ silent: true })
+          .then(res => {
+            if (res.success && res.tablesCount > 0) {
+              reloadData();
+            }
+          })
+          .catch(() => {});
+      }
+    }, 12000);
+
     // Auto-sync saat tab browser aktif kembali (focus)
     const handleWindowFocus = () => {
       const curCfg = getSupabaseConfig();
@@ -305,6 +319,7 @@ export default function App() {
       window.removeEventListener('airis_cloud_synced', handleCloudSynced);
       window.removeEventListener('airis_license_updated', handleLicenseUpdated);
       clearInterval(interval);
+      clearInterval(realtimePollInterval);
     };
   }, [pushPermission]);
 
@@ -680,6 +695,7 @@ export default function App() {
         isOpen={showSupabaseModal}
         onClose={() => setShowSupabaseModal(false)}
         config={supabaseConfig}
+        currentUser={currentUser}
         onConfigSaved={newCfg => {
           saveSupabaseConfig(newCfg);
           setSupabaseConfig(newCfg);

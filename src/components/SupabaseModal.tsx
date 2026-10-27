@@ -4,12 +4,13 @@ import {
   X, RefreshCw, Key, Globe, ExternalLink, HardDrive, 
   Sparkles, Lock, ArrowDownCircle, ArrowUpCircle, Check
 } from 'lucide-react';
-import { SupabaseConfig } from '../types';
+import { SupabaseConfig, UserAccount } from '../types';
 import { 
   isSupabaseConfigured, testSupabaseConnection, 
   syncAllTablesFromSupabase, pushAllTablesToSupabase,
   getSupabaseConfig, normalizeSupabaseUrl, saveSupabaseConfig
 } from '../services/dbAdapter';
+import { isSuperAdmin } from '../services/permissionService';
 
 interface SupabaseModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface SupabaseModalProps {
   onSaveConfig?: (cfg: SupabaseConfig) => void;
   onConfigSaved?: (cfg: SupabaseConfig) => void;
   onSyncDatabase?: () => void;
+  currentUser?: UserAccount;
 }
 
 export const SupabaseModal: React.FC<SupabaseModalProps> = ({
@@ -27,6 +29,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   onSaveConfig,
   onConfigSaved,
   onSyncDatabase,
+  currentUser,
 }) => {
   const saveFn = onConfigSaved || onSaveConfig || (() => {});
   const activeCfg = getSupabaseConfig();
@@ -35,6 +38,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const [testing, setTesting] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const canManageDb = !currentUser || isSuperAdmin(currentUser);
 
   useEffect(() => {
     if (isOpen) {
@@ -156,6 +160,86 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       message: 'Mode Local Hybrid Active. Menggunakan data tersimpan di browser & local engine terisolasi.',
     });
   };
+
+  if (!canManageDb) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+          <div className="p-6 bg-gradient-to-r from-slate-900 to-slate-800 text-white relative">
+            <button
+              onClick={onClose}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold">Akses Database Terbatas</h2>
+                <p className="text-xs text-slate-300">Khusus SuperAdmin &amp; HyperAdmin</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block mb-1 font-bold">Pengaturan Kredensial Terlindungi:</strong>
+                Konfigurasi URL dan Anon Key database Supabase hanya dapat diubah oleh peran <strong>Super Administrator</strong> atau <strong>Hyper Administrator</strong>.
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-700">Status Koneksi Saat Ini:</span>
+                {isSupabaseConfigured() ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Tersambung (Realtime)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold text-[11px]">
+                    Offline
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Aplikasi Anda secara otomatis terhubung ke cloud Supabase dan tersinkronisasi tanpa memerlukan konfigurasi manual.
+              </p>
+            </div>
+
+            {testResult && (
+              <div className={`p-3 rounded-xl border text-xs font-medium ${testResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                {testResult.message}
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={handlePullCloud}
+                disabled={syncingCloud}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <ArrowDownCircle className={`w-4 h-4 ${syncingCloud ? 'animate-spin' : ''}`} />
+                <span>{syncingCloud ? 'Menyelaraskan...' : 'Sinkronkan Data Cloud'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 transition cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">

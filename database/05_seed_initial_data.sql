@@ -193,3 +193,53 @@ INSERT INTO "Data_QC_Detail" (
 ('QC-26101501', 2, '7.3', '142', '0.7', 'TB', '0', '7.2', '112', '0.3', 'TB', 'Segar', '0.13', '7.1', '99', '0.1', 'TB', 'Segar', '0.08', '12', '22', '0'),
 ('QC-26101501', 3, '7.2', '141', '0.8', 'TB', '0', '7.1', '111', '0.2', 'TB', 'Segar', '0.12', '7.0', '97', '0.1', 'TB', 'Segar', '0.09', '10', '18', '0')
 ON CONFLICT ("ID_QC", "Siklus") DO NOTHING;
+
+-- 15. Data Distribusi & Pengiriman Awal (Total 1.366 Unit)
+INSERT INTO "Distribusi" ("ID_Distribusi", "Tanggal", "ID_Pelanggan", "Nama_Pelanggan", "Level_Pelanggan", "Pengirim", "Penerima", "Tujuan", "Metode_Kirim", "No_Surat_Jalan", "No_Invoice", "Total_Tagihan", "Keterangan")
+VALUES
+('DST-646', '2026-10-01', 'PLG-MWCKARANG', 'D. MWC NU KARANGNONGKO', 'Distributor', 'AGUS', '-', 'KARANGNONGKO', 'Ambil Sendiri', '646/x/26', 'INV-646/X/26', 2275000, ''),
+('DST-647', '2026-10-02', 'PLG-PCJQHNU', 'D. PC JQH NU', 'Distributor', 'RADITYA', 'DILLAH', 'KLATEN UTARA', 'Diantar Armada', '647/x/26', 'INV-647/X/26', 2737500, ''),
+('DST-648', '2026-10-02', 'PLG-MWCTULUNG', 'D. MWC NU TULUNG', 'Distributor', 'RADITYA', '-', 'TULUNG', 'Diantar Armada', '648/x/26', 'INV-648/X/26', 1975000, ''),
+('DST-649', '2026-10-02', 'PLG-RADITYA', 'RADITYA', 'Agen', '-', '-', 'KALIKOTES', 'Diantar Armada', '649/x/26', 'INV-649/X/26', 37000, ''),
+('DST-650', '2026-10-03', 'PLG-MWCCEPER', 'D. MWC NU CEPER', 'Distributor', 'RADITYA', '-', 'CEPER KLATEN', 'Diantar Armada', '650/x/26', 'INV-650/X/26', 7525000, ''),
+('DST-651', '2026-10-03', 'PLG-MWCTRUCUK', 'D. MWC NU TRUCUK', 'Distributor', 'RADITYA', '-', 'TRUCUK', 'Diantar Armada', '651/x/26', 'INV-651/X/26', 1180000, ''),
+('DST-652', '2026-10-03', 'PLG-CANDRA', 'CANDRA DITIA TRI A', 'Agen', 'RADITYA', '-', 'NGAWEN', 'Diantar Armada', '652/x/26', 'INV-652/X/26', 45000, ''),
+('DST-652B', '2026-10-03', 'PLG-PARJOKO', 'PARJOKO', 'Agen', '-', '-', 'KLATEN UTARA', 'Diantar Armada', '652/X/26', 'INV-652B/X/26', 114000, ''),
+('DST-653', '2026-10-05', 'PLG-JIWAN', 'D. PR NU JIWAN', 'Distributor', 'AGUS', '-', 'JIWAN KARANGNONGKO', 'Kirim Armada', '653/X/26', 'INV-653/X/26', 1950000, '(Total Qty Potongan: - Rp 100.000)'),
+('DST-654', '2026-10-05', 'PLG-SUPRAPTO', 'AGEN SUPRAPTO', 'Agen', 'RADIT', '-', 'KARANGANOM', 'Kirim Armada', '654/X/26', 'INV-654/X/26', 2762000, ''),
+('DST-655', '2026-10-05', 'PLG-KLATENUTARA', 'D. MWC NU KLATEN UTARA', 'Distributor', 'RENGGA', 'RENGGA', 'KLATEN UTARA', 'Ambil Sendiri', '655/X/26', 'INV-655/X/26', 2555000, '(Total Qty Potongan: - Rp 100.000)'),
+('DST-656', '2026-10-06', 'PLG-0001', 'Toko Berkah Sejahtera', 'Distributor', 'Tri Wahyudi', 'Bpk. Hendra', 'Klaten', 'Diantar Armada', '656/X/26', 'INV-656/X/26', 2900000, 'Pesanan Reguler Toko'),
+('DST-657', '2026-10-08', 'PLG-0002', 'Agen Sumber Segar', 'Agen', 'Tri Wahyudi', 'Bpk. Ahmad', 'Prambanan', 'Diantar Armada', '657/X/26', 'INV-657/X/26', 5000000, 'Pengiriman Galon & Botol'),
+('DST-658', '2026-10-10', 'PLG-0003', 'Koperasi Karyawan BMT', 'Reseller', 'Agus', 'Ibu Rina', 'Klaten Utara', 'Ambil Sendiri', '658/X/26', 'INV-658/X/26', 840000, 'Pesanan Air Cup 120ml')
+ON CONFLICT ("ID_Distribusi") DO NOTHING;
+
+INSERT INTO "Distribusi_Item" ("ID_Detail", "ID_Distribusi", "Nama_Pelanggan", "Tanggal", "Level_Pelanggan", "ID_Produk", "Nama_Produk", "Qty", "Harga_Satuan", "Subtotal")
+VALUES
+('DET-646-1', 'DST-646', 'D. MWC NU KARANGNONGKO', '2026-10-01', 'Distributor', 'ASH-CUP120', 'As-Shofaa Cup 120ml', 20, 13000, 260000),
+('DET-646-2', 'DST-646', 'D. MWC NU KARANGNONGKO', '2026-10-01', 'Distributor', 'ASH-BTL330', 'As-Shofaa Botol 330ml', 10, 27500, 275000),
+('DET-646-3', 'DST-646', 'D. MWC NU KARANGNONGKO', '2026-10-01', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 45, 38666, 1740000),
+('DET-647-1', 'DST-647', 'D. PC JQH NU', '2026-10-02', 'Distributor', 'ASH-CUP120', 'As-Shofaa Cup 120ml', 15, 13500, 202500),
+('DET-647-2', 'DST-647', 'D. PC JQH NU', '2026-10-02', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 30, 15500, 465000),
+('DET-647-3', 'DST-647', 'D. PC JQH NU', '2026-10-02', 'Distributor', 'ASH-BTL330', 'As-Shofaa Botol 330ml', 30, 27000, 810000),
+('DET-647-4', 'DST-647', 'D. PC JQH NU', '2026-10-02', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 25, 50400, 1260000),
+('DET-648-1', 'DST-648', 'D. MWC NU TULUNG', '2026-10-02', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 70, 15500, 1085000),
+('DET-648-2', 'DST-648', 'D. MWC NU TULUNG', '2026-10-02', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 15, 59333, 890000),
+('DET-649-1', 'DST-649', 'RADITYA', '2026-10-02', 'Agen', 'ASH-CUP120', 'As-Shofaa Cup 120ml', 2, 18500, 37000),
+('DET-650-1', 'DST-650', 'D. MWC NU CEPER', '2026-10-03', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 200, 15500, 3100000),
+('DET-650-2', 'DST-650', 'D. MWC NU CEPER', '2026-10-03', 'Distributor', 'ASH-BTL330', 'As-Shofaa Botol 330ml', 50, 28500, 1425000),
+('DET-650-3', 'DST-650', 'D. MWC NU CEPER', '2026-10-03', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 50, 60000, 3000000),
+('DET-651-1', 'DST-651', 'D. MWC NU TRUCUK', '2026-10-03', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 40, 15500, 620000),
+('DET-651-2', 'DST-651', 'D. MWC NU TRUCUK', '2026-10-03', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 10, 56000, 560000),
+('DET-652-1', 'DST-652', 'CANDRA DITIA TRI A', '2026-10-03', 'Agen', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 2, 22500, 45000),
+('DET-652B-1', 'DST-652B', 'PARJOKO', '2026-10-03', 'Agen', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 3, 38000, 114000),
+('DET-653-1', 'DST-653', 'D. PR NU JIWAN', '2026-10-05', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 100, 20500, 2050000),
+('DET-654-1', 'DST-654', 'AGEN SUPRAPTO', '2026-10-05', 'Agen', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 40, 16500, 660000),
+('DET-654-2', 'DST-654', 'AGEN SUPRAPTO', '2026-10-05', 'Agen', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 49, 42897, 2102000),
+('DET-655-1', 'DST-655', 'D. MWC NU KLATEN UTARA', '2026-10-05', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 50, 16500, 825000),
+('DET-655-2', 'DST-655', 'D. MWC NU KLATEN UTARA', '2026-10-05', 'Distributor', 'ASH-BTL330', 'As-Shofaa Botol 330ml', 20, 27500, 550000),
+('DET-655-3', 'DST-655', 'D. MWC NU KLATEN UTARA', '2026-10-05', 'Distributor', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 30, 42666, 1280000),
+('DET-656-1', 'DST-656', 'Toko Berkah Sejahtera', '2026-10-06', 'Distributor', 'ASH-CUP220', 'As-Shofaa Cup 220ml', 200, 14500, 2900000),
+('DET-657-1', 'DST-657', 'Agen Sumber Segar', '2026-10-08', 'Agen', 'ASH-GLN19L', 'As-Shofaa Galon 19L', 50, 10000, 500000),
+('DET-657-2', 'DST-657', 'Agen Sumber Segar', '2026-10-08', 'Agen', 'ASH-BTL600', 'As-Shofaa Botol 600ml', 150, 30000, 4500000),
+('DET-658-1', 'DST-658', 'Koperasi Karyawan BMT', '2026-10-10', 'Reseller', 'ASH-CUP120', 'As-Shofaa Cup 120ml', 60, 14000, 840000)
+ON CONFLICT ("ID_Detail") DO NOTHING;
