@@ -408,17 +408,21 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
     if (data.length === 0) {
       if (pk) {
         // Hapus child tables terlebih dahulu jika ada dependensi relasi foreign key
-        if (tableName === 'Distribusi') {
-          await client.from('Distribusi_Item').delete().not('ID_Detail', 'is', null);
-        } else if (tableName === 'Data_QC') {
-          await client.from('Data_QC_Detail').delete().not('ID_QC', 'is', null);
-        } else if (tableName === 'Admin_PO') {
-          await client.from('Admin_PO_Detail').delete().not('ID_Detail', 'is', null);
-        }
+        try {
+          if (tableName === 'Distribusi') {
+            await client.from('Distribusi_Item').delete().neq('ID_Detail', '___EMPTY_DEL___');
+          } else if (tableName === 'Data_QC') {
+            await client.from('Data_QC_Detail').delete().neq('ID_QC', '___EMPTY_DEL___');
+          } else if (tableName === 'Admin_PO') {
+            await client.from('Admin_PO_Detail').delete().neq('ID_Detail', '___EMPTY_DEL___');
+          }
 
-        const { error: delAllErr } = await client.from(tableName).delete().not(pk, 'is', null);
-        if (delAllErr) {
-          console.warn(`[SupabaseSync] Clear table error on ${tableName}:`, delAllErr.message);
+          const { error: delAllErr } = await client.from(tableName).delete().neq(pk, pk === 'ID_Entry' ? -999999999 : '___EMPTY_DEL___');
+          if (delAllErr) {
+            console.warn(`[SupabaseSync] Clear table error on ${tableName}:`, delAllErr.message);
+          }
+        } catch (delErr: any) {
+          console.warn(`[SupabaseSync] Clear table exception on ${tableName}:`, delErr?.message);
         }
       }
       return;
@@ -1320,35 +1324,55 @@ export async function resetAllDatabase(keepUserAccounts: boolean = true): Promis
     localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify(safeUsers));
   }
 
-  // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung
+  // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung (Paralel + Anti-Hang Timeout)
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
 
   if (client && cfg.isConnected && cfg.url && cfg.anonKey) {
-    for (const tbl of tableNames) {
-      const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0] || 'id';
+    const clearCloudTable = async (tbl: string) => {
+      const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0];
+      if (!pk) return;
       try {
-        await client.from(tbl).delete().not(pk, 'is', null);
-      } catch (err: any) {
-        console.warn(`[ResetDatabase] Error clearing ${tbl} in Supabase:`, err?.message);
-      }
-    }
+        const delPromise = client
+          .from(tbl)
+          .delete()
+          .neq(pk, pk === 'ID_Entry' ? -999999999 : '___EMPTY_DEL___');
 
-    if (!keepUserAccounts) {
-      try {
-        await client.from('MD_UserAkses').delete().not('ID_User', 'is', null);
-      } catch (e) {}
-    } else {
-      // Pastikan seluruh akun pengguna tetap tersimpan utuh di Supabase
-      const allUsers = memoryTableCache['MD_UserAkses'] || [];
-      if (allUsers.length > 0) {
-        try {
-          const cleanUsers = sanitizeRowsForTable('MD_UserAkses', allUsers);
-          await client.from('MD_UserAkses').upsert(cleanUsers as any);
-        } catch (e) {
-          console.warn('[ResetDatabase] Error preserving user accounts in Supabase:', e);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Timeout clearing ${tbl}`)), 3000)
+        );
+
+        await Promise.race([delPromise, timeoutPromise]);
+      } catch (err: any) {
+        console.warn(`[ResetDatabase] Cloud wipe skipped on ${tbl}:`, err?.message);
+      }
+    };
+
+    try {
+      // Tahap 1: Hapus child tables terlebih dahulu secara paralel (max 3 detik)
+      const childTables = ['Distribusi_Item', 'Data_QC_Detail', 'Admin_PO', 'Mutasi_Bahan'].filter(t => ALL_DATABASE_TABLES.includes(t));
+      await Promise.allSettled(childTables.map(t => clearCloudTable(t)));
+
+      // Tahap 2: Hapus tabel operasional & master lainnya secara paralel (max 3 detik)
+      const otherTables = ALL_DATABASE_TABLES.filter(t => !childTables.includes(t) && t !== 'MD_UserAkses');
+      await Promise.allSettled(otherTables.map(t => clearCloudTable(t)));
+
+      // Tahap 3: Tangani akun pengguna
+      if (!keepUserAccounts) {
+        await clearCloudTable('MD_UserAkses');
+      } else {
+        const allUsers = memoryTableCache['MD_UserAkses'] || [];
+        if (allUsers.length > 0) {
+          try {
+            const cleanUsers = sanitizeRowsForTable('MD_UserAkses', allUsers);
+            const upsertPromise = client.from('MD_UserAkses').upsert(cleanUsers as any);
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout user upsert')), 2500));
+            await Promise.race([upsertPromise, timeoutPromise]);
+          } catch (e) {}
         }
       }
+    } catch (cloudErr: any) {
+      console.warn('[ResetDatabase] Supabase cloud cleanup completed with warnings:', cloudErr?.message);
     }
   }
 
