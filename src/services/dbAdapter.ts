@@ -28,7 +28,7 @@ const DEFAULT_SUPABASE_URL =
   (typeof __AIRIS_SUPABASE_URL__ !== 'undefined' && __AIRIS_SUPABASE_URL__) ||
   import.meta.env.VITE_SUPABASE_URL || 
   import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
-  'https://inifunrwbxeeglzgklfr.supabase.co';
+  'https://jnjfuprwbxeeqlzgklfr.supabase.co';
 
 const DEFAULT_SUPABASE_ANON_KEY = 
   (typeof __AIRIS_SUPABASE_ANON_KEY__ !== 'undefined' && __AIRIS_SUPABASE_ANON_KEY__) ||
@@ -83,11 +83,30 @@ export function getSupabaseClient(): SupabaseClient | null {
   return supabaseInstance;
 }
 
-export function saveSupabaseConfig(config: SupabaseConfig): void {
-  let url = config.url ? config.url.trim().replace(/\/+$/, '') : '';
-  if (url.endsWith('.supabase.com')) {
-    url = url.replace(/\.supabase\.com$/, '.supabase.co');
+/**
+ * Normalisasi otomatis URL Supabase untuk mencegah typo (.com vs .co, URL dashboard, dsb)
+ */
+export function normalizeSupabaseUrl(input: string): string {
+  let u = (input || '').trim().replace(/\/+$/, '');
+  if (!u) return '';
+  // Jika user mem-paste URL dashboard: https://supabase.com/dashboard/project/xyz
+  const dashMatch = u.match(/supabase\.com\/dashboard\/project\/([a-z0-9_-]+)/i);
+  if (dashMatch) {
+    return `https://${dashMatch[1]}.supabase.co`;
   }
+  // Jika user mengetik akhiran .supabase.com
+  if (u.includes('.supabase.com')) {
+    u = u.replace(/\.supabase\.com/i, '.supabase.co');
+  }
+  // Pastikan berawalan https://
+  if (!u.startsWith('http://') && !u.startsWith('https://')) {
+    u = 'https://' + u;
+  }
+  return u;
+}
+
+export function saveSupabaseConfig(config: SupabaseConfig): void {
+  const url = normalizeSupabaseUrl(config.url || '');
   const cleanConfig = { ...config, url, anonKey: config.anonKey ? config.anonKey.trim() : '' };
   localStorage.setItem(SUPABASE_CONFIG_KEY, JSON.stringify(cleanConfig));
   if (cleanConfig.url && cleanConfig.anonKey) {
@@ -109,10 +128,7 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
 
 export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
-    let cleanUrl = url ? url.trim().replace(/\/+$/, '') : '';
-    if (cleanUrl.endsWith('.supabase.com')) {
-      cleanUrl = cleanUrl.replace(/\.supabase\.com$/, '.supabase.co');
-    }
+    const cleanUrl = normalizeSupabaseUrl(url);
     const cleanKey = key ? key.trim() : '';
     if (!cleanUrl || !cleanKey) {
       return { success: false, message: 'URL dan Anon Key wajib diisi!' };

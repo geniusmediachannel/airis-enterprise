@@ -8,7 +8,7 @@ import { SupabaseConfig } from '../types';
 import { 
   isSupabaseConfigured, testSupabaseConnection, 
   syncAllTablesFromSupabase, pushAllTablesToSupabase,
-  getSupabaseConfig 
+  getSupabaseConfig, normalizeSupabaseUrl
 } from '../services/dbAdapter';
 
 interface SupabaseModalProps {
@@ -51,9 +51,8 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
     setTesting(true);
     setTestResult(null);
 
-    let cleanUrl = url.trim().replace(/\/+$/, '');
-    if (cleanUrl.endsWith('.supabase.com')) {
-      cleanUrl = cleanUrl.replace(/\.supabase\.com$/, '.supabase.co');
+    const cleanUrl = normalizeSupabaseUrl(url);
+    if (cleanUrl !== url) {
       setUrl(cleanUrl);
     }
     const cleanKey = anonKey.trim();
@@ -242,7 +241,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             </label>
             <input
               type="url"
-              placeholder="https://xyzcompany.supabase.co"
+              placeholder="https://jnjfuprwbxeeqlzgklfr.supabase.co"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"

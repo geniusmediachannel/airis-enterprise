@@ -10,7 +10,7 @@ export default defineConfig(({mode}) => {
     process.env.NEXT_PUBLIC_SUPABASE_URL || 
     env.VITE_SUPABASE_URL || 
     env.NEXT_PUBLIC_SUPABASE_URL || 
-    'https://inifunrwbxeeglzgklfr.supabase.co';
+    'https://jnjfuprwbxeeqlzgklfr.supabase.co';
 
   const supabaseKey = 
     process.env.VITE_SUPABASE_ANON_KEY || 
