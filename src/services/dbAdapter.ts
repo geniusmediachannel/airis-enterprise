@@ -19,15 +19,21 @@ import {
 const STORAGE_KEY_PREFIX = 'AIRIS_ENTERPRISE_';
 const SUPABASE_CONFIG_KEY = 'AIRIS_SUPABASE_CONFIG';
 
-// Default Project URL & Anon Key dari env Vite / NextPublic atau bawaan proyek
-const envMeta = (import.meta as any).env || {};
+// Build-time injected globals via vite.config.ts define
+declare const __AIRIS_SUPABASE_URL__: string | undefined;
+declare const __AIRIS_SUPABASE_ANON_KEY__: string | undefined;
+
+// Default Project URL & Anon Key dari define / env Vite / NextPublic / fallback proyek
 const DEFAULT_SUPABASE_URL = 
-  envMeta.VITE_SUPABASE_URL || 
-  envMeta.NEXT_PUBLIC_SUPABASE_URL || 
+  (typeof __AIRIS_SUPABASE_URL__ !== 'undefined' && __AIRIS_SUPABASE_URL__) ||
+  import.meta.env.VITE_SUPABASE_URL || 
+  import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
   'https://inifunrwbxeeglzgklfr.supabase.co';
+
 const DEFAULT_SUPABASE_ANON_KEY = 
-  envMeta.VITE_SUPABASE_ANON_KEY || 
-  envMeta.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+  (typeof __AIRIS_SUPABASE_ANON_KEY__ !== 'undefined' && __AIRIS_SUPABASE_ANON_KEY__) ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 
+  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
   '';
 
 let supabaseInstance: SupabaseClient | null = null;
@@ -102,11 +108,20 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
       return { success: false, message: 'URL dan Anon Key wajib diisi!' };
     }
     const testClient = createClient(url, key);
-    const { error } = await testClient.from('Master_COA').select('count', { count: 'exact', head: true });
-    if (error && error.message.includes('FetchError')) {
-      return { success: false, message: 'Tidak dapat menjangkau host Supabase: ' + error.message };
+    const { data, error } = await testClient.from('Master_COA').select('*').limit(1);
+    if (error) {
+      if (error.message.includes('FetchError') || error.message.includes('Failed to fetch')) {
+        return { success: false, message: 'Tidak dapat menjangkau host Supabase: ' + error.message };
+      }
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        return { 
+          success: false, 
+          message: 'Host Supabase terhubung, tetapi tabel belum dibuat di database! Silakan buka Supabase SQL Editor dan jalankan skrip database/00_FULL_SETUP.sql.' 
+        };
+      }
+      return { success: false, message: 'Supabase merespons error: ' + error.message };
     }
-    return { success: true, message: 'Koneksi ke Supabase berhasil terverifikasi!' };
+    return { success: true, message: 'Koneksi ke Supabase berhasil terverifikasi dan tabel aktif!' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal terhubung ke Supabase.' };
   }
@@ -115,9 +130,30 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
 // In-memory cache to ensure zero data loss across component lifecycles
 const memoryTableCache: Record<string, any[]> = {};
 
-// Helper to notify listeners across the application
-export function notifyDbChange() {
+// Cross-tab instant communication channel
+let crossTabChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    crossTabChannel = new BroadcastChannel('airis_cross_tab_sync');
+    crossTabChannel.onmessage = (event) => {
+      if (event.data?.type === 'DB_CHANGE') {
+        if (event.data.table) {
+          delete memoryTableCache[event.data.table];
+        } else {
+          Object.keys(memoryTableCache).forEach(k => delete memoryTableCache[k]);
+        }
+        window.dispatchEvent(new CustomEvent('airis_db_updated'));
+      }
+    };
+  }
+} catch (e) {}
+
+// Helper to notify listeners across the application and across browser tabs
+export function notifyDbChange(tableName?: string) {
   window.dispatchEvent(new CustomEvent('airis_db_updated'));
+  try {
+    crossTabChannel?.postMessage({ type: 'DB_CHANGE', table: tableName, timestamp: Date.now() });
+  } catch (e) {}
 }
 
 export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T[] {
@@ -330,23 +366,30 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean }):
 /**
  * Unggah seluruh data lokal saat ini ke Supabase Cloud (Push All)
  */
-export async function pushAllTablesToSupabase(): Promise<{ success: boolean; message: string; count: number }> {
+export async function pushAllTablesToSupabase(): Promise<{ success: boolean; message: string; count: number; errors?: string[] }> {
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
 
-  if (!client || !cfg.isConnected) {
-    return { success: false, message: 'Supabase Cloud belum terhubung.', count: 0 };
+  if (!client || !cfg.isConnected || !cfg.url || !cfg.anonKey) {
+    return { success: false, message: 'Supabase Cloud belum terhubung. Periksa konfigurasi URL & Anon Key.', count: 0 };
   }
 
   let pushed = 0;
+  const failureDetails: string[] = [];
+
   for (const table of ALL_DATABASE_TABLES) {
     const data = getTableData(table, []);
     if (data.length > 0) {
       try {
         const { error } = await client.from(table).upsert(data as any);
-        if (!error) pushed++;
-      } catch (e) {
-        console.warn(`[PushAll] Gagal upload ${table}:`, e);
+        if (!error) {
+          pushed++;
+        } else {
+          console.warn(`[PushAll] Gagal upload ${table}:`, error.message);
+          failureDetails.push(`${table}: ${error.message}`);
+        }
+      } catch (e: any) {
+        failureDetails.push(`${table}: ${e.message || 'Exception'}`);
       }
     }
   }
@@ -359,7 +402,27 @@ export async function pushAllTablesToSupabase(): Promise<{ success: boolean; mes
     }
   } catch (e) {}
 
-  return { success: true, message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud.`, count: pushed };
+  notifyDbChange();
+
+  if (failureDetails.length > 0) {
+    const isTableMissing = failureDetails.some(f => f.includes('does not exist'));
+    if (isTableMissing) {
+      return {
+        success: false,
+        message: 'Gagal mengunggah: Tabel belum dibuat di database Supabase! Buka Supabase SQL Editor dan jalankan skrip database/00_FULL_SETUP.sql.',
+        count: pushed,
+        errors: failureDetails
+      };
+    }
+    return {
+      success: pushed > 0,
+      message: `Tersinkronisasi ${pushed} tabel. Beberapa tabel ditolak (${failureDetails.slice(0, 2).join(', ')}).`,
+      count: pushed,
+      errors: failureDetails
+    };
+  }
+
+  return { success: true, message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud! Semua perangkat lain kini sinkron.`, count: pushed };
 }
 
 let isRealtimeSubscribed = false;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, ShieldCheck, CheckCircle2, AlertCircle, 
   X, RefreshCw, Key, Globe, ExternalLink, HardDrive, 
@@ -7,7 +7,8 @@ import {
 import { SupabaseConfig } from '../types';
 import { 
   isSupabaseConfigured, testSupabaseConnection, 
-  syncAllTablesFromSupabase, pushAllTablesToSupabase 
+  syncAllTablesFromSupabase, pushAllTablesToSupabase,
+  getSupabaseConfig 
 } from '../services/dbAdapter';
 
 interface SupabaseModalProps {
@@ -28,11 +29,20 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   onSyncDatabase,
 }) => {
   const saveFn = onConfigSaved || onSaveConfig || (() => {});
-  const [url, setUrl] = useState(config.url || '');
-  const [anonKey, setAnonKey] = useState(config.anonKey || '');
+  const activeCfg = getSupabaseConfig();
+  const [url, setUrl] = useState(config.url || activeCfg.url || '');
+  const [anonKey, setAnonKey] = useState(config.anonKey || activeCfg.anonKey || '');
   const [testing, setTesting] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const cur = getSupabaseConfig();
+      if (!url && cur.url) setUrl(cur.url);
+      if (!anonKey && cur.anonKey) setAnonKey(cur.anonKey);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -183,6 +193,41 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleTestAndSave} className="p-6 space-y-4">
+          {/* Action Box Sinkronisasi Cepat */}
+          <div className="p-4 bg-emerald-50/80 border border-emerald-200/90 rounded-2xl space-y-2.5">
+            <div className="font-bold text-xs text-emerald-950 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <RefreshCw className="w-4 h-4 text-emerald-600" />
+                Penyelarasan Data Seluruh Perangkat:
+              </span>
+              <span className="text-[10px] bg-emerald-200/70 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+                Multi-Device Realtime
+              </span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-600">
+              Gunakan browser yang datanya paling lengkap (contoh: <strong>Produksi 2.130</strong>), lalu klik tombol <strong>Unggah ke Cloud</strong> di bawah agar seluruh browser &amp; HP otomatis membaca data yang sama.
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handlePushCloud}
+                disabled={syncingCloud}
+                className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <ArrowUpCircle className={`w-4 h-4 ${syncingCloud ? 'animate-spin' : ''}`} />
+                <span>Unggah (Push) ke Cloud</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePullCloud}
+                disabled={syncingCloud}
+                className="px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <ArrowDownCircle className={`w-4 h-4 ${syncingCloud ? 'animate-spin' : ''}`} />
+                <span>Tarik (Pull) dari Cloud</span>
+              </button>
+            </div>
+          </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <Globe className="w-4 h-4 text-emerald-600" />
