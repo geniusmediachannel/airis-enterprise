@@ -420,7 +420,19 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
             await client.from('Admin_PO_Detail').delete().neq('ID_Detail', '___EMPTY_DEL___');
           }
 
-          const { error: delAllErr } = await client.from(tableName).delete().neq(pk, pk === 'ID_Entry' ? -999999999 : '___EMPTY_DEL___');
+          // Hapus seluruh baris dengan NOT IS NULL (universal semua tipe data)
+          let { error: delAllErr } = await client.from(tableName).delete().not(pk, 'is', null);
+          if (delAllErr) {
+            // Fallback: hapus via list ID jika not.is.null ditolak
+            const { data: rows } = await client.from(tableName).select(pk).limit(1000);
+            if (rows && rows.length > 0) {
+              const ids = rows.map((r: any) => r[pk]).filter((v: any) => v !== undefined && v !== null);
+              if (ids.length > 0) {
+                const resIn = await client.from(tableName).delete().in(pk, ids);
+                delAllErr = resIn.error;
+              }
+            }
+          }
           if (delAllErr) {
             console.warn(`[SupabaseSync] Clear table error on ${tableName}:`, delAllErr.message);
           }
@@ -726,6 +738,7 @@ export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Pr
 }
 
 let isRealtimeSubscribed = false;
+const realtimeTableTimeouts = new Map<string, any>();
 
 /**
  * Mendaftarkan pendengar Realtime Supabase untuk perubahan instan antar device
@@ -747,10 +760,14 @@ export function setupSupabaseRealtimeSync(onUpdated?: (tableName: string) => voi
           if (isDatabaseResetting) return;
           const table = payload.table;
           if (table) {
-            fetchSingleTableFromSupabase(table).then(() => {
-              notifyDbChange();
-              if (onUpdated) onUpdated(table);
-            });
+            if (realtimeTableTimeouts.has(table)) {
+              clearTimeout(realtimeTableTimeouts.get(table));
+            }
+            realtimeTableTimeouts.set(table, setTimeout(() => {
+              fetchSingleTableFromSupabase(table).then(() => {
+                if (onUpdated) onUpdated(table);
+              });
+            }, 300));
           }
         }
       )
@@ -1354,21 +1371,42 @@ export async function resetAllDatabase(keepUserAccounts: boolean = true): Promis
 
     if (client && cfg.isConnected && cfg.url && cfg.anonKey) {
       const clearCloudTable = async (tbl: string) => {
-        const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0];
-        if (!pk) return;
+        const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0] || 'id';
         try {
-          const isNumericPk = pk === 'ID_Entry' || pk === 'id';
-          const delPromise = isNumericPk
-            ? client.from(tbl).delete().gte(pk, 0)
-            : client.from(tbl).delete().neq(pk, '___EMPTY_DEL___');
-
+          // Lapis 1: Hapus cepat seluruh baris dengan NOT IS NULL (Bekerja universal untuk semua tipe data kolom)
+          const delPromise = client.from(tbl).delete().not(pk, 'is', null);
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Timeout clearing ${tbl}`)), 4000)
+            setTimeout(() => reject(new Error(`Timeout clearing ${tbl}`)), 3000)
           );
 
-          await Promise.race([delPromise, timeoutPromise]);
+          const { error: delErr } = await Promise.race([delPromise, timeoutPromise]) as any;
+
+          if (!delErr) {
+            return;
+          }
+
+          console.warn(`[ResetDatabase] Lapis 1 not.is.null gagal pada ${tbl}: ${delErr?.message}, mencoba Lapis 2 (.in)...`);
+
+          // Lapis 2 (Jaminan 100%): Ambil ID baris yang tersisa, lalu hapus berdasarkan list ID
+          const { data: rows, error: selectErr } = await client
+            .from(tbl)
+            .select(pk)
+            .limit(1000);
+
+          if (!selectErr && rows && rows.length > 0) {
+            const ids = rows.map((r: any) => r[pk]).filter((v: any) => v !== undefined && v !== null);
+            if (ids.length > 0) {
+              const inPromise = client.from(tbl).delete().in(pk, ids);
+              const inTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout in ${tbl}`)), 3000));
+              const { error: inErr } = await Promise.race([inPromise, inTimeout]) as any;
+
+              if (inErr) {
+                console.warn(`[ResetDatabase] Lapis 2 error pada ${tbl}:`, inErr.message);
+              }
+            }
+          }
         } catch (err: any) {
-          console.warn(`[ResetDatabase] Cloud wipe error on ${tbl}:`, err?.message);
+          console.warn(`[ResetDatabase] Cloud wipe skipped on ${tbl}:`, err?.message);
         }
       };
 

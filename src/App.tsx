@@ -142,43 +142,57 @@ export default function App() {
     }
   };
 
-  // Reload all state from adapter
-  const reloadData = () => {
-    sanitizeProductionsInStorage();
-    // Otomatis cek dan terapkan perubahan harga terjadwal (Bahan Penolong & Produk)
-    checkAndApplyScheduledPriceChanges();
-    // Auto-sync operational modules into Keuangan (Jurnal, Piutang, HPP)
-    syncAllModulesToFinance({ autoPostToGeneralJournal: true });
+  const reloadDebounceRef = useRef<any>(null);
+  const isReloadingRef = useRef<boolean>(false);
 
-    setProducts(getTableData<ProductItem>('MD_Produk', []));
-    setCustomers(getTableData<CustomerItem>('MD_Pelanggan', []));
-    setSuppliers(getTableData<SupplierItem>('MD_Supplier', []));
-    setRawMaterials(getTableData<RawMaterialItem>('MD_BahanPenolong', []));
-    setBoms(getTableData<BOMItem>('MD_BOM', []));
-    setEmployees(getTableData<EmployeeItem>('MD_Karyawan', []));
-    setUsers(getTableData<UserAccount>('MD_UserAkses', []));
-    setSpecialPrices(getTableData<SpecialPriceItem>('MD_HargaKhusus', []));
-    setSpks(getTableData<SPKItem>('SPK', []));
-    setProductions(getTableData<ProductionItem>('Produksi', []));
-    setDistributions(getTableData<DistributionItem>('Distribusi', []));
-    setDistributionItems(getTableData<DistributionProductDetail>('Distribusi_Item', []));
-    setPurchases(getTableData<RawMaterialPurchase>('Pembelian_Bahan', []));
-    setMutations(getTableData<RawMaterialMutation>('Mutasi_Bahan', []));
-    setQcHeaders(getTableData<QCHeader>('Data_QC', []));
-    setQcDetails(getTableData<QCDetailCycle>('Data_QC_Detail', []));
-    setAttendances(getTableData<AttendanceRecord>('Data_Presensi', []));
-    setOvertimes(getTableData<OvertimeRecord>('Data_Lembur', []));
-    setKasbons(getTableData<KasbonRecord>('Data_Kasbon', []));
-    setPayrollHistory(getTableData<PayrollHistoryItem>('Histori_Penggajian', []));
-    setCoas(getTableData<COAItem>('Master_COA', []));
-    setJournals(getTableData<GeneralJournalItem>('Jurnal_Umum', []));
-    setDraftJournals(getTableData<DraftJournalItem>('Draf_Jurnal', []));
-    setAssets(getTableData<FixedAssetItem>('Data_Aset_Tetap', []));
-    setReceivables(getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []));
-    
-    const notifs = calculateRealtimeNotifications();
-    setNotifications(notifs);
-  };
+  // Reload all state from adapter with debounce & infinite loop guard (Anti-Lag / Anti-Hang)
+  const reloadData = useCallback(() => {
+    if (reloadDebounceRef.current) {
+      clearTimeout(reloadDebounceRef.current);
+    }
+    reloadDebounceRef.current = setTimeout(() => {
+      if (isReloadingRef.current) return;
+      isReloadingRef.current = true;
+      try {
+        sanitizeProductionsInStorage();
+        // Otomatis cek dan terapkan perubahan harga terjadwal (Bahan Penolong & Produk)
+        checkAndApplyScheduledPriceChanges();
+        // Auto-sync operational modules into Keuangan (skip cloud upload & skip notify loop)
+        syncAllModulesToFinance({ autoPostToGeneralJournal: true, skipCloudSync: true, skipNotify: true });
+
+        setProducts(getTableData<ProductItem>('MD_Produk', []));
+        setCustomers(getTableData<CustomerItem>('MD_Pelanggan', []));
+        setSuppliers(getTableData<SupplierItem>('MD_Supplier', []));
+        setRawMaterials(getTableData<RawMaterialItem>('MD_BahanPenolong', []));
+        setBoms(getTableData<BOMItem>('MD_BOM', []));
+        setEmployees(getTableData<EmployeeItem>('MD_Karyawan', []));
+        setUsers(getTableData<UserAccount>('MD_UserAkses', []));
+        setSpecialPrices(getTableData<SpecialPriceItem>('MD_HargaKhusus', []));
+        setSpks(getTableData<SPKItem>('SPK', []));
+        setProductions(getTableData<ProductionItem>('Produksi', []));
+        setDistributions(getTableData<DistributionItem>('Distribusi', []));
+        setDistributionItems(getTableData<DistributionProductDetail>('Distribusi_Item', []));
+        setPurchases(getTableData<RawMaterialPurchase>('Pembelian_Bahan', []));
+        setMutations(getTableData<RawMaterialMutation>('Mutasi_Bahan', []));
+        setQcHeaders(getTableData<QCHeader>('Data_QC', []));
+        setQcDetails(getTableData<QCDetailCycle>('Data_QC_Detail', []));
+        setAttendances(getTableData<AttendanceRecord>('Data_Presensi', []));
+        setOvertimes(getTableData<OvertimeRecord>('Data_Lembur', []));
+        setKasbons(getTableData<KasbonRecord>('Data_Kasbon', []));
+        setPayrollHistory(getTableData<PayrollHistoryItem>('Histori_Penggajian', []));
+        setCoas(getTableData<COAItem>('Master_COA', []));
+        setJournals(getTableData<GeneralJournalItem>('Jurnal_Umum', []));
+        setDraftJournals(getTableData<DraftJournalItem>('Draf_Jurnal', []));
+        setAssets(getTableData<FixedAssetItem>('Data_Aset_Tetap', []));
+        setReceivables(getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []));
+        
+        const notifs = calculateRealtimeNotifications();
+        setNotifications(notifs);
+      } finally {
+        isReloadingRef.current = false;
+      }
+    }, 200);
+  }, []);
 
   useEffect(() => {
     // 0. Recovery helper accessible from browser console
@@ -268,8 +282,9 @@ export default function App() {
       });
     }
 
-    // 7b. Interval background polling (setiap 12 detik) untuk memastikan 100% realtime multi-device & multi-browser
+    // 7b. Interval background polling hemat CPU (setiap 60 detik saat tab aktif)
     const realtimePollInterval = setInterval(() => {
+      if (document.hidden) return; // Hemat baterai & CPU jika tab di-minimize
       const curCfg = getSupabaseConfig();
       if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
         syncAllTablesFromSupabase({ silent: true })
@@ -280,7 +295,7 @@ export default function App() {
           })
           .catch(() => {});
       }
-    }, 12000);
+    }, 60000);
 
     // Auto-sync saat tab browser aktif kembali (focus)
     const handleWindowFocus = () => {

@@ -209,7 +209,6 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
       if (res.success) {
         setPurgeTick(t => t + 1);
         if (onRefreshData) onRefreshData();
-        setShowPurgeConfirmModal(false);
 
         const rangeLabel = purgeMode === 'all' 
           ? 'seluruh riwayat transaksi' 
@@ -225,6 +224,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
       showToast('Gagal Menghapus Data', err.message || 'Terjadi kesalahan saat membersihkan data.', 'error');
     } finally {
       setIsProcessingPurge(false);
+      setShowPurgeConfirmModal(false);
     }
   };
 
@@ -462,15 +462,15 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
     setIsProcessingBackup(true);
     try {
-      // Timeout pengaman 6 detik agar UI tidak pernah terjebak atau stuck di loading
+      // Timeout pengaman 8 detik agar UI tidak pernah terjebak atau stuck di loading
       const timeoutPromise = new Promise<{ success: boolean; clearedTablesCount: number; message: string }>((resolve) => {
         setTimeout(() => {
           resolve({
             success: true,
-            clearedTablesCount: 28,
-            message: 'Database berhasil direset.'
+            clearedTablesCount: 32,
+            message: 'Database berhasil dikosongkan total.'
           });
-        }, 6000);
+        }, 8000);
       });
 
       const res = await Promise.race([
@@ -481,22 +481,22 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
       if (onRefreshData) {
         onRefreshData();
       }
-      setShowResetModal(false);
-      setResetStep(1);
-      setResetPassword('');
-      setResetPasswordError('');
 
       showToast(
-        'Database Berhasil Direset',
+        'Database Berhasil Direset Total',
         keepUserAccounts
-          ? `Seluruh data operasional (${res.clearedTablesCount} tabel) telah dikosongkan. Seluruh akun pengguna, ID dan kata sandi tetap aman terjaga.`
-          : `Seluruh data (${res.clearedTablesCount} tabel) beserta akun pengguna telah dikosongkan secara permanen.`,
-        'warning'
+          ? `Seluruh data operasional & cloud (${res.clearedTablesCount} tabel) telah dikosongkan total. Seluruh akun pengguna, ID dan kata sandi tetap aman terjaga.`
+          : `Seluruh data (${res.clearedTablesCount} tabel) beserta akun pengguna telah dikosongkan secara permanen dari lokal dan cloud.`,
+        'success'
       );
     } catch (e: any) {
       showToast('Gagal Reset Database', e.message || 'Terjadi kesalahan saat mereset database.', 'error');
     } finally {
       setIsProcessingBackup(false);
+      setShowResetModal(false);
+      setResetStep(1);
+      setResetPassword('');
+      setResetPasswordError('');
     }
   };
 

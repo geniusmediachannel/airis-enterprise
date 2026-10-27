@@ -57,9 +57,15 @@ const DEFAULT_UNIT_HPP: Record<string, number> = {
 /**
  * Core engine that synchronizes all operational modules into Keuangan
  */
-export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: boolean }): FinanceSyncResult {
+export function syncAllModulesToFinance(options?: { 
+  autoPostToGeneralJournal?: boolean;
+  skipCloudSync?: boolean;
+  skipNotify?: boolean;
+}): FinanceSyncResult {
   try {
     const autoPost = options?.autoPostToGeneralJournal !== false; // Default: true
+    const skipCloud = options?.skipCloudSync === true;
+    const skipNotif = options?.skipNotify === true;
 
     // 1. Load operational data (safely filter null/undefined records)
     const rawDistributions = getTableData<DistributionItem>('Distribusi', []) || [];
@@ -735,11 +741,14 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
       return true;
     });
 
-    setTableData('Jurnal_Umum', journals);
-    setTableData('Draf_Jurnal', cleanDrafts);
-    setTableData('Data_Piutang_Utang', piutangUtang);
-    setTableData('Mutasi_Bahan', mutations);
-    notifyDbChange();
+    const syncOpts = { skipCloudSync: skipCloud };
+    setTableData('Jurnal_Umum', journals, syncOpts);
+    setTableData('Draf_Jurnal', cleanDrafts, syncOpts);
+    setTableData('Data_Piutang_Utang', piutangUtang, syncOpts);
+    setTableData('Mutasi_Bahan', mutations, syncOpts);
+    if (!skipNotif) {
+      notifyDbChange();
+    }
   }
 
   const msgParts: string[] = [];
