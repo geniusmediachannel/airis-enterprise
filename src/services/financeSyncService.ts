@@ -84,6 +84,29 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
     const rawMaterials = (Array.isArray(rawRawMaterials) ? rawRawMaterials : []).filter(rm => rm && typeof rm === 'object');
     const products = (Array.isArray(rawProducts) ? rawProducts : []).filter(p => p && typeof p === 'object');
 
+    const hasAnyOperationalData = distributions.length > 0 || productions.length > 0 || purchases.length > 0 || payrolls.length > 0 || kasbons.length > 0 || customerPayments.length > 0;
+
+    if (!hasAnyOperationalData) {
+      // Jika data operasional kosong total (misal pasca reset database)
+      // Jaga agar keuangan tetap bersih (tidak membangkitkan draf atau jurnal baru)
+      const currentJournals = (getTableData<GeneralJournalItem>('Jurnal_Umum', []) || []).filter(j => j && typeof j === 'object');
+      if (currentJournals.length === 0) {
+        setTableData('Draf_Jurnal', []);
+        setTableData('Data_Piutang_Utang', []);
+        return {
+          success: true,
+          syncedDistributions: 0,
+          syncedProductions: 0,
+          syncedPurchases: 0,
+          syncedPayrolls: 0,
+          syncedKasbons: 0,
+          syncedPayments: 0,
+          totalJournalsAdded: 0,
+          message: 'Data operasional kosong. Modul keuangan tetap bersih Rp 0.'
+        };
+      }
+    }
+
     // 2. Load financial tables (safely filter null/undefined records)
     let journals = [...(getTableData<GeneralJournalItem>('Jurnal_Umum', []) || [])].filter(j => j && typeof j === 'object');
     let drafts = [...(getTableData<DraftJournalItem>('Draf_Jurnal', []) || [])].filter(d => d && typeof d === 'object');

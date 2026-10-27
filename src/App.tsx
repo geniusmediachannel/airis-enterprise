@@ -274,7 +274,7 @@ export default function App() {
       if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
         syncAllTablesFromSupabase({ silent: true })
           .then(res => {
-            if (res.success && res.tablesCount > 0) {
+            if (res.success) {
               reloadData();
             }
           })
@@ -560,18 +560,20 @@ export default function App() {
           )}
 
           {(currentView === 'master_data' || currentView === 'master') && (
-            <MasterDataView
-              products={products}
-              customers={customers}
-              suppliers={suppliers}
-              rawMaterials={rawMaterials}
-              boms={boms}
-              employees={employees}
-              users={users}
-              specialPrices={specialPrices}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Master Data Pabrik">
+              <MasterDataView
+                products={products}
+                customers={customers}
+                suppliers={suppliers}
+                rawMaterials={rawMaterials}
+                boms={boms}
+                employees={employees}
+                users={users}
+                specialPrices={specialPrices}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {(currentView === 'produksi' || currentView === 'production') && (
@@ -589,81 +591,93 @@ export default function App() {
           )}
 
           {(currentView === 'distribusi' || currentView === 'distribution') && (
-            <DistributionView
-              distributions={distributions}
-              distributionItems={distributionItems}
-              products={products}
-              customers={customers}
-              specialPrices={specialPrices}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Distribusi & Penjualan">
+              <DistributionView
+                distributions={distributions}
+                distributionItems={distributionItems}
+                products={products}
+                customers={customers}
+                specialPrices={specialPrices}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {(currentView === 'stock' || currentView === 'stok') && (
-            <StockView
-              products={products}
-              productions={productions}
-              distributions={distributions}
-              distributionItems={distributionItems}
-              rawMaterials={rawMaterials}
-              purchases={purchases}
-              mutations={mutations}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Stok & Gudang">
+              <StockView
+                products={products}
+                productions={productions}
+                distributions={distributions}
+                distributionItems={distributionItems}
+                rawMaterials={rawMaterials}
+                purchases={purchases}
+                mutations={mutations}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {currentView === 'qc' && (
-            <QCView
-              qcHeaders={qcHeaders}
-              qcDetails={qcDetails}
-              products={products}
-              productions={productions}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Quality Control (QC)">
+              <QCView
+                qcHeaders={qcHeaders}
+                qcDetails={qcDetails}
+                products={products}
+                productions={productions}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {(currentView === 'keuangan' || currentView === 'finance') && (
-            <FinanceView
-              journals={journals}
-              coas={coas}
-              draftJournals={draftJournals}
-              assets={assets}
-              receivables={receivables}
-              distributions={distributions}
-              distributionItems={distributionItems}
-              customers={customers}
-              purchases={purchases}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Keuangan & Akuntansi">
+              <FinanceView
+                journals={journals}
+                coas={coas}
+                draftJournals={draftJournals}
+                assets={assets}
+                receivables={receivables}
+                distributions={distributions}
+                distributionItems={distributionItems}
+                customers={customers}
+                purchases={purchases}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {currentView === 'hrd' && (
-            <HRDView
-              employees={employees}
-              attendances={attendances}
-              overtimes={overtimes}
-              kasbons={kasbons}
-              payrollHistory={payrollHistory}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="SDM & Penggajian">
+              <HRDView
+                employees={employees}
+                attendances={attendances}
+                overtimes={overtimes}
+                kasbons={kasbons}
+                payrollHistory={payrollHistory}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {(currentView === 'administrasi' || currentView === 'admin') && (
-            <AdminDocsView
-              suppliers={suppliers}
-              rawMaterials={rawMaterials}
-              customers={customers}
-              distributions={distributions}
-              distributionItems={distributionItems}
-              products={products}
-              onRefresh={reloadData}
-              onOpenImport={handleOpenImportForModule}
-            />
+            <ErrorBoundary viewName="Administrasi & Persuratan Resmi">
+              <AdminDocsView
+                suppliers={suppliers}
+                rawMaterials={rawMaterials}
+                customers={customers}
+                distributions={distributions}
+                distributionItems={distributionItems}
+                products={products}
+                onRefresh={reloadData}
+                onOpenImport={handleOpenImportForModule}
+              />
+            </ErrorBoundary>
           )}
 
           {(currentView === 'log_akses' || currentView === 'access_log') && (

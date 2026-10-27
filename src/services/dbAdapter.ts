@@ -357,7 +357,10 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status'],
   Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN'],
   Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Kepada', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Dibuat_Oleh'],
-  Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status']
+  Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status'],
+  Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Produk', 'Spesifikasi', 'Qty', 'Harga_Satuan', 'Total_Harga'],
+  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Keterangan', 'Items', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
+  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'ID_Distribusi', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Metode_Bayar', 'No_Referensi', 'Keterangan']
 };
 
 function sanitizeRowsForTable(tableName: string, rows: any[]): any[] {
@@ -503,7 +506,10 @@ export const ALL_DATABASE_TABLES = [
   'Data_Piutang_Utang',
   'Data_Aset_Tetap',
   'Data_Surat',
-  'Admin_PO'
+  'Admin_PO',
+  'Admin_PO_Detail',
+  'Data_Custom_Invoice',
+  'Data_Pembayaran_Pelanggan'
 ];
 
 /**
@@ -564,11 +570,23 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
   return null;
 }
 
+// -------------------------------------------------------------
+// CLOUD SYNC & DATABASE RESET STATUS
+// -------------------------------------------------------------
+let isDatabaseResetting = false;
+
+export function isResetInProgress(): boolean {
+  return isDatabaseResetting;
+}
+
 /**
  * Sinkronisasi seluruh tabel dari Supabase Cloud ke browser lokal (Pull All)
  * Ini memastikan semua browser dan device memiliki data yang 100% identik
  */
 export async function syncAllTablesFromSupabase(options?: { silent?: boolean; customConfig?: SupabaseConfig }): Promise<{ success: boolean; message: string; tablesCount: number }> {
+  if (isDatabaseResetting) {
+    return { success: false, message: 'Sinkronisasi ditangguhkan karena proses reset database sedang berlangsung.', tablesCount: 0 };
+  }
   if (options?.customConfig?.url && options?.customConfig?.anonKey) {
     saveSupabaseConfig(options.customConfig);
   }
@@ -726,6 +744,7 @@ export function setupSupabaseRealtimeSync(onUpdated?: (tableName: string) => voi
         'postgres_changes',
         { event: '*', schema: 'public' },
         (payload: any) => {
+          if (isDatabaseResetting) return;
           const table = payload.table;
           if (table) {
             fetchSingleTableFromSupabase(table).then(() => {
@@ -1287,103 +1306,129 @@ export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { tota
  * Clears both memory cache, localStorage, AND Supabase Cloud tables permanently.
  */
 export async function resetAllDatabase(keepUserAccounts: boolean = true): Promise<{ success: boolean; clearedTablesCount: number; message: string }> {
-  const tableNames = [
-    // 1. Child tables (harus dihapus terlebih dahulu demi integritas foreign key)
-    'Distribusi_Item', 'Data_QC_Detail', 'Admin_PO_Detail', 'Mutasi_Bahan',
-    'Data_Presensi', 'Data_Lembur', 'Data_Kasbon', 'Histori_Penggajian',
-    'MD_BOM', 'MD_HargaKhusus', 'MD_Harga_Khusus', 'Data_Pembayaran_Pelanggan',
-    // 2. Transaksional & Dokumen
-    'Rencana_Distribusi', 'Distribusi', 'Produksi', 'SPK', 'Pembelian_Bahan',
-    'Data_QC', 'Jurnal_Umum', 'Draf_Jurnal', 'Draft_Jurnal', 'Data_Piutang_Utang',
-    'Piutang_Hutang', 'Admin_PO', 'Data_Surat', 'Data_Invoice_Custom',
-    // 3. Master Data
-    'MD_Produk', 'MD_Pelanggan', 'MD_Supplier', 'MD_BahanPenolong', 'MD_Bahan_Baku',
-    'MD_Karyawan', 'HRD_Payroll_Settings', 'Data_COA', 'Master_COA', 'Aset_Tetap', 'Data_Aset_Tetap'
-  ];
+  isDatabaseResetting = true;
+  try {
+    const tableNames = [
+      // 1. Child tables (harus dihapus terlebih dahulu demi integritas foreign key)
+      'Distribusi_Item', 'Data_QC_Detail', 'Admin_PO_Detail', 'Mutasi_Bahan',
+      'Data_Presensi', 'Data_Lembur', 'Data_Kasbon', 'Histori_Penggajian',
+      'MD_BOM', 'MD_HargaKhusus', 'MD_Harga_Khusus', 'Data_Pembayaran_Pelanggan',
+      'Draf_Jurnal', 'Draft_Jurnal', 'Jurnal_Umum', 'Data_Piutang_Utang', 'Piutang_Hutang',
+      // 2. Transaksional & Dokumen
+      'Rencana_Distribusi', 'Distribusi', 'Produksi', 'SPK', 'Pembelian_Bahan',
+      'Data_QC', 'Admin_PO', 'Data_Surat', 'Data_Custom_Invoice', 'Data_Invoice_Custom',
+      'Data_Aset_Tetap', 'Aset_Tetap',
+      // 3. Master Data
+      'MD_Produk', 'MD_Pelanggan', 'MD_Supplier', 'MD_BahanPenolong', 'MD_Bahan_Baku',
+      'MD_Karyawan', 'HRD_Payroll_Settings', 'Data_COA', 'Master_COA'
+    ];
 
-  // 1. Kosongkan memori cache dan localStorage seketika
-  tableNames.forEach(tbl => {
-    memoryTableCache[tbl] = [];
-    localStorage.removeItem(STORAGE_KEY_PREFIX + tbl);
-    localStorage.setItem(STORAGE_KEY_PREFIX + tbl, JSON.stringify([]));
-  });
+    // 1. Kosongkan memori cache dan localStorage seketika
+    tableNames.forEach(tbl => {
+      memoryTableCache[tbl] = [];
+      localStorage.removeItem(STORAGE_KEY_PREFIX + tbl);
+      localStorage.setItem(STORAGE_KEY_PREFIX + tbl, JSON.stringify([]));
+    });
 
-  // Catat timestamp reset agar sinkronisasi background mengetahui bahwa data sengaja dikosongkan
-  localStorage.setItem(STORAGE_KEY_PREFIX + 'DB_RESET_TIMESTAMP', String(Date.now()));
+    // Cegah initializeDatabase() menyuntikkan ulang data dummy setelah reset
+    localStorage.setItem(STORAGE_KEY_PREFIX + 'INITIALIZED', 'true');
+    // Catat timestamp reset agar sinkronisasi background mengetahui bahwa data sengaja dikosongkan
+    localStorage.setItem(STORAGE_KEY_PREFIX + 'DB_RESET_TIMESTAMP', String(Date.now()));
 
-  // 2. Akun pengguna (MD_UserAkses)
-  if (!keepUserAccounts) {
-    memoryTableCache['MD_UserAkses'] = [];
-    localStorage.removeItem(STORAGE_KEY_PREFIX + 'MD_UserAkses');
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify([]));
-  } else {
-    // PERTAHANKAN SELURUH AKUN PENGGUNA (ID, Username, Password, Role, Status)
-    const currentUsers = getTableData<UserAccount>('MD_UserAkses', DEFAULT_USERS);
-    const safeUsers = currentUsers.length > 0 ? currentUsers : DEFAULT_USERS;
-    memoryTableCache['MD_UserAkses'] = safeUsers;
-    localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify(safeUsers));
-  }
-
-  // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung (Paralel + Anti-Hang Timeout)
-  const client = getSupabaseClient();
-  const cfg = getSupabaseConfig();
-
-  if (client && cfg.isConnected && cfg.url && cfg.anonKey) {
-    const clearCloudTable = async (tbl: string) => {
-      const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0];
-      if (!pk) return;
-      try {
-        const delPromise = client
-          .from(tbl)
-          .delete()
-          .neq(pk, pk === 'ID_Entry' ? -999999999 : '___EMPTY_DEL___');
-
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error(`Timeout clearing ${tbl}`)), 3000)
-        );
-
-        await Promise.race([delPromise, timeoutPromise]);
-      } catch (err: any) {
-        console.warn(`[ResetDatabase] Cloud wipe skipped on ${tbl}:`, err?.message);
-      }
-    };
-
-    try {
-      // Tahap 1: Hapus child tables terlebih dahulu secara paralel (max 3 detik)
-      const childTables = ['Distribusi_Item', 'Data_QC_Detail', 'Admin_PO', 'Mutasi_Bahan'].filter(t => ALL_DATABASE_TABLES.includes(t));
-      await Promise.allSettled(childTables.map(t => clearCloudTable(t)));
-
-      // Tahap 2: Hapus tabel operasional & master lainnya secara paralel (max 3 detik)
-      const otherTables = ALL_DATABASE_TABLES.filter(t => !childTables.includes(t) && t !== 'MD_UserAkses');
-      await Promise.allSettled(otherTables.map(t => clearCloudTable(t)));
-
-      // Tahap 3: Tangani akun pengguna
-      if (!keepUserAccounts) {
-        await clearCloudTable('MD_UserAkses');
-      } else {
-        const allUsers = memoryTableCache['MD_UserAkses'] || [];
-        if (allUsers.length > 0) {
-          try {
-            const cleanUsers = sanitizeRowsForTable('MD_UserAkses', allUsers);
-            const upsertPromise = client.from('MD_UserAkses').upsert(cleanUsers as any);
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout user upsert')), 2500));
-            await Promise.race([upsertPromise, timeoutPromise]);
-          } catch (e) {}
-        }
-      }
-    } catch (cloudErr: any) {
-      console.warn('[ResetDatabase] Supabase cloud cleanup completed with warnings:', cloudErr?.message);
+    // 2. Akun pengguna (MD_UserAkses)
+    if (!keepUserAccounts) {
+      memoryTableCache['MD_UserAkses'] = [];
+      localStorage.removeItem(STORAGE_KEY_PREFIX + 'MD_UserAkses');
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify([]));
+    } else {
+      // PERTAHANKAN SELURUH AKUN PENGGUNA (ID, Username, Password, Role, Status)
+      const currentUsers = getTableData<UserAccount>('MD_UserAkses', DEFAULT_USERS);
+      const safeUsers = currentUsers.length > 0 ? currentUsers : DEFAULT_USERS;
+      memoryTableCache['MD_UserAkses'] = safeUsers;
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify(safeUsers));
     }
-  }
 
-  notifyDbChange();
-  return { 
-    success: true, 
-    clearedTablesCount: tableNames.length,
-    message: keepUserAccounts
-      ? `Seluruh database (${tableNames.length} tabel) telah berhasil dikosongkan. Seluruh data akun pengguna, ID dan kata sandi tetap aman terjaga.`
-      : `Seluruh database (${tableNames.length} tabel) beserta akun pengguna telah dikosongkan secara permanen.`
-  };
+    // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung (Cascade Tiers)
+    const client = getSupabaseClient();
+    const cfg = getSupabaseConfig();
+
+    if (client && cfg.isConnected && cfg.url && cfg.anonKey) {
+      const clearCloudTable = async (tbl: string) => {
+        const pk = TABLE_PRIMARY_KEYS[tbl] || TABLE_COLUMNS[tbl]?.[0];
+        if (!pk) return;
+        try {
+          const isNumericPk = pk === 'ID_Entry' || pk === 'id';
+          const delPromise = isNumericPk
+            ? client.from(tbl).delete().gte(pk, 0)
+            : client.from(tbl).delete().neq(pk, '___EMPTY_DEL___');
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Timeout clearing ${tbl}`)), 4000)
+          );
+
+          await Promise.race([delPromise, timeoutPromise]);
+        } catch (err: any) {
+          console.warn(`[ResetDatabase] Cloud wipe error on ${tbl}:`, err?.message);
+        }
+      };
+
+      try {
+        // TIER 1: Hapus seluruh Child / Detail tables terlebih dahulu (Bebas Foreign Key Constraint)
+        const tier1 = [
+          'Distribusi_Item', 'Data_QC_Detail', 'Admin_PO_Detail', 'Mutasi_Bahan',
+          'Data_Presensi', 'Data_Lembur', 'Data_Kasbon', 'Histori_Penggajian',
+          'Draf_Jurnal', 'Jurnal_Umum', 'Data_Piutang_Utang', 'Data_Pembayaran_Pelanggan',
+          'MD_BOM', 'MD_HargaKhusus'
+        ].filter(t => ALL_DATABASE_TABLES.includes(t));
+        await Promise.allSettled(tier1.map(t => clearCloudTable(t)));
+
+        // TIER 2: Hapus Dokumen Operasional & Transaksi Header
+        const tier2 = [
+          'Distribusi', 'Rencana_Distribusi', 'Produksi', 'SPK', 'Pembelian_Bahan',
+          'Data_QC', 'Admin_PO', 'Data_Surat', 'Data_Custom_Invoice', 'Data_Aset_Tetap'
+        ].filter(t => ALL_DATABASE_TABLES.includes(t));
+        await Promise.allSettled(tier2.map(t => clearCloudTable(t)));
+
+        // TIER 3: Hapus Master Data Pabrik
+        const tier3 = [
+          'MD_Produk', 'MD_Pelanggan', 'MD_Supplier', 'MD_BahanPenolong',
+          'MD_Karyawan', 'Master_COA'
+        ].filter(t => ALL_DATABASE_TABLES.includes(t));
+        await Promise.allSettled(tier3.map(t => clearCloudTable(t)));
+
+        // TIER 4: Tangani akun pengguna
+        if (!keepUserAccounts) {
+          await clearCloudTable('MD_UserAkses');
+        } else {
+          const allUsers = memoryTableCache['MD_UserAkses'] || [];
+          if (allUsers.length > 0) {
+            try {
+              const cleanUsers = sanitizeRowsForTable('MD_UserAkses', allUsers);
+              const upsertPromise = client.from('MD_UserAkses').upsert(cleanUsers as any);
+              const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout user upsert')), 2500));
+              await Promise.race([upsertPromise, timeoutPromise]);
+            } catch (e) {}
+          }
+        }
+      } catch (cloudErr: any) {
+        console.warn('[ResetDatabase] Supabase cloud cleanup completed with warnings:', cloudErr?.message);
+      }
+    }
+
+    notifyDbChange();
+    return {
+      success: true,
+      clearedTablesCount: tableNames.length,
+      message: keepUserAccounts
+        ? `Seluruh database (${tableNames.length} tabel) telah berhasil dikosongkan. Seluruh data akun pengguna, ID dan kata sandi tetap aman terjaga.`
+        : `Seluruh database (${tableNames.length} tabel) beserta akun pengguna telah dikosongkan secara permanen.`
+    };
+  } finally {
+    // Tunggu jeda singkat sebelum membebaskan sinkronisasi agar event realtime yang tertinggal terabaikan
+    setTimeout(() => {
+      isDatabaseResetting = false;
+    }, 1500);
+  }
 }
 
 export function verifyAndPostDraftJournal(draftId: string, author: string = 'Finance'): { success: boolean; message: string } {

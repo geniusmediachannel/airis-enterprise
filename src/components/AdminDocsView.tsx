@@ -42,10 +42,22 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   const [activeTab, setActiveTab] = useState<'surat' | 'po' | 'invoice_custom'>('surat');
 
   // Letters Collection
-  const [letters, setLetters] = useState<OfficialLetterItem[]>(() => getTableData<OfficialLetterItem>('Data_Surat', []));
-  const [poHeaders, setPoHeaders] = useState<AdminPOHeader[]>(() => getTableData<AdminPOHeader>('Admin_PO', []));
-  const [poDetails, setPoDetails] = useState<AdminPODetail[]>(() => getTableData<AdminPODetail>('Admin_PO_Detail', []));
-  const [customInvoices, setCustomInvoices] = useState<CustomInvoiceItem[]>(() => getTableData<CustomInvoiceItem>('Data_Custom_Invoice', []));
+  const [letters, setLetters] = useState<OfficialLetterItem[]>(() => {
+    const data = getTableData<OfficialLetterItem>('Data_Surat', []);
+    return Array.isArray(data) ? data : [];
+  });
+  const [poHeaders, setPoHeaders] = useState<AdminPOHeader[]>(() => {
+    const data = getTableData<AdminPOHeader>('Admin_PO', []);
+    return Array.isArray(data) ? data : [];
+  });
+  const [poDetails, setPoDetails] = useState<AdminPODetail[]>(() => {
+    const data = getTableData<AdminPODetail>('Admin_PO_Detail', []);
+    return Array.isArray(data) ? data : [];
+  });
+  const [customInvoices, setCustomInvoices] = useState<CustomInvoiceItem[]>(() => {
+    const data = getTableData<CustomInvoiceItem>('Data_Custom_Invoice', []);
+    return Array.isArray(data) ? data : [];
+  });
 
   // Search Queries for Admin Modules
   const [letterSearchQuery, setLetterSearchQuery] = useState<string>('');
@@ -53,17 +65,19 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
 
   // Filtered Letters (Surat Resmi) dengan pencarian teks
   const filteredLetters = useMemo(() => {
-    let list = letters;
+    let list = Array.isArray(letters) ? letters : [];
     if (letterSearchQuery.trim()) {
       const q = letterSearchQuery.toLowerCase();
       list = list.filter(l => 
-        String(l.Nomor_Surat || '').toLowerCase().includes(q) ||
-        String(l.Perihal || '').toLowerCase().includes(q) ||
-        String(l.Kepada || '').toLowerCase().includes(q) ||
-        String(l.Tipe_Surat || '').toLowerCase().includes(q) ||
-        String(l.Penandatangan_Nama || '').toLowerCase().includes(q) ||
-        String(l.Isi_Surat || '').toLowerCase().includes(q) ||
-        String(l.Tanggal || '').toLowerCase().includes(q)
+        l && (
+          String(l.Nomor_Surat || '').toLowerCase().includes(q) ||
+          String(l.Perihal || '').toLowerCase().includes(q) ||
+          String(l.Kepada || '').toLowerCase().includes(q) ||
+          String(l.Tipe_Surat || '').toLowerCase().includes(q) ||
+          String(l.Penandatangan_Nama || '').toLowerCase().includes(q) ||
+          String(l.Isi_Surat || '').toLowerCase().includes(q) ||
+          String(l.Tanggal || '').toLowerCase().includes(q)
+        )
       );
     }
     return list;
@@ -71,15 +85,17 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
 
   // Filtered Purchase Orders dengan pencarian teks
   const filteredPoHeaders = useMemo(() => {
-    let list = poHeaders;
+    let list = Array.isArray(poHeaders) ? poHeaders : [];
     if (poSearchQuery.trim()) {
       const q = poSearchQuery.toLowerCase();
       list = list.filter(p => 
-        String(p.No_PO || '').toLowerCase().includes(q) ||
-        String(p.Order_Ke || '').toLowerCase().includes(q) ||
-        String(p.Alamat_Supplier || '').toLowerCase().includes(q) ||
-        String(p.Status || '').toLowerCase().includes(q) ||
-        String(p.Tanggal_PO || '').toLowerCase().includes(q)
+        p && (
+          String(p.No_PO || '').toLowerCase().includes(q) ||
+          String(p.Order_Ke || '').toLowerCase().includes(q) ||
+          String(p.Alamat_Supplier || '').toLowerCase().includes(q) ||
+          String(p.Status || '').toLowerCase().includes(q) ||
+          String(p.Tanggal_PO || '').toLowerCase().includes(q)
+        )
       );
     }
     return list;
@@ -763,15 +779,16 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
       subtotal: number;
     }[] = [];
 
-    items.forEach(it => {
-      const key = it.Nama_Produk.trim().toLowerCase();
-      const existing = aggregated.find(a => a.nama.trim().toLowerCase() === key);
+    (items || []).forEach(it => {
+      if (!it) return;
+      const key = String(it.Nama_Produk || '').trim().toLowerCase();
+      const existing = aggregated.find(a => String(a.nama || '').trim().toLowerCase() === key);
       if (existing) {
         existing.qty += Number(it.Qty) || 0;
         existing.subtotal += Number(it.Subtotal) || 0;
       } else {
         aggregated.push({
-          nama: it.Nama_Produk,
+          nama: it.Nama_Produk || '-',
           qty: Number(it.Qty) || 0,
           satuan: it.Satuan || 'Karton',
           harga: Number(it.Harga_Satuan) || 0,
@@ -2029,18 +2046,20 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   };
 
   // Filtered shipments available for selected customer
-  const customerAvailableShipments = distributions.filter(d => {
-    if (!invoiceForm.Nama_Pelanggan) return false;
-    return d.Nama_Pelanggan?.trim().toLowerCase() === invoiceForm.Nama_Pelanggan.trim().toLowerCase();
+  const customerAvailableShipments = (distributions || []).filter(d => {
+    if (!d || !invoiceForm?.Nama_Pelanggan) return false;
+    return String(d.Nama_Pelanggan || '').trim().toLowerCase() === String(invoiceForm.Nama_Pelanggan || '').trim().toLowerCase();
   });
 
   // Filtered invoices for list view
-  const filteredCustomInvoices = customInvoices.filter(inv => {
+  const filteredCustomInvoices = (customInvoices || []).filter(inv => {
+    if (!inv) return false;
+    const q = (invoiceSearchQuery || '').toLowerCase();
     const matchesSearch = 
-      inv.No_Invoice.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
-      inv.Nama_Pelanggan.toLowerCase().includes(invoiceSearchQuery.toLowerCase()) ||
-      (inv.No_PO_Pelanggan && inv.No_PO_Pelanggan.toLowerCase().includes(invoiceSearchQuery.toLowerCase())) ||
-      (inv.No_Surat_Jalan_List && inv.No_Surat_Jalan_List.join(' ').toLowerCase().includes(invoiceSearchQuery.toLowerCase()));
+      String(inv.No_Invoice || '').toLowerCase().includes(q) ||
+      String(inv.Nama_Pelanggan || '').toLowerCase().includes(q) ||
+      (inv.No_PO_Pelanggan && String(inv.No_PO_Pelanggan).toLowerCase().includes(q)) ||
+      (inv.No_Surat_Jalan_List && Array.isArray(inv.No_Surat_Jalan_List) && inv.No_Surat_Jalan_List.join(' ').toLowerCase().includes(q));
 
     const matchesStatus = invoiceStatusFilter === 'all' || inv.Status === invoiceStatusFilter;
     return matchesSearch && matchesStatus;
@@ -4039,7 +4058,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                 if (sigList.length === 1) {
                   const sig = sigList[0];
                   const hasCustomTtd = Boolean(sig.customTtdImage && sig.customTtdImage.trim().length > 30);
-                  const isMarko = sig.nama.toLowerCase().includes('marko');
+                  const isMarko = String(sig?.nama || '').toLowerCase().includes('marko');
 
                   return (
                     <div className="flex justify-end mt-6 text-center">
@@ -4107,7 +4126,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                       {sigList.map((sig, idx) => {
                         const isInternal = idx === 1 || (idx === sigList.length - 1 && sigList.length > 1);
                         const hasCustomTtd = Boolean(sig.customTtdImage && sig.customTtdImage.trim().length > 30);
-                        const isMarko = sig.nama.toLowerCase().includes('marko');
+                        const isMarko = String(sig?.nama || '').toLowerCase().includes('marko');
 
                         return (
                           <div key={sig.id} className="flex flex-col justify-between min-w-[130px]">
@@ -4788,9 +4807,9 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                               </thead>
                               <tbody>
                                 {grp.items.map((item, idx) => {
-                                  const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
-                                  const satuanStr = item.Satuan || (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon') ? 'Galon' : 'Karton');
-                                  const isZero = (Number(item.Qty) || 0) === 0 || (Number(item.Subtotal) || 0) === 0;
+                                  const prod = (products || []).find(p => p && (p.ID_Produk === item?.ID_Produk || p.Nama_Produk === item?.Nama_Produk));
+                                  const satuanStr = item?.Satuan || (prod?.Satuan?.toLowerCase().includes('galon') || String(item?.Nama_Produk || '').toLowerCase().includes('galon') ? 'Galon' : 'Karton');
+                                  const isZero = (Number(item?.Qty) || 0) === 0 || (Number(item?.Subtotal) || 0) === 0;
 
                                   return (
                                     <tr key={idx} className="border border-black">
