@@ -86,6 +86,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
   const [resetPassword, setResetPassword] = useState<string>('');
   const [resetPasswordError, setResetPasswordError] = useState<string>('');
   const [showResetPasswordPlain, setShowResetPasswordPlain] = useState<boolean>(false);
+  const [keepUserAccounts, setKeepUserAccounts] = useState<boolean>(true);
 
   // ==============================================================
   // OPERATIONAL TRANSACTION PURGE STATE (HAPUS DATA DISTRIBUSI, PRODUKSI, DLL)
@@ -461,7 +462,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
     setIsProcessingBackup(true);
     try {
-      const res = await resetAllDatabase(true);
+      const res = await resetAllDatabase(keepUserAccounts);
       if (onRefreshData) {
         onRefreshData();
       }
@@ -472,7 +473,9 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
       showToast(
         'Database Berhasil Direset',
-        `Seluruh data (${res.clearedTablesCount} tabel) telah dikosongkan secara permanen baik di lokal maupun di cloud. Akun SuperAdmin tetap aktif untuk login.`,
+        keepUserAccounts
+          ? `Seluruh data (${res.clearedTablesCount} tabel) telah dikosongkan. Seluruh akun pengguna, ID dan kata sandi tetap aman terjaga.`
+          : `Seluruh data (${res.clearedTablesCount} tabel) beserta akun pengguna telah dikosongkan secara permanen.`,
         'warning'
       );
     } catch (e: any) {
@@ -1610,6 +1613,18 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                       </ul>
                     </div>
 
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-emerald-950">
+                      <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block text-xs font-bold text-emerald-900">
+                          Data Akun Pengguna, ID &amp; Password Tetap Aman (Tidak Dihapus)
+                        </strong>
+                        <p className="text-[11px] text-emerald-800 leading-relaxed mt-0.5">
+                          Seluruh data akun pengguna (Admin, Finance, Gudang, Produksi, HRD, dll.) beserta username, ID, dan kata sandinya <strong>tidak akan terhapus</strong>. Semua staf dan admin tetap dapat login seperti biasa setelah reset selesai.
+                        </p>
+                      </div>
+                    </div>
+
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-center gap-2">
                       <Download size={16} className="text-amber-600 shrink-0" />
                       <span>
@@ -1677,6 +1692,26 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                         Tindakan ini <strong>TIDAK DAPAT DIBATALKAN</strong>. Seluruh data pada 32 tabel sistem akan dikosongkan secara permanen.
                       </p>
                     </div>
+
+                    {/* Opsi Pertahankan Akun Pengguna */}
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-emerald-200 bg-emerald-50/80 cursor-pointer hover:bg-emerald-50 transition">
+                      <input
+                        type="checkbox"
+                        checked={keepUserAccounts}
+                        onChange={e => setKeepUserAccounts(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 mt-0.5 cursor-pointer"
+                      />
+                      <div>
+                        <span className="font-bold text-xs text-emerald-950 block">
+                          Pertahankan Seluruh Akun Pengguna, ID &amp; Kata Sandi (Direkomendasikan)
+                        </span>
+                        <span className="text-[11px] text-emerald-800 block mt-0.5">
+                          {keepUserAccounts 
+                            ? '✅ Seluruh akun login user, ID dan kata sandi tetap aman terjaga. Hanya data operasional/transaksi yang dihapus total.' 
+                            : '⚠️ Perhatian: Menghilangkan centang akan ikut menghapus seluruh akun staf (hanya SuperAdmin darurat yang tersisa).'}
+                        </span>
+                      </div>
+                    </label>
 
                     <div>
                       <label className="block font-bold text-slate-800 mb-1.5 flex items-center gap-1.5">

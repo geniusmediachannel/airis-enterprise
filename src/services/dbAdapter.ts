@@ -1279,10 +1279,10 @@ export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { tota
 
 /**
  * Resets all tables in the database (clears all operational & transactional data).
- * Keeps admin accounts intact by default so the user is never locked out.
+ * Keeps all user accounts and passwords intact by default so users can still log in.
  * Clears both memory cache, localStorage, AND Supabase Cloud tables permanently.
  */
-export async function resetAllDatabase(keepAdminAccount: boolean = true): Promise<{ success: boolean; clearedTablesCount: number; message: string }> {
+export async function resetAllDatabase(keepUserAccounts: boolean = true): Promise<{ success: boolean; clearedTablesCount: number; message: string }> {
   const tableNames = [
     // 1. Child tables (harus dihapus terlebih dahulu demi integritas foreign key)
     'Distribusi_Item', 'Data_QC_Detail', 'Admin_PO_Detail', 'Mutasi_Bahan',
@@ -1307,20 +1307,20 @@ export async function resetAllDatabase(keepAdminAccount: boolean = true): Promis
   // Catat timestamp reset agar sinkronisasi background mengetahui bahwa data sengaja dikosongkan
   localStorage.setItem(STORAGE_KEY_PREFIX + 'DB_RESET_TIMESTAMP', String(Date.now()));
 
-  // 2. Akun pengguna
-  if (!keepAdminAccount) {
+  // 2. Akun pengguna (MD_UserAkses)
+  if (!keepUserAccounts) {
     memoryTableCache['MD_UserAkses'] = [];
     localStorage.removeItem(STORAGE_KEY_PREFIX + 'MD_UserAkses');
     localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify([]));
   } else {
+    // PERTAHANKAN SELURUH AKUN PENGGUNA (ID, Username, Password, Role, Status)
     const currentUsers = getTableData<UserAccount>('MD_UserAkses', DEFAULT_USERS);
-    const retainedUsers = currentUsers.filter(u => u.Role === 'SuperAdmin' || u.Role === 'HyperAdmin' || u.Username === 'admin' || u.Username === 'hyperadmin');
-    const safeUsers = retainedUsers.length > 0 ? retainedUsers : DEFAULT_USERS.filter(u => u.Role === 'SuperAdmin' || u.Role === 'HyperAdmin');
+    const safeUsers = currentUsers.length > 0 ? currentUsers : DEFAULT_USERS;
     memoryTableCache['MD_UserAkses'] = safeUsers;
     localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify(safeUsers));
   }
 
-  // 3. Kosongkan seluruh tabel di Supabase Cloud jika terhubung
+  // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
 
@@ -1334,18 +1334,20 @@ export async function resetAllDatabase(keepAdminAccount: boolean = true): Promis
       }
     }
 
-    if (!keepAdminAccount) {
+    if (!keepUserAccounts) {
       try {
         await client.from('MD_UserAkses').delete().not('ID_User', 'is', null);
       } catch (e) {}
     } else {
-      const adminUsers = memoryTableCache['MD_UserAkses'] || [];
-      if (adminUsers.length > 0) {
+      // Pastikan seluruh akun pengguna tetap tersimpan utuh di Supabase
+      const allUsers = memoryTableCache['MD_UserAkses'] || [];
+      if (allUsers.length > 0) {
         try {
-          await client.from('MD_UserAkses').delete().not('ID_User', 'is', null);
-          const cleanAdmins = sanitizeRowsForTable('MD_UserAkses', adminUsers);
-          await client.from('MD_UserAkses').upsert(cleanAdmins as any);
-        } catch (e) {}
+          const cleanUsers = sanitizeRowsForTable('MD_UserAkses', allUsers);
+          await client.from('MD_UserAkses').upsert(cleanUsers as any);
+        } catch (e) {
+          console.warn('[ResetDatabase] Error preserving user accounts in Supabase:', e);
+        }
       }
     }
   }
@@ -1354,7 +1356,9 @@ export async function resetAllDatabase(keepAdminAccount: boolean = true): Promis
   return { 
     success: true, 
     clearedTablesCount: tableNames.length,
-    message: `Seluruh database (${tableNames.length} tabel) telah berhasil dikosongkan secara permanen baik di lokal maupun di Supabase Cloud.`
+    message: keepUserAccounts
+      ? `Seluruh database (${tableNames.length} tabel) telah berhasil dikosongkan. Seluruh data akun pengguna, ID dan kata sandi tetap aman terjaga.`
+      : `Seluruh database (${tableNames.length} tabel) beserta akun pengguna telah dikosongkan secara permanen.`
   };
 }
 
