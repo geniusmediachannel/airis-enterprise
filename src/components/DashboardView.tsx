@@ -377,22 +377,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   }
 
-  // 5. Quick Cash / Bank Balance & Revenue from Journals
-  let totalKasBank = 0;
-  let totalPendapatanYTD = 0;
-  let totalBebanYTD = 0;
-  journals.forEach(j => {
-    const code = j.KODE_AKUN;
-    if (code.startsWith('111-')) { // Kas & Bank
-      totalKasBank += (Number(j.DEBIT) || 0) - (Number(j.KREDIT) || 0);
-    } else if (code.startsWith('411-')) { // Pendapatan
-      totalPendapatanYTD += (Number(j.KREDIT) || 0) - (Number(j.DEBIT) || 0);
-    } else if (code.startsWith('51') || code.startsWith('61')) { // HPP & Beban
-      totalBebanYTD += (Number(j.DEBIT) || 0) - (Number(j.KREDIT) || 0);
-    }
-  });
-
-  const estimatedLabaYTD = totalPendapatanYTD - totalBebanYTD;
+  // 5. Operational KPI Totals (Tahun Terpilih & Total Stok Gudang Siap Kirim)
+  const annualProduction = prodMonthly.reduce((s, v) => s + v, 0);
+  const totalStockReady = Object.values(productStockMap).reduce((s, item) => s + Math.max(0, item.stock), 0);
 
   // 6. Coordinates for SVG Line Chart (diagram garis)
   const chartHeight = 200;
@@ -476,7 +463,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Sparkles size={16} className="text-amber-300 animate-pulse" />
           </h2>
           <p className="text-xs text-blue-100/90 mt-1 max-w-xl">
-            Monitoring produksi, logistik armada, mutu SNI 3553:2023, serta posisi neraca keuangan secara terintegrasi real-time.
+            Monitoring produksi, logistik armada, mutu SNI 3553:2023, serta ketersediaan stok produk jadi secara terintegrasi real-time.
           </p>
         </div>
 
@@ -497,11 +484,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>Distribusi</span>
           </button>
           <button
-            onClick={() => onNavigateTo('keuangan')}
+            onClick={() => onNavigateTo('stock')}
             className="px-3 py-1.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white border border-white/20 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-xs"
           >
-            <Scale size={13} className="text-emerald-300" />
-            <span>Keuangan</span>
+            <Boxes size={13} className="text-amber-300" />
+            <span>Gudang Stok</span>
           </button>
         </div>
       </div>
@@ -548,49 +535,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-1 flex items-center justify-between text-[11px] text-purple-600 font-medium pl-1">
             <span className="flex items-center gap-1">
               <CheckCircle2 size={13} />
-              Surat Jalan & Invoice terbit
+              Surat Jalan &amp; Invoice terbit
             </span>
             <ChevronRight size={13} className="text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition-all" />
           </div>
         </div>
 
         <div 
-          onClick={() => onNavigateTo('keuangan')}
+          onClick={() => onNavigateTo('produksi')}
           className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden"
         >
           <div className="absolute top-0 left-0 w-1 h-full bg-emerald-600 group-hover:w-1.5 transition-all"></div>
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium pl-1">
-            <span>Saldo Kas & Bank</span>
+            <span>Total Produksi {currentYear}</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
-              <Scale size={16} />
+              <Package size={16} />
             </div>
           </div>
           <div className="mt-2 text-2xl font-bold text-emerald-700 font-mono tabular-nums pl-1">
-            <AnimatedCounter value={totalKasBank} prefix="Rp " />
+            <AnimatedCounter value={annualProduction} /> <span className="text-xs font-normal text-slate-500">Unit</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 pl-1">
-            <span>Kas Kecil & BSI 1607134444</span>
+            <span>Akumulasi produksi tahun {currentYear}</span>
             <ChevronRight size={13} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
           </div>
         </div>
 
         <div 
-          onClick={() => onNavigateTo('keuangan')}
+          onClick={() => onNavigateTo('stock')}
           className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden"
         >
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-600 group-hover:w-1.5 transition-all"></div>
+          <div className="absolute top-0 left-0 w-1 h-full bg-amber-600 group-hover:w-1.5 transition-all"></div>
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium pl-1">
-            <span>Laba Bersih YTD</span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-              <TrendingUp size={16} />
+            <span>Total Stok Siap Kirim</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+              <Boxes size={16} />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-indigo-700 font-mono tabular-nums pl-1">
-            <AnimatedCounter value={estimatedLabaYTD} prefix="Rp " />
+          <div className="mt-2 text-2xl font-bold text-amber-700 font-mono tabular-nums pl-1">
+            <AnimatedCounter value={totalStockReady} /> <span className="text-xs font-normal text-slate-500">Dus/Gln</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 pl-1">
-            <span>Pendapatan - HPP & Beban</span>
-            <ChevronRight size={13} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+            <span>{products.length} Varian produk di gudang</span>
+            <ChevronRight size={13} className="text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
           </div>
         </div>
       </div>
