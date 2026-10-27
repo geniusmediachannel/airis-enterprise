@@ -241,7 +241,7 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
           KETERANGAN: `${stream.nama} - ${d.Nama_Pelanggan}`,
           KODE_AKUN: stream.akun,
           DEBIT: 0,
-          KREDIT: grandTotal,
+          KREDIT: stream.nominal || calculatedTotal,
           PEMBUAT: 'Auto Sync Distribusi'
         });
         countJournalsAdded++;
@@ -254,7 +254,7 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
           KETERANGAN: `Pendapatan Penjualan Air - ${d.Nama_Pelanggan}`,
           KODE_AKUN: '411-10',
           DEBIT: 0,
-          KREDIT: grandTotal,
+          KREDIT: calculatedTotal,
           PEMBUAT: 'Auto Sync Distribusi'
         });
         countJournalsAdded++;
@@ -670,8 +670,34 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
     }
   });
 
-  // Save changes if new journals or records created
-  if (countJournalsAdded > 0 || countDist > 0 || countProd > 0) {
+  // Auto-reconcile any historical journal imbalance (e.g. from previous discount calculations)
+  const groupedJournals: Record<string, GeneralJournalItem[]> = {};
+  journals.forEach(j => {
+    if (!j.ID_JURNAL) return;
+    if (!groupedJournals[j.ID_JURNAL]) groupedJournals[j.ID_JURNAL] = [];
+    groupedJournals[j.ID_JURNAL].push(j);
+  });
+
+  let autoHealedCount = 0;
+  Object.entries(groupedJournals).forEach(([_, entries]) => {
+    const dTotal = entries.reduce((s, e) => s + (Number(e.DEBIT) || 0), 0);
+    const kTotal = entries.reduce((s, e) => s + (Number(e.KREDIT) || 0), 0);
+    const diff = dTotal - kTotal;
+    if (Math.abs(diff) > 0.01) {
+      const discountRow = entries.find(e => e.KODE_AKUN === '413-10' && (Number(e.DEBIT) || 0) > 0);
+      const revenueRow = entries.find(e => e.KODE_AKUN?.startsWith('411-') && (Number(e.KREDIT) || 0) > 0);
+      if (discountRow && revenueRow && Math.abs(diff - Number(discountRow.DEBIT)) < 1) {
+        revenueRow.KREDIT = Number(revenueRow.KREDIT) + Number(discountRow.DEBIT);
+        autoHealedCount++;
+      } else if (revenueRow && diff > 0) {
+        revenueRow.KREDIT = Number(revenueRow.KREDIT) + diff;
+        autoHealedCount++;
+      }
+    }
+  });
+
+  // Save changes if new journals or records created or journals auto-healed
+  if (countJournalsAdded > 0 || countDist > 0 || countProd > 0 || autoHealedCount > 0) {
     // Sanitasi dan deduplikasi draf sebelum disimpan ke storage
     const seenDraftIds = new Set<string>();
     const seenDraftComposites = new Set<string>();
@@ -700,6 +726,7 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
   if (countPayroll > 0) msgParts.push(`${countPayroll} periode gaji`);
   if (countKasbon > 0) msgParts.push(`${countKasbon} kasbon`);
   if (countPayments > 0) msgParts.push(`${countPayments} pembayaran piutang`);
+  if (autoHealedCount > 0) msgParts.push(`${autoHealedCount} jurnal diselaraskan seimbang`);
 
   const summary = msgParts.length > 0 
     ? `Sinkronisasi berhasil: ${msgParts.join(', ')} (${countJournalsAdded} ayat jurnal dibukukan).`
@@ -728,6 +755,66 @@ export function syncAllModulesToFinance(options?: { autoPostToGeneralJournal?: b
       syncedPayments: 0,
       totalJournalsAdded: 0,
       message: `Peringatan sinkronisasi keuangan: ${syncErr?.message || 'dilewati'}`
+    };
+  }
+}
+
+/**
+ * Utilitas untuk merekonsiliasi dan menyeimbangkan seluruh ayat jurnal di Jurnal Umum
+ */
+export function reconcileAndBalanceJournals(): { fixedCount: number; remainingImbalanced: number; message: string } {
+  try {
+    const rawJournals: GeneralJournalItem[] = getTableData('Jurnal_Umum') || [];
+    let fixedCount = 0;
+    let remainingImbalanced = 0;
+
+    const grouped: Record<string, GeneralJournalItem[]> = {};
+    rawJournals.forEach(j => {
+      if (!j.ID_JURNAL) return;
+      if (!grouped[j.ID_JURNAL]) grouped[j.ID_JURNAL] = [];
+      grouped[j.ID_JURNAL].push(j);
+    });
+
+    Object.entries(grouped).forEach(([_, entries]) => {
+      const dTotal = entries.reduce((s, e) => s + (Number(e.DEBIT) || 0), 0);
+      const kTotal = entries.reduce((s, e) => s + (Number(e.KREDIT) || 0), 0);
+      const diff = dTotal - kTotal;
+
+      if (Math.abs(diff) > 0.01) {
+        const discountRow = entries.find(e => e.KODE_AKUN === '413-10' && (Number(e.DEBIT) || 0) > 0);
+        const revenueRow = entries.find(e => e.KODE_AKUN?.startsWith('411-') && (Number(e.KREDIT) || 0) > 0);
+
+        if (discountRow && revenueRow && Math.abs(diff - Number(discountRow.DEBIT)) < 1) {
+          revenueRow.KREDIT = Number(revenueRow.KREDIT) + Number(discountRow.DEBIT);
+          fixedCount++;
+        } else if (revenueRow && diff > 0) {
+          revenueRow.KREDIT = Number(revenueRow.KREDIT) + diff;
+          fixedCount++;
+        } else {
+          remainingImbalanced++;
+        }
+      }
+    });
+
+    if (fixedCount > 0) {
+      setTableData('Jurnal_Umum', rawJournals);
+      notifyDbChange();
+    }
+
+    return {
+      fixedCount,
+      remainingImbalanced,
+      message: fixedCount > 0 
+        ? `Berhasil menyeimbangkan ${fixedCount} transaksi jurnal.${remainingImbalanced > 0 ? ` (Masih ada ${remainingImbalanced} transaksi manual yang perlu dicek).` : ' Seluruh jurnal kini seimbang 100%!'}`
+        : remainingImbalanced === 0 
+          ? 'Seluruh jurnal umum sudah seimbang sempurna (Debit = Kredit).'
+          : `Ditemukan ${remainingImbalanced} transaksi jurnal manual yang selisih.`
+    };
+  } catch (err: any) {
+    return {
+      fixedCount: 0,
+      remainingImbalanced: 0,
+      message: `Gagal merekonsiliasi jurnal: ${err?.message || 'Error tidak diketahui'}`
     };
   }
 }

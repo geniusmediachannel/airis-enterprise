@@ -276,7 +276,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Tenor', 'Cicilan_Per_Bulan'],
   Histori_Penggajian: ['ID_Histori', 'ID_Gaji', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Total_Lembur_Nominal', 'Potongan_Kasbon', 'Potongan_Alpha', 'Gaji_Bersih', 'Tanggal_Cetak', 'Status_Bayar'],
   Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SALDO_NORMAL', 'STATUS'],
-  Jurnal_Umum: ['ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT'],
+  Jurnal_Umum: ['ID_Entry', 'ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT'],
   Draf_Jurnal: ['ID_Draf', 'Sumber', 'Tanggal', 'Referensi', 'Keterangan', 'Kode_Debit', 'Kode_Kredit', 'Nominal', 'Status', 'Waktu_Dibuat'],
   Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status'],
   Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN'],
@@ -305,6 +305,16 @@ function sanitizeRowsForTable(tableName: string, rows: any[]): any[] {
     // Auto-generate primary key ID_Detail pada Distribusi_Item jika belum terisi
     if (tableName === 'Distribusi_Item' && !cleaned['ID_Detail']) {
       cleaned['ID_Detail'] = row['ID_Detail'] || `DET-${row['ID_Distribusi'] || 'D'}-${idx + 1}`;
+    }
+
+    // Auto-generate primary key ID_Entry pada Jurnal_Umum jika belum terisi
+    if (tableName === 'Jurnal_Umum' && !cleaned['ID_Entry']) {
+      const hashStr = `${row['ID_JURNAL'] || ''}_${row['KODE_AKUN'] || ''}_${row['DEBIT'] || 0}_${row['KREDIT'] || 0}_${idx}`;
+      let hash = 0;
+      for (let i = 0; i < hashStr.length; i++) {
+        hash = ((hash * 31) + hashStr.charCodeAt(i)) >>> 0;
+      }
+      cleaned['ID_Entry'] = row['ID_Entry'] || (hash || (idx + 1));
     }
 
     return cleaned;
