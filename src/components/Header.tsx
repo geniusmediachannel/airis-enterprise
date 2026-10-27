@@ -167,6 +167,24 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {/* Tombol Status Sinkronisasi Supabase Cloud */}
+        <button
+          type="button"
+          onClick={onOpenSupabaseModal}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer shrink-0 ${
+            supabaseConfig.isConnected
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+              : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 animate-pulse'
+          }`}
+          title={supabaseConfig.isConnected ? 'Supabase Cloud Terhubung (Klik untuk melihat status & sinkronisasi multi-device)' : 'Supabase Cloud Belum Terhubung (Klik untuk konfigurasi)'}
+        >
+          <Database size={14} className={supabaseConfig.isConnected ? 'text-emerald-600' : 'text-amber-600'} />
+          <span className="hidden md:inline">
+            {supabaseConfig.isConnected ? 'Cloud Aktif' : 'Cloud Offline'}
+          </span>
+          <span className={`w-2 h-2 rounded-full ${supabaseConfig.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+        </button>
+
         {/* Notification Bell dengan Badge Counter & Pulse */}
         <button
           onClick={onToggleNotificationDrawer}

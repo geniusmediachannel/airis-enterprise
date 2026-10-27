@@ -157,30 +157,28 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             )}
           </div>
           
-          {isSupabaseConfigured() && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePullCloud}
-                disabled={syncingCloud}
-                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-                title="Tarik data terbaru dari Supabase ke device ini"
-              >
-                <ArrowDownCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
-                <span>Tarik Data (Pull)</span>
-              </button>
-              <button
-                type="button"
-                onClick={handlePushCloud}
-                disabled={syncingCloud}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-                title="Unggah data di device ini ke Supabase Cloud"
-              >
-                <ArrowUpCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
-                <span>Unggah (Push)</span>
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePullCloud}
+              disabled={syncingCloud}
+              className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+              title="Tarik seluruh data terbaru dari Supabase ke browser ini"
+            >
+              <ArrowDownCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
+              <span>Tarik Data (Pull)</span>
+            </button>
+            <button
+              type="button"
+              onClick={handlePushCloud}
+              disabled={syncingCloud}
+              className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+              title="Unggah seluruh data lokal di browser ini ke Supabase Cloud"
+            >
+              <ArrowUpCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
+              <span>Unggah ke Cloud (Push)</span>
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}

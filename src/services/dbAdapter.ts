@@ -148,7 +148,7 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(cfg.url && cfg.anonKey);
 }
 
-export function setTableData<T>(tableName: string, data: T[]): void {
+export function setTableData<T>(tableName: string, data: T[], options?: { skipCloudSync?: boolean }): void {
   // Simpan selalu ke memory cache agar langsung tersedia di seluruh modul
   const safeData = Array.isArray(data) ? data : [];
   memoryTableCache[tableName] = safeData;
@@ -178,8 +178,11 @@ export function setTableData<T>(tableName: string, data: T[]): void {
 
   notifyDbChange();
 
+  if (options?.skipCloudSync) return;
+
   const cfg = getSupabaseConfig();
-  if (cfg.isConnected && supabaseInstance && cfg.autoSync) {
+  const client = getSupabaseClient();
+  if (cfg.isConnected && client && cfg.autoSync) {
     syncToSupabaseTable(tableName, safeData).catch(err => {
       console.warn(`Supabase background sync for ${tableName} failed`, err);
     });
@@ -188,13 +191,16 @@ export function setTableData<T>(tableName: string, data: T[]): void {
 
 export const saveTableData = setTableData;
 
-
 async function syncToSupabaseTable<T>(tableName: string, data: T[]) {
-  if (!supabaseInstance || data.length === 0) return;
+  const client = getSupabaseClient();
+  if (!client || data.length === 0) return;
   try {
-    await supabaseInstance.from(tableName).upsert(data as any);
+    const { error } = await client.from(tableName).upsert(data as any);
+    if (error) {
+      console.warn(`[SupabaseSync] Upsert error on ${tableName}:`, error.message);
+    }
   } catch (e) {
-    // Silently ignore or log
+    console.warn(`[SupabaseSync] Exception during upsert on ${tableName}:`, e);
   }
 }
 
@@ -279,12 +285,6 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean }):
               localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(data));
             } catch (e) {}
             tablesWithData++;
-          } else {
-            // Jika di Supabase masih kosong, unggah data lokal ke Supabase
-            const local = getTableData(table, []);
-            if (local.length > 0) {
-              await client.from(table).upsert(local as any);
-            }
           }
         }
       } catch (e) {
@@ -350,6 +350,14 @@ export async function pushAllTablesToSupabase(): Promise<{ success: boolean; mes
       }
     }
   }
+
+  // Unggah juga status lisensi ke record hyperadmin di Supabase Cloud
+  try {
+    const rawLic = localStorage.getItem('AIRIS_APP_LICENSE_V1');
+    if (rawLic) {
+      await client.from('MD_UserAkses').update({ Alasan_Daftar: rawLic }).eq('Username', 'hyperadmin');
+    }
+  } catch (e) {}
 
   return { success: true, message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud.`, count: pushed };
 }
@@ -780,46 +788,47 @@ const DEFAULT_OFFICIAL_LETTERS: OfficialLetterItem[] = [
 
 export function initializeDatabase() {
   if (!localStorage.getItem(STORAGE_KEY_PREFIX + 'INITIALIZED')) {
-    setTableData('MD_Produk', DEFAULT_PRODUCTS);
-    setTableData('MD_Pelanggan', DEFAULT_CUSTOMERS);
-    setTableData('MD_Supplier', DEFAULT_SUPPLIERS);
-    setTableData('MD_BahanPenolong', DEFAULT_RAW_MATERIALS);
-    setTableData('MD_BOM', DEFAULT_BOM);
-    setTableData('MD_Karyawan', DEFAULT_EMPLOYEES);
-    setTableData('MD_UserAkses', DEFAULT_USERS);
+    const opts = { skipCloudSync: true };
+    setTableData('MD_Produk', DEFAULT_PRODUCTS, opts);
+    setTableData('MD_Pelanggan', DEFAULT_CUSTOMERS, opts);
+    setTableData('MD_Supplier', DEFAULT_SUPPLIERS, opts);
+    setTableData('MD_BahanPenolong', DEFAULT_RAW_MATERIALS, opts);
+    setTableData('MD_BOM', DEFAULT_BOM, opts);
+    setTableData('MD_Karyawan', DEFAULT_EMPLOYEES, opts);
+    setTableData('MD_UserAkses', DEFAULT_USERS, opts);
     setTableData('MD_HargaKhusus', [
       { ID_Harga_Khusus: 'SP-001', ID_Pelanggan: 'PLG-0001', ID_Produk: 'ASH-CUP220', Harga_Custom: 14000, Keterangan: 'Harga Kontrak Distributor Utama' }
-    ]);
-    setTableData('SPK', DEFAULT_SPK);
-    setTableData('Produksi', DEFAULT_PRODUCTION);
-    setTableData('Rencana_Distribusi', DEFAULT_DELIVERY_PLANS);
-    setTableData('Distribusi', DEFAULT_DISTRIBUSI);
-    setTableData('Distribusi_Item', DEFAULT_DISTRIBUSI_ITEMS);
+    ], opts);
+    setTableData('SPK', DEFAULT_SPK, opts);
+    setTableData('Produksi', DEFAULT_PRODUCTION, opts);
+    setTableData('Rencana_Distribusi', DEFAULT_DELIVERY_PLANS, opts);
+    setTableData('Distribusi', DEFAULT_DISTRIBUSI, opts);
+    setTableData('Distribusi_Item', DEFAULT_DISTRIBUSI_ITEMS, opts);
     setTableData('Pembelian_Bahan', [
       { ID_Pembelian: 'PB-261001', Tanggal: '2026-10-10', ID_Bahan: 'BHN-CUP220', Nama_Bahan: 'Cup Plastik 220ml Printing', Supplier: 'PT. Sumber Plastik Nusantara', Harga_Satuan: 110, Qty: 20000, Keterangan: 'Pasokan Awal Bulan' },
       { ID_Pembelian: 'PB-261002', Tanggal: '2026-10-11', ID_Bahan: 'BHN-KARTON220', Nama_Bahan: 'Karton Dus 220ml (isi 48)', Supplier: 'CV. Karton Lestari Abadi', Harga_Satuan: 2600, Qty: 2500, Keterangan: 'Box kemasan kardus' }
-    ]);
+    ], opts);
     setTableData('Mutasi_Bahan', [
       { ID_Mutasi: 'MT-261001', Tanggal: '2026-10-15', ID_Bahan: 'BHN-CUP220', Nama_Bahan: 'Cup Plastik 220ml Printing', Jenis_Mutasi: 'Keluar', Kategori: 'Pemakaian Produksi', Qty: 9600, Keterangan: 'Pemakaian Produksi PRD-15102601' },
       { ID_Mutasi: 'MT-261002', Tanggal: '2026-10-15', ID_Bahan: 'BHN-KARTON220', Nama_Bahan: 'Karton Dus 220ml (isi 48)', Jenis_Mutasi: 'Keluar', Kategori: 'Pemakaian Produksi', Qty: 200, Keterangan: 'Pemakaian Dus PRD-15102601' }
-    ]);
-    setTableData('Data_QC', DEFAULT_QC);
-    setTableData('Data_QC_Detail', DEFAULT_QC_DETAIL);
+    ], opts);
+    setTableData('Data_QC', DEFAULT_QC, opts);
+    setTableData('Data_QC_Detail', DEFAULT_QC_DETAIL, opts);
     setTableData('Data_Presensi', [
       { ID_Presensi: 'PRS-01', Bulan_Tahun: '2026-10', ID_Karyawan: 'KAR-0001', Nama_Karyawan: 'Marko Dwi Nugroho', T1: 'H', T2: 'H', T3: 'H', T4: 'H', T5: 'H', T6: 'H', T7: 'H', T8: 'H', T9: 'H', T10: 'H', T11: 'H', T12: 'H', T13: 'H', T14: 'H', T15: 'H', T16: 'H', Total_H: 16, Total_T: 0, Total_I: 0, Total_S: 0, Total_C: 0, Total_A: 0 },
       { ID_Presensi: 'PRS-02', Bulan_Tahun: '2026-10', ID_Karyawan: 'KAR-0003', Nama_Karyawan: 'Agus Setiawan', T1: 'H', T2: 'H', T3: 'H', T4: 'H', T5: 'H', T6: 'H', T7: 'H', T8: 'H', T9: 'H', T10: 'H', T11: 'H', T12: 'H', T13: 'H', T14: 'H', T15: 'H', T16: 'H', Total_H: 16, Total_T: 0, Total_I: 0, Total_S: 0, Total_C: 0, Total_A: 0 },
       { ID_Presensi: 'PRS-03', Bulan_Tahun: '2026-10', ID_Karyawan: 'KAR-0004', Nama_Karyawan: 'Tri Wahyudi', T1: 'H', T2: 'H', T3: 'H', T4: 'H', T5: 'H', T6: 'H', T7: 'H', T8: 'H', T9: 'H', T10: 'H', T11: 'H', T12: 'H', T13: 'H', T14: 'H', T15: 'H', T16: 'H', Total_H: 16, Total_T: 0, Total_I: 0, Total_S: 0, Total_C: 0, Total_A: 0 }
-    ]);
+    ], opts);
     setTableData('Data_Lembur', [
       { ID_Lembur: 'LMB-01', Bulan_Tahun: '2026-10', ID_Karyawan: 'KAR-0003', Nama_Karyawan: 'Agus Setiawan', T1: 2, T3: 3, T5: 2, T10: 2, Total_Jam_Lembur: 9 },
       { ID_Lembur: 'LMB-02', Bulan_Tahun: '2026-10', ID_Karyawan: 'KAR-0004', Nama_Karyawan: 'Tri Wahyudi', T2: 2, T4: 2, T8: 3, T12: 3, Total_Jam_Lembur: 10 }
-    ]);
+    ], opts);
     setTableData('Data_Kasbon', [
       { ID_Kasbon: 'KSB-001', Tanggal: '2026-10-05', ID_Karyawan: 'KAR-0004', Nama_Karyawan: 'Tri Wahyudi', Nominal: 1000000, Tenor: 2, Cicilan_Per_Bulan: 500000 }
-    ]);
-    setTableData('Histori_Penggajian', []);
-    setTableData('Master_COA', DEFAULT_COA);
-    setTableData('Jurnal_Umum', DEFAULT_JOURNALS);
+    ], opts);
+    setTableData('Histori_Penggajian', [], opts);
+    setTableData('Master_COA', DEFAULT_COA, opts);
+    setTableData('Jurnal_Umum', DEFAULT_JOURNALS, opts);
     setTableData('Draf_Jurnal', [
       {
         ID_Draf: 'DRF-001',
@@ -833,7 +842,7 @@ export function initializeDatabase() {
         Status: 'Menunggu Verifikasi',
         Waktu_Dibuat: '2026-10-15T10:00:00Z'
       }
-    ]);
+    ], opts);
     setTableData('Data_Piutang_Utang', [
       { 
         ID_DOKUMEN: 'DST-261015001', 
@@ -855,15 +864,15 @@ export function initializeDatabase() {
         STATUS: 'Belum Lunas',
         Status: 'Belum Lunas'
       }
-    ]);
-    setTableData('Data_Aset_Tetap', DEFAULT_FIXED_ASSETS);
-    setTableData('Data_Surat', DEFAULT_OFFICIAL_LETTERS);
+    ], opts);
+    setTableData('Data_Aset_Tetap', DEFAULT_FIXED_ASSETS, opts);
+    setTableData('Data_Surat', DEFAULT_OFFICIAL_LETTERS, opts);
     setTableData('Admin_PO', [
       { ID_PO: 'PO-261001', Tanggal_PO: '2026-10-10', No_PO: '001-PO-X-26', Order_Ke: 'PT. Sumber Plastik Nusantara', Alamat_Supplier: 'Solo Baru, Sukoharjo', Syarat_Ketentuan: 'Pengiriman 3 hari kerja, tempo 14 hari', Grand_Total: 2200000, Status: 'Terkirim ke Pemasok' }
-    ]);
+    ], opts);
     setTableData('Admin_PO_Detail', [
       { ID_Detail: 'PO-261001-D1', ID_PO: 'PO-261001', Nama_Produk: 'Cup Plastik 220ml Printing', Spesifikasi: 'Food Grade PP 3.8g', Qty: 20000, Harga_Satuan: 110, Total_Harga: 2200000 }
-    ]);
+    ], opts);
     localStorage.setItem(STORAGE_KEY_PREFIX + 'INITIALIZED', 'true');
   }
 
