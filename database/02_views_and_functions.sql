@@ -61,16 +61,16 @@ SELECT
     p."Harga_Distributor",
     p."Harga_Agen",
     COALESCE(pi.total_in, 0) AS "Total_Masuk_Produksi",
-    COALESCE(do.total_out, 0) AS "Total_Keluar_Distribusi",
-    (COALESCE(pi.total_in, 0) - COALESCE(do.total_out, 0)) AS "Sisa_Stok",
+    COALESCE(d_out.total_out, 0) AS "Total_Keluar_Distribusi",
+    (COALESCE(pi.total_in, 0) - COALESCE(d_out.total_out, 0)) AS "Sisa_Stok",
     CASE 
-        WHEN (COALESCE(pi.total_in, 0) - COALESCE(do.total_out, 0)) > 200 THEN 'Aman'
-        WHEN (COALESCE(pi.total_in, 0) - COALESCE(do.total_out, 0)) > 0 THEN 'Menipis'
+        WHEN (COALESCE(pi.total_in, 0) - COALESCE(d_out.total_out, 0)) > 200 THEN 'Aman'
+        WHEN (COALESCE(pi.total_in, 0) - COALESCE(d_out.total_out, 0)) > 0 THEN 'Menipis'
         ELSE 'Kosong / Kritis'
     END AS "Status_Stok"
 FROM "MD_Produk" p
 LEFT JOIN prod_in pi ON p."ID_Produk" = pi."ID_Produk"
-LEFT JOIN dist_out do ON p."ID_Produk" = do."ID_Produk"
+LEFT JOIN dist_out d_out ON p."ID_Produk" = d_out."ID_Produk"
 ORDER BY p."ID_Produk";
 
 -- ----------------------------------------------------------------------------
