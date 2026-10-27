@@ -8,7 +8,7 @@ import { SupabaseConfig } from '../types';
 import { 
   isSupabaseConfigured, testSupabaseConnection, 
   syncAllTablesFromSupabase, pushAllTablesToSupabase,
-  getSupabaseConfig, normalizeSupabaseUrl
+  getSupabaseConfig, normalizeSupabaseUrl, saveSupabaseConfig
 } from '../services/dbAdapter';
 
 interface SupabaseModalProps {
@@ -61,19 +61,22 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
     setTesting(false);
 
     if (res.success) {
-      setTestResult({
-        success: true,
-        message: 'Koneksi ke Supabase berhasil! Menyelaraskan seluruh data multi-device...',
-      });
-      saveFn({
+      const newCfg: SupabaseConfig = {
         url: cleanUrl,
         anonKey: cleanKey,
         isConnected: true,
         autoSync: true,
+      };
+      saveSupabaseConfig(newCfg);
+      saveFn(newCfg);
+
+      setTestResult({
+        success: true,
+        message: 'Koneksi ke Supabase berhasil! Menyelaraskan seluruh data multi-device...',
       });
 
       // Tarik dan samakan data langsung dari Supabase Cloud
-      syncAllTablesFromSupabase().then(syncRes => {
+      syncAllTablesFromSupabase({ customConfig: newCfg }).then(syncRes => {
         if (syncRes.success) {
           setTestResult({
             success: true,
@@ -93,7 +96,17 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const handlePullCloud = async () => {
     setSyncingCloud(true);
     setTestResult(null);
-    const res = await syncAllTablesFromSupabase();
+
+    const cleanUrl = normalizeSupabaseUrl(url);
+    const cleanKey = anonKey.trim();
+    let cfgToUse: SupabaseConfig | undefined;
+    if (cleanUrl && cleanKey) {
+      cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
+      saveSupabaseConfig(cfgToUse);
+      saveFn(cfgToUse);
+    }
+
+    const res = await syncAllTablesFromSupabase({ customConfig: cfgToUse });
     setSyncingCloud(false);
     setTestResult({
       success: res.success,
@@ -107,7 +120,17 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const handlePushCloud = async () => {
     setSyncingCloud(true);
     setTestResult(null);
-    const res = await pushAllTablesToSupabase();
+
+    const cleanUrl = normalizeSupabaseUrl(url);
+    const cleanKey = anonKey.trim();
+    let cfgToUse: SupabaseConfig | undefined;
+    if (cleanUrl && cleanKey) {
+      cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
+      saveSupabaseConfig(cfgToUse);
+      saveFn(cfgToUse);
+    }
+
+    const res = await pushAllTablesToSupabase(cfgToUse);
     setSyncingCloud(false);
     setTestResult({
       success: res.success,
@@ -160,7 +183,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
         <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">Status:</span>
-            {isSupabaseConfigured() ? (
+            {isSupabaseConfigured() || (testResult?.success && url && anonKey) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                 Supabase Cloud Connected (Auto-Sync)

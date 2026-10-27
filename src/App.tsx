@@ -681,6 +681,7 @@ export default function App() {
         onClose={() => setShowSupabaseModal(false)}
         config={supabaseConfig}
         onConfigSaved={newCfg => {
+          saveSupabaseConfig(newCfg);
           setSupabaseConfig(newCfg);
           reloadData();
         }}

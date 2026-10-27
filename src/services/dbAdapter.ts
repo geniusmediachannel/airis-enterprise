@@ -326,7 +326,10 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
  * Sinkronisasi seluruh tabel dari Supabase Cloud ke browser lokal (Pull All)
  * Ini memastikan semua browser dan device memiliki data yang 100% identik
  */
-export async function syncAllTablesFromSupabase(options?: { silent?: boolean }): Promise<{ success: boolean; message: string; tablesCount: number }> {
+export async function syncAllTablesFromSupabase(options?: { silent?: boolean; customConfig?: SupabaseConfig }): Promise<{ success: boolean; message: string; tablesCount: number }> {
+  if (options?.customConfig?.url && options?.customConfig?.anonKey) {
+    saveSupabaseConfig(options.customConfig);
+  }
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
 
@@ -392,7 +395,10 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean }):
 /**
  * Unggah seluruh data lokal saat ini ke Supabase Cloud (Push All)
  */
-export async function pushAllTablesToSupabase(): Promise<{ success: boolean; message: string; count: number; errors?: string[] }> {
+export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Promise<{ success: boolean; message: string; count: number; errors?: string[] }> {
+  if (customConfig?.url && customConfig?.anonKey) {
+    saveSupabaseConfig(customConfig);
+  }
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
 
