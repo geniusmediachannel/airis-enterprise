@@ -253,11 +253,71 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
 
 export const saveTableData = setTableData;
 
+const TABLE_COLUMNS: Record<string, string[]> = {
+  MD_Produk: ['ID_Produk', 'Nama_Produk', 'Kategori', 'Satuan', 'Harga_Distributor', 'Harga_Agen', 'Harga_Reseller', 'Harga_Konsumen', 'Status'],
+  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status'],
+  MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
+  MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Minimum_Stock'],
+  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
+  MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
+  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
+  MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Keterangan'],
+  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
+  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
+  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
+  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan'],
+  Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
+  Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
+  Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Qty', 'Keterangan'],
+  Data_QC: ['ID_QC', 'Tanggal', 'Bulan_Tahun', 'Produk', 'Petugas_QC', 'Kesimpulan', 'Status_Data', 'ID_Produksi'],
+  Data_QC_Detail: ['ID_QC', 'Siklus', 'Baku_pH', 'Baku_TDS', 'Baku_Kekeruhan', 'Baku_Bau', 'Baku_Coliform', 'Proses_pH', 'Proses_TDS', 'Proses_Kekeruhan', 'Proses_Bau', 'Proses_Rasa', 'Proses_Ozon', 'Jadi_pH', 'Jadi_TDS', 'Jadi_Kekeruhan', 'Jadi_Bau', 'Jadi_Rasa', 'Jadi_Ozon', 'Jadi_ALT_Awal', 'Jadi_ALT_Akhir', 'Jadi_Coliform'],
+  Data_Presensi: ['ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_H', 'Total_T', 'Total_I', 'Total_S', 'Total_C', 'Total_A'],
+  Data_Lembur: ['ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_Jam_Lembur'],
+  Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Tenor', 'Cicilan_Per_Bulan'],
+  Histori_Penggajian: ['ID_Histori', 'ID_Gaji', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Total_Lembur_Nominal', 'Potongan_Kasbon', 'Potongan_Alpha', 'Gaji_Bersih', 'Tanggal_Cetak', 'Status_Bayar'],
+  Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SALDO_NORMAL', 'STATUS'],
+  Jurnal_Umum: ['ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT'],
+  Draf_Jurnal: ['ID_Draf', 'Sumber', 'Tanggal', 'Referensi', 'Keterangan', 'Kode_Debit', 'Kode_Kredit', 'Nominal', 'Status', 'Waktu_Dibuat'],
+  Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status'],
+  Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN'],
+  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Kepada', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Dibuat_Oleh'],
+  Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status']
+};
+
+function sanitizeRowsForTable(tableName: string, rows: any[]): any[] {
+  if (!Array.isArray(rows)) return [];
+  const validCols = TABLE_COLUMNS[tableName];
+
+  return rows.map((row, idx) => {
+    if (!row || typeof row !== 'object') return null;
+    const cleaned: Record<string, any> = {};
+
+    if (validCols && validCols.length > 0) {
+      validCols.forEach(col => {
+        if (row[col] !== undefined) {
+          cleaned[col] = row[col];
+        }
+      });
+    } else {
+      Object.assign(cleaned, row);
+    }
+
+    // Auto-generate primary key ID_Detail pada Distribusi_Item jika belum terisi
+    if (tableName === 'Distribusi_Item' && !cleaned['ID_Detail']) {
+      cleaned['ID_Detail'] = row['ID_Detail'] || `DET-${row['ID_Distribusi'] || 'D'}-${idx + 1}`;
+    }
+
+    return cleaned;
+  }).filter(Boolean);
+}
+
 async function syncToSupabaseTable<T>(tableName: string, data: T[]) {
   const client = getSupabaseClient();
   if (!client || data.length === 0) return;
   try {
-    const { error } = await client.from(tableName).upsert(data as any);
+    const cleanPayload = sanitizeRowsForTable(tableName, data as any);
+    if (cleanPayload.length === 0) return;
+    const { error } = await client.from(tableName).upsert(cleanPayload as any);
     if (error) {
       console.warn(`[SupabaseSync] Upsert error on ${tableName}:`, error.message);
     }
@@ -413,12 +473,15 @@ export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Pr
     const data = getTableData(table, []);
     if (data.length > 0) {
       try {
-        const { error } = await client.from(table).upsert(data as any);
-        if (!error) {
-          pushed++;
-        } else {
-          console.warn(`[PushAll] Gagal upload ${table}:`, error.message);
-          failureDetails.push(`${table}: ${error.message}`);
+        const cleanPayload = sanitizeRowsForTable(table, data);
+        if (cleanPayload.length > 0) {
+          const { error } = await client.from(table).upsert(cleanPayload as any);
+          if (!error) {
+            pushed++;
+          } else {
+            console.warn(`[PushAll] Gagal upload ${table}:`, error.message);
+            failureDetails.push(`${table}: ${error.message}`);
+          }
         }
       } catch (e: any) {
         failureDetails.push(`${table}: ${e.message || 'Exception'}`);
