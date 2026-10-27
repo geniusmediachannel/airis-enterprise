@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { 
   Database, ShieldCheck, CheckCircle2, AlertCircle, 
   X, RefreshCw, Key, Globe, ExternalLink, HardDrive, 
-  Sparkles, Lock
+  Sparkles, Lock, ArrowDownCircle, ArrowUpCircle, Check
 } from 'lucide-react';
 import { SupabaseConfig } from '../types';
-import { isSupabaseConfigured, testSupabaseConnection } from '../services/dbAdapter';
+import { 
+  isSupabaseConfigured, testSupabaseConnection, 
+  syncAllTablesFromSupabase, pushAllTablesToSupabase 
+} from '../services/dbAdapter';
 
 interface SupabaseModalProps {
   isOpen: boolean;
@@ -28,6 +31,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const [url, setUrl] = useState(config.url || '');
   const [anonKey, setAnonKey] = useState(config.anonKey || '');
   const [testing, setTesting] = useState(false);
+  const [syncingCloud, setSyncingCloud] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   if (!isOpen) return null;
@@ -43,7 +47,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
     if (res.success) {
       setTestResult({
         success: true,
-        message: res.message || 'Koneksi ke Supabase Database & Auth berhasil terhubung!',
+        message: 'Koneksi ke Supabase berhasil! Menyelaraskan seluruh data multi-device...',
       });
       saveFn({
         url: url.trim(),
@@ -51,14 +55,50 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
         isConnected: true,
         autoSync: true,
       });
-      setTimeout(() => {
+
+      // Tarik dan samakan data langsung dari Supabase Cloud
+      syncAllTablesFromSupabase().then(syncRes => {
+        if (syncRes.success) {
+          setTestResult({
+            success: true,
+            message: `Koneksi Berhasil! Seluruh data (${syncRes.tablesCount} tabel) telah tersinkronisasi otomatis dengan Cloud.`
+          });
+        }
         if (onSyncDatabase) onSyncDatabase();
-      }, 500);
+      });
     } else {
       setTestResult({
         success: false,
         message: res.message || 'Koneksi gagal! Mohon periksa kembali Project URL dan Anon Key Anda.',
       });
+    }
+  };
+
+  const handlePullCloud = async () => {
+    setSyncingCloud(true);
+    setTestResult(null);
+    const res = await syncAllTablesFromSupabase();
+    setSyncingCloud(false);
+    setTestResult({
+      success: res.success,
+      message: res.message
+    });
+    if (res.success && onSyncDatabase) {
+      onSyncDatabase();
+    }
+  };
+
+  const handlePushCloud = async () => {
+    setSyncingCloud(true);
+    setTestResult(null);
+    const res = await pushAllTablesToSupabase();
+    setSyncingCloud(false);
+    setTestResult({
+      success: res.success,
+      message: res.message
+    });
+    if (res.success && onSyncDatabase) {
+      onSyncDatabase();
     }
   };
 
@@ -100,29 +140,47 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
           </div>
         </div>
 
-        {/* Status Indicator */}
-        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+        {/* Status Indicator & Cloud Actions */}
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">Status Saat Ini:</span>
+            <span className="font-semibold text-slate-700">Status:</span>
             {isSupabaseConfigured() ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Supabase Cloud Connected
+                Supabase Cloud Connected (Auto-Sync)
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">
                 <HardDrive className="w-3.5 h-3.5" />
-                Local Isolated Storage (Aktif)
+                Local Isolated Storage
               </span>
             )}
           </div>
-          <button
-            onClick={onSyncDatabase}
-            className="text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 hover:underline"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Sinkronkan
-          </button>
+          
+          {isSupabaseConfigured() && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePullCloud}
+                disabled={syncingCloud}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                title="Tarik data terbaru dari Supabase ke device ini"
+              >
+                <ArrowDownCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
+                <span>Tarik Data (Pull)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePushCloud}
+                disabled={syncingCloud}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                title="Unggah data di device ini ke Supabase Cloud"
+              >
+                <ArrowUpCircle className={`w-3.5 h-3.5 ${syncingCloud ? 'animate-spin' : ''}`} />
+                <span>Unggah (Push)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Form Body */}
@@ -180,14 +238,17 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
           )}
 
           {/* Features note */}
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
             <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Keamanan Data & Role-Based Access:
+              <Globe className="w-4 h-4 text-emerald-600" />
+              Sinkronisasi Otomatis Multi-Device (Real-Time):
             </div>
-            <p className="text-[11px] leading-relaxed">
-              Jika konfigurasi Supabase aktif, data Master, SPK, QC, Distribusi, dan Keuangan akan tersimpan langsung di tabel cloud. Jika kosong, sistem tetap berjalan normal dengan penyimpanan otomatis browser yang persisten.
+            <p className="text-[11px] leading-relaxed text-slate-600">
+              Dengan menghubungkan Supabase Cloud, seluruh data (Produksi, SPK, Stok, Keuangan, dan Masa Aktif Aplikasi) akan <strong>otomatis tersinkronisasi secara real-time</strong>. Data yang diinput dari laptop ini akan langsung sama persis saat dibuka dari komputer kasir, tablet, maupun smartphone lain.
             </p>
+            <div className="pt-1 border-t border-slate-200 text-[10px] text-slate-500">
+              <strong>Tips Deploy Vercel:</strong> Pasang Environment Variables <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_URL</code> dan <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_ANON_KEY</code> di Vercel agar seluruh device langsung terhubung otomatis tanpa konfigurasi ulang!
+            </div>
           </div>
 
           {/* Modal Actions */}

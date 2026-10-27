@@ -32,7 +32,8 @@ import { checkLicenseStatus } from './services/licenseService';
 import { Eye, Lock, ShieldCheck } from 'lucide-react';
 
 import { 
-  initializeDatabase, getTableData, saveTableData, getSupabaseConfig, saveSupabaseConfig 
+  initializeDatabase, getTableData, saveTableData, getSupabaseConfig, saveSupabaseConfig,
+  syncAllTablesFromSupabase, setupSupabaseRealtimeSync
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
@@ -248,10 +249,61 @@ export default function App() {
       }
     }, 30000);
 
+    // 7. Auto Cloud Sync & Realtime Multi-Device Sync
+    const cfg = getSupabaseConfig();
+    if (cfg.isConnected && cfg.url && cfg.anonKey) {
+      // Pull seluruh data terbaru saat aplikasi dibuka
+      syncAllTablesFromSupabase({ silent: true })
+        .then(res => {
+          if (res.success) {
+            reloadData();
+            setLicenseStatus(checkLicenseStatus());
+          }
+        })
+        .catch(console.warn);
+
+      // Aktifkan Realtime Listener agar device/browser lain langsung sinkron seketika
+      setupSupabaseRealtimeSync(() => {
+        reloadData();
+      });
+    }
+
+    // Auto-sync saat tab browser aktif kembali (focus)
+    const handleWindowFocus = () => {
+      const curCfg = getSupabaseConfig();
+      if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
+        syncAllTablesFromSupabase({ silent: true })
+          .then(res => {
+            if (res.success) {
+              reloadData();
+              setLicenseStatus(checkLicenseStatus());
+            }
+          })
+          .catch(console.warn);
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
+    // Event listener saat terjadi sinkronisasi cloud
+    const handleCloudSynced = () => {
+      reloadData();
+      setLicenseStatus(checkLicenseStatus());
+    };
+    window.addEventListener('airis_cloud_synced', handleCloudSynced);
+
+    // Event listener saat lisensi diperbarui
+    const handleLicenseUpdated = () => {
+      setLicenseStatus(checkLicenseStatus());
+    };
+    window.addEventListener('airis_license_updated', handleLicenseUpdated);
+
     return () => {
       window.removeEventListener('airis_db_updated', handleDbUpdate);
       window.removeEventListener('airis_auth_changed', handleAuthChange);
       window.removeEventListener('airis_notifications_updated', handleNotifsUpdate);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('airis_cloud_synced', handleCloudSynced);
+      window.removeEventListener('airis_license_updated', handleLicenseUpdated);
       clearInterval(interval);
     };
   }, [pushPermission]);
@@ -628,7 +680,11 @@ export default function App() {
         isOpen={showSupabaseModal}
         onClose={() => setShowSupabaseModal(false)}
         config={supabaseConfig}
-        onConfigSaved={newCfg => setSupabaseConfig(newCfg)}
+        onConfigSaved={newCfg => {
+          setSupabaseConfig(newCfg);
+          reloadData();
+        }}
+        onSyncDatabase={reloadData}
       />
 
       {/* Auth Modal */}
@@ -637,7 +693,7 @@ export default function App() {
         onClose={() => setShowAuthModal(false)}
         currentUser={currentUser}
         onLoginSuccess={user => {
-          setCurrentUser(user);
+          setSession({ user, isAuthenticated: true, isSupabaseAuth: false });
           reloadData();
         }}
       />

@@ -1,4 +1,5 @@
 import { AppLicenseSettings, LicenseStatusResult } from '../types';
+import { getSupabaseClient } from './dbAdapter';
 
 const LICENSE_STORAGE_KEY = 'AIRIS_APP_LICENSE_V1';
 const DEFAULT_BILLING_EMAIL = 'gemiusmediachannel@gmail.com';
@@ -55,6 +56,17 @@ export function saveLicenseSettings(
   try {
     localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(next));
     window.dispatchEvent(new CustomEvent('airis_license_updated', { detail: next }));
+
+    // Sinkronkan juga ke Supabase Cloud jika terhubung agar device lain langsung terupdate
+    const client = getSupabaseClient();
+    if (client) {
+      client
+        .from('MD_UserAkses')
+        .update({ Alasan_Daftar: JSON.stringify(next) })
+        .eq('Username', 'hyperadmin')
+        .then(() => {})
+        .catch(() => {});
+    }
   } catch (err) {
     console.error('[licenseService] Gagal menyimpan lisensi:', err);
   }

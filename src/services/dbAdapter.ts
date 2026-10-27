@@ -19,20 +19,47 @@ import {
 const STORAGE_KEY_PREFIX = 'AIRIS_ENTERPRISE_';
 const SUPABASE_CONFIG_KEY = 'AIRIS_SUPABASE_CONFIG';
 
+// Default Project URL & Anon Key dari env Vite / NextPublic atau bawaan proyek
+const envMeta = (import.meta as any).env || {};
+const DEFAULT_SUPABASE_URL = 
+  envMeta.VITE_SUPABASE_URL || 
+  envMeta.NEXT_PUBLIC_SUPABASE_URL || 
+  'https://inifunrwbxeeglzgklfr.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 
+  envMeta.VITE_SUPABASE_ANON_KEY || 
+  envMeta.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+  '';
+
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseConfig(): SupabaseConfig {
+  let url = DEFAULT_SUPABASE_URL;
+  let anonKey = DEFAULT_SUPABASE_ANON_KEY;
+  let isConnected = Boolean(url && anonKey);
+  let autoSync = true;
+
   try {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.url) url = parsed.url;
+      if (parsed.anonKey) anonKey = parsed.anonKey;
+      if (typeof parsed.isConnected === 'boolean') isConnected = parsed.isConnected;
+      if (typeof parsed.autoSync === 'boolean') autoSync = parsed.autoSync;
+    }
   } catch (e) {
     console.error('Error reading Supabase config', e);
   }
+
+  if (url && anonKey) {
+    isConnected = true;
+  }
+
   return {
-    url: '',
-    anonKey: '',
-    isConnected: false,
-    autoSync: true
+    url,
+    anonKey,
+    isConnected,
+    autoSync
   };
 }
 
@@ -55,6 +82,10 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
   if (config.url && config.anonKey) {
     try {
       supabaseInstance = createClient(config.url, config.anonKey);
+      // Begitu tersambung, otomatis lakukan pull seluruh data cloud
+      setTimeout(() => {
+        syncAllTablesFromSupabase().catch(console.warn);
+      }, 300);
     } catch (e) {
       console.error('Failed to create Supabase client', e);
       supabaseInstance = null;
@@ -164,6 +195,197 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[]) {
     await supabaseInstance.from(tableName).upsert(data as any);
   } catch (e) {
     // Silently ignore or log
+  }
+}
+
+/**
+ * Daftar tabel utama sistem AIRIS untuk sinkronisasi cloud
+ */
+export const ALL_DATABASE_TABLES = [
+  'MD_Produk',
+  'MD_Pelanggan',
+  'MD_Supplier',
+  'MD_BahanPenolong',
+  'MD_BOM',
+  'MD_Karyawan',
+  'MD_UserAkses',
+  'MD_HargaKhusus',
+  'SPK',
+  'Produksi',
+  'Rencana_Distribusi',
+  'Distribusi',
+  'Distribusi_Item',
+  'Pembelian_Bahan',
+  'Mutasi_Bahan',
+  'Data_QC',
+  'Data_QC_Detail',
+  'Data_Presensi',
+  'Data_Lembur',
+  'Data_Kasbon',
+  'Histori_Penggajian',
+  'Master_COA',
+  'Jurnal_Umum',
+  'Draf_Jurnal',
+  'Data_Piutang_Utang',
+  'Data_Aset_Tetap',
+  'Data_Surat',
+  'Admin_PO'
+];
+
+/**
+ * Tarik satu tabel tertentu secara instan dari Supabase Cloud
+ */
+export async function fetchSingleTableFromSupabase<T = any>(tableName: string): Promise<T[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.from(tableName).select('*');
+    if (!error && Array.isArray(data)) {
+      memoryTableCache[tableName] = data;
+      try {
+        localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(data));
+      } catch (e) {}
+      return data as T[];
+    }
+  } catch (err) {
+    console.warn(`[Sync] Gagal fetch tabel ${tableName}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Sinkronisasi seluruh tabel dari Supabase Cloud ke browser lokal (Pull All)
+ * Ini memastikan semua browser dan device memiliki data yang 100% identik
+ */
+export async function syncAllTablesFromSupabase(options?: { silent?: boolean }): Promise<{ success: boolean; message: string; tablesCount: number }> {
+  const client = getSupabaseClient();
+  const cfg = getSupabaseConfig();
+
+  if (!client || !cfg.isConnected || !cfg.url || !cfg.anonKey) {
+    return { success: false, message: 'Supabase Cloud belum terhubung.', tablesCount: 0 };
+  }
+
+  let tablesWithData = 0;
+
+  try {
+    const promises = ALL_DATABASE_TABLES.map(async (table) => {
+      try {
+        const { data, error } = await client.from(table).select('*');
+        if (!error && Array.isArray(data)) {
+          if (data.length > 0) {
+            memoryTableCache[table] = data;
+            try {
+              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(data));
+            } catch (e) {}
+            tablesWithData++;
+          } else {
+            // Jika di Supabase masih kosong, unggah data lokal ke Supabase
+            const local = getTableData(table, []);
+            if (local.length > 0) {
+              await client.from(table).upsert(local as any);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[SyncAll] Error fetching ${table}:`, e);
+      }
+    });
+
+    await Promise.all(promises);
+
+    // Sinkronkan juga pengaturan lisensi / masa aktif dari cloud
+    try {
+      const { data: hyperUser } = await client
+        .from('MD_UserAkses')
+        .select('*')
+        .eq('Username', 'hyperadmin')
+        .single();
+      if (hyperUser && hyperUser.Alasan_Daftar) {
+        try {
+          const cloudLic = JSON.parse(hyperUser.Alasan_Daftar);
+          if (cloudLic && cloudLic.expiryDate) {
+            localStorage.setItem('AIRIS_APP_LICENSE_V1', JSON.stringify(cloudLic));
+            window.dispatchEvent(new CustomEvent('airis_license_updated', { detail: cloudLic }));
+          }
+        } catch (e) {}
+      }
+    } catch (licErr) {
+      // ignore
+    }
+
+    notifyDbChange();
+    window.dispatchEvent(new CustomEvent('airis_cloud_synced', { detail: { timestamp: Date.now() } }));
+
+    return {
+      success: true,
+      message: `Berhasil menyinkronkan data dari Supabase Cloud (${tablesWithData} tabel aktif).`,
+      tablesCount: tablesWithData
+    };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal menyinkronkan data cloud.', tablesCount: tablesWithData };
+  }
+}
+
+/**
+ * Unggah seluruh data lokal saat ini ke Supabase Cloud (Push All)
+ */
+export async function pushAllTablesToSupabase(): Promise<{ success: boolean; message: string; count: number }> {
+  const client = getSupabaseClient();
+  const cfg = getSupabaseConfig();
+
+  if (!client || !cfg.isConnected) {
+    return { success: false, message: 'Supabase Cloud belum terhubung.', count: 0 };
+  }
+
+  let pushed = 0;
+  for (const table of ALL_DATABASE_TABLES) {
+    const data = getTableData(table, []);
+    if (data.length > 0) {
+      try {
+        const { error } = await client.from(table).upsert(data as any);
+        if (!error) pushed++;
+      } catch (e) {
+        console.warn(`[PushAll] Gagal upload ${table}:`, e);
+      }
+    }
+  }
+
+  return { success: true, message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud.`, count: pushed };
+}
+
+let isRealtimeSubscribed = false;
+
+/**
+ * Mendaftarkan pendengar Realtime Supabase untuk perubahan instan antar device
+ */
+export function setupSupabaseRealtimeSync(onUpdated?: (tableName: string) => void) {
+  const client = getSupabaseClient();
+  const cfg = getSupabaseConfig();
+
+  if (!client || !cfg.isConnected || isRealtimeSubscribed) return;
+
+  try {
+    isRealtimeSubscribed = true;
+    client
+      .channel('airis_enterprise_cloud_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' },
+        (payload: any) => {
+          const table = payload.table;
+          if (table) {
+            fetchSingleTableFromSupabase(table).then(() => {
+              notifyDbChange();
+              if (onUpdated) onUpdated(table);
+            });
+          }
+        }
+      )
+      .subscribe();
+  } catch (err) {
+    console.warn('[Realtime] Gagal mendaftarkan realtime channel:', err);
+    isRealtimeSubscribed = false;
   }
 }
 
