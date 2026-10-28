@@ -212,10 +212,11 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     bankRekening: 'BSI 1607134444 (KSPPS BMT SYECH HASYIM ASYARI)'
   };
 
-  const storedDocSettings = getTableData<DocumentTemplateSettings>('Pengaturan_Dokumen', [defaultDocSettings])[0] || defaultDocSettings;
-  const [docSettings, setDocSettings] = useState<DocumentTemplateSettings>(storedDocSettings);
+  const [docSettings, setDocSettings] = useState<DocumentTemplateSettings>(() => {
+    return getTableData<DocumentTemplateSettings>('Pengaturan_Dokumen', [defaultDocSettings])[0] || defaultDocSettings;
+  });
   const [showDocSettingsModal, setShowDocSettingsModal] = useState<boolean>(false);
-  const [tempDocSettings, setTempDocSettings] = useState<DocumentTemplateSettings>(storedDocSettings);
+  const [tempDocSettings, setTempDocSettings] = useState<DocumentTemplateSettings>(() => docSettings);
 
   // ==================== PENGATURAN DOKUMEN SURAT RESMI ====================
   const defaultGlobalLetterSettings: LetterDocumentSettings = {
@@ -238,10 +239,11 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     ttdWidth: 110,
     ttdHeight: 75,
   };
-  const storedGlobalLetterSettings = getTableData<LetterDocumentSettings>('Pengaturan_Dokumen_Surat_Resmi', [defaultGlobalLetterSettings])[0] || defaultGlobalLetterSettings;
-  const [globalLetterSettings, setGlobalLetterSettings] = useState<LetterDocumentSettings>(storedGlobalLetterSettings);
+  const [globalLetterSettings, setGlobalLetterSettings] = useState<LetterDocumentSettings>(() => {
+    return getTableData<LetterDocumentSettings>('Pengaturan_Dokumen_Surat_Resmi', [defaultGlobalLetterSettings])[0] || defaultGlobalLetterSettings;
+  });
   const [showGlobalLetterSettingsModal, setShowGlobalLetterSettingsModal] = useState<boolean>(false);
-  const [tempGlobalLetterSettings, setTempGlobalLetterSettings] = useState<LetterDocumentSettings>(storedGlobalLetterSettings);
+  const [tempGlobalLetterSettings, setTempGlobalLetterSettings] = useState<LetterDocumentSettings>(() => globalLetterSettings);
 
   // ==================== PENGATURAN DOKUMEN & PENANDATANGAN PO ====================
   const defaultPOSignatories: POSignatory[] = [
@@ -266,10 +268,11 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     capHeight: 80,
     signatories: defaultPOSignatories
   };
-  const storedPOSettings = getTableData<PODocumentSettings>('Pengaturan_Dokumen_PO', [defaultPOSettings])[0] || defaultPOSettings;
-  const [poSettings, setPoSettings] = useState<PODocumentSettings>(storedPOSettings);
+  const [poSettings, setPoSettings] = useState<PODocumentSettings>(() => {
+    return getTableData<PODocumentSettings>('Pengaturan_Dokumen_PO', [defaultPOSettings])[0] || defaultPOSettings;
+  });
   const [showPOSettingsModal, setShowPOSettingsModal] = useState<boolean>(false);
-  const [tempPOSettings, setTempPOSettings] = useState<PODocumentSettings>(storedPOSettings);
+  const [tempPOSettings, setTempPOSettings] = useState<PODocumentSettings>(() => poSettings);
 
   // Template Gallery Modal State
   const [showTemplateGalleryModal, setShowTemplateGalleryModal] = useState<boolean>(false);
@@ -285,8 +288,9 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     textDecoration: 'none',
     color: '#1e293b'
   };
-  const storedLetterStyle = getTableData<TextStyleSettings>('Pengaturan_Gaya_Teks_Surat', [defaultLetterStyle])[0] || defaultLetterStyle;
-  const [letterTextStyle, setLetterTextStyle] = useState<TextStyleSettings>(storedLetterStyle);
+  const [letterTextStyle, setLetterTextStyle] = useState<TextStyleSettings>(() => {
+    return getTableData<TextStyleSettings>('Pengaturan_Gaya_Teks_Surat', [defaultLetterStyle])[0] || defaultLetterStyle;
+  });
 
   // Rich Text Editor Ref and State
   const editorRef = useRef<HTMLDivElement>(null);

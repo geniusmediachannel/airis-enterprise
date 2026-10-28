@@ -200,8 +200,11 @@ export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T
   } catch (e) {
     console.error(`Error reading ${tableName}`, e);
   }
-  // Initialize with fallback
-  setTableData(tableName, fallbackDefault);
+  // Initialize with fallback secara pasif (tanpa memicu side-effect render loop atau event listener)
+  memoryTableCache[tableName] = fallbackDefault;
+  try {
+    localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(fallbackDefault));
+  } catch (e) {}
   return fallbackDefault;
 }
 
