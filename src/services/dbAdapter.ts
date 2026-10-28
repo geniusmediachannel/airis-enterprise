@@ -126,6 +126,57 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
   notifyDbChange();
 }
 
+/**
+ * Memeriksa dan menerapkan konfigurasi koneksi otomatis jika ada hash link transfer di URL
+ * Contoh: #supabase_connect=...
+ */
+export function checkAndApplyUrlHashConfig(): { applied: boolean; config?: SupabaseConfig } {
+  if (typeof window === 'undefined') return { applied: false };
+  try {
+    const hash = window.location.hash || '';
+    if (hash.includes('supabase_connect=')) {
+      const match = hash.match(/supabase_connect=([^&]+)/);
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]);
+        const jsonStr = atob(decoded);
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.url && parsed.anonKey) {
+          const newCfg: SupabaseConfig = {
+            url: normalizeSupabaseUrl(parsed.url),
+            anonKey: parsed.anonKey.trim(),
+            isConnected: true,
+            autoSync: true
+          };
+          saveSupabaseConfig(newCfg);
+          // Hapus hash dari URL agar address bar browser kembali bersih
+          const cleanUrl = window.location.pathname + window.location.search;
+          window.history.replaceState(null, '', cleanUrl);
+          return { applied: true, config: newCfg };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[SupabaseConfig] Gagal memproses link auto-connect hash:', e);
+  }
+  return { applied: false };
+}
+
+/**
+ * Menghasilkan link tautan transfer instan untuk menghubungkan HP atau perangkat lain tanpa ketik ulang
+ */
+export function generateDeviceConnectUrl(cfg?: SupabaseConfig): string {
+  const active = cfg || getSupabaseConfig();
+  if (!active.url || !active.anonKey) return '';
+  try {
+    const payload = JSON.stringify({ url: active.url, anonKey: active.anonKey });
+    const encoded = encodeURIComponent(btoa(payload));
+    const base = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : 'https://airis-enterprise1926.vercel.app/';
+    return `${base}#supabase_connect=${encoded}`;
+  } catch (e) {
+    return '';
+  }
+}
+
 export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
     const cleanUrl = normalizeSupabaseUrl(url);

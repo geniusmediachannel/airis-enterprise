@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   Database, ShieldCheck, CheckCircle2, AlertCircle, 
   X, RefreshCw, Key, Globe, ExternalLink, HardDrive, 
-  Sparkles, Lock, ArrowDownCircle, ArrowUpCircle, Check
+  Sparkles, Lock, ArrowDownCircle, ArrowUpCircle, Check,
+  Smartphone, QrCode, Copy, Share2
 } from 'lucide-react';
 import { SupabaseConfig, UserAccount } from '../types';
 import { 
   isSupabaseConfigured, testSupabaseConnection, 
   syncAllTablesFromSupabase, pushAllTablesToSupabase,
-  getSupabaseConfig, normalizeSupabaseUrl, saveSupabaseConfig
+  getSupabaseConfig, normalizeSupabaseUrl, saveSupabaseConfig,
+  generateDeviceConnectUrl
 } from '../services/dbAdapter';
 import { isSuperAdmin } from '../services/permissionService';
 
@@ -38,6 +40,8 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const [testing, setTesting] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showQrPanel, setShowQrPanel] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const canManageDb = !currentUser || isSuperAdmin(currentUser);
 
   useEffect(() => {
@@ -393,6 +397,74 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             </div>
           )}
 
+          {/* Hubungkan ke HP / Device Lain (Instan QR & Link) */}
+          {(isSupabaseConfigured() || (url && anonKey)) && (
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-700" />
+                  <span className="font-bold text-xs text-slate-800">
+                    Hubungkan ke HP / Perangkat Lain
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQrPanel(!showQrPanel)}
+                  className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 transition flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  {showQrPanel ? 'Tutup QR' : 'Buka QR Code'}
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Agar di HP tidak perlu memasukkan key lagi: Cukup scan QR Code atau salin link instan di bawah ini dari HP Anda sekali saja.
+              </p>
+
+              {showQrPanel && (
+                <div className="p-4 bg-white rounded-xl border border-emerald-200 flex flex-col items-center justify-center gap-3 animate-in fade-in">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(generateDeviceConnectUrl({ url, anonKey, isConnected: true }))}`}
+                      alt="QR Code Koneksi Supabase HP"
+                      className="w-40 h-40"
+                    />
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-600 text-center">
+                    Arahkan kamera HP ke QR Code di atas untuk langsung membuka dan menyambungkan database Supabase secara otomatis.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const connectLink = generateDeviceConnectUrl({ url, anonKey, isConnected: true });
+                    if (connectLink) {
+                      navigator.clipboard.writeText(connectLink);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2500);
+                    }
+                  }}
+                  className="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-white" />
+                      <span>Link Instan Tersalin! Kirim ke WA / Buka di HP</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Link Penghubung Instan untuk HP</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Features note */}
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-2">
             <div className="font-semibold text-slate-800 flex items-center gap-1.5">
@@ -403,7 +475,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
               Dengan menghubungkan Supabase Cloud, seluruh data (Produksi, SPK, Stok, Keuangan, dan Masa Aktif Aplikasi) akan <strong>otomatis tersinkronisasi secara real-time</strong>. Data yang diinput dari laptop ini akan langsung sama persis saat dibuka dari komputer kasir, tablet, maupun smartphone lain.
             </p>
             <div className="pt-1 border-t border-slate-200 text-[10px] text-slate-500">
-              <strong>Tips Deploy Vercel:</strong> Pasang Environment Variables <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_URL</code> dan <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_ANON_KEY</code> di Vercel agar seluruh device langsung terhubung otomatis tanpa konfigurasi ulang!
+              <strong>Tips Bebas Input di Semua Device:</strong> Tambahkan <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_URL</code> dan <code className="bg-slate-200 px-1 rounded text-slate-800">VITE_SUPABASE_ANON_KEY</code> di Environment Variables Dashboard Vercel agar semua orang yang membuka webapp langsung tersambung otomatis sejak pertama kali!
             </div>
           </div>
 

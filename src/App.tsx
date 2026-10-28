@@ -33,7 +33,7 @@ import { Eye, Lock, ShieldCheck } from 'lucide-react';
 
 import { 
   initializeDatabase, getTableData, saveTableData, getSupabaseConfig, saveSupabaseConfig,
-  syncAllTablesFromSupabase, setupSupabaseRealtimeSync
+  syncAllTablesFromSupabase, setupSupabaseRealtimeSync, checkAndApplyUrlHashConfig
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
@@ -59,7 +59,16 @@ import { ExcelTemplateType } from './services/excelService';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<string>('dashboard');
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(getSupabaseConfig());
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
+    const hashRes = checkAndApplyUrlHashConfig();
+    if (hashRes.applied && hashRes.config) {
+      setTimeout(() => {
+        showToast('Koneksi Cloud Berhasil', 'Perangkat ini berhasil terhubung ke Database Supabase secara otomatis!', 'success');
+      }, 600);
+      return hashRes.config;
+    }
+    return getSupabaseConfig();
+  });
   const [pushPermission, setPushPermission] = useState<NotificationPermission>(getWebPushPermission());
 
   // Mobile responsive drawer
@@ -81,6 +90,28 @@ export default function App() {
   // Current logged in auth session
   const [session, setSession] = useState<AuthSession>(() => getStoredSession());
   const currentUser = session.user;
+
+  // Riwayat navigasi modul halaman untuk mendukung tombol kembali di HP
+  const viewHistoryRef = useRef<string[]>(['dashboard']);
+  const lastBackPressTimeRef = useRef<number>(0);
+
+  // Fungsi ganti halaman yang mencatat riwayat ke window.history (HP Back Button Friendly)
+  const handleSelectView = useCallback((targetView: string) => {
+    if (targetView === currentView) return;
+    setCurrentView(targetView);
+    viewHistoryRef.current.push(targetView);
+    try {
+      window.history.pushState({ view: targetView, type: 'view' }, '');
+    } catch (e) {}
+  }, [currentView]);
+
+  // Fungsi buka modal dengan mendaftarkan state ke browser history
+  const openModalWithHistory = useCallback((setter: (open: boolean) => void, modalName: string) => {
+    setter(true);
+    try {
+      window.history.pushState({ modal: modalName, type: 'modal' }, '');
+    } catch (e) {}
+  }, []);
 
   // App State collections
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -346,6 +377,89 @@ export default function App() {
     };
   }, [pushPermission]);
 
+  // Hook Penanganan Tombol Kembali HP (Android / iOS Hardware & Gesture Back Button)
+  // Menjamin tombol kembali di HP tidak menutup aplikasi, melainkan menutup modal atau kembali ke halaman sebelumnya
+  useEffect(() => {
+    try {
+      if (window.history.state === null) {
+        window.history.replaceState({ view: 'dashboard', type: 'view' }, '');
+      }
+    } catch (e) {}
+
+    const handlePopState = (event: PopStateEvent) => {
+      // 1. Prioritas 1: Jika ada Drawer / Sidebar / Modal yang terbuka, tutup elemen tersebut
+      if (isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+        return;
+      }
+      if (showNotificationDrawer) {
+        setShowNotificationDrawer(false);
+        return;
+      }
+      if (showSettingsModal) {
+        setShowSettingsModal(false);
+        return;
+      }
+      if (showExcelModal) {
+        setShowExcelModal(false);
+        return;
+      }
+      if (showSupabaseModal) {
+        setShowSupabaseModal(false);
+        return;
+      }
+      if (showHyperAdminModal) {
+        setShowHyperAdminModal(false);
+        return;
+      }
+      if (showTransferModal) {
+        setShowTransferModal(false);
+        return;
+      }
+      if (showAuthModal) {
+        setShowAuthModal(false);
+        return;
+      }
+
+      // 2. Prioritas 2: Jika sedang di modul selain Dashboard, kembali ke modul sebelumnya
+      if (currentView !== 'dashboard') {
+        viewHistoryRef.current.pop();
+        const prev = viewHistoryRef.current[viewHistoryRef.current.length - 1] || 'dashboard';
+        setCurrentView(prev);
+        return;
+      }
+
+      // 3. Prioritas 3: Sudah di Dashboard (halaman utama terdepan)
+      // Cegah aplikasi tertutup mendadak dengan mekanisme konfirmasi ganda (double-press)
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2200) {
+        // Tekan 2x cepat -> biarkan browser keluar
+        return;
+      }
+
+      lastBackPressTimeRef.current = now;
+      try {
+        window.history.pushState({ view: 'dashboard', type: 'view' }, '');
+      } catch (e) {}
+      showToast('Tekan Sekali Lagi', 'Tekan tombol kembali sekali lagi untuk menutup aplikasi.', 'info');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [
+    currentView,
+    isMobileSidebarOpen,
+    showNotificationDrawer,
+    showSettingsModal,
+    showExcelModal,
+    showSupabaseModal,
+    showHyperAdminModal,
+    showTransferModal,
+    showAuthModal
+  ]);
+
   // Deteksi apakah pengguna memiliki wewenang untuk MENGERJAKAN (input, edit, hapus) di modul saat ini
   // Mendukung multi-role: jika karyawan merangkap beberapa divisi, hak aksesnya digabungkan!
   const isWritable = useMemo(() => {
@@ -518,14 +632,14 @@ export default function App() {
       {/* Sidebar Navigation */}
       <Sidebar
         currentView={currentView}
-        onSelectView={setCurrentView}
+        onSelectView={handleSelectView}
         currentUser={currentUser}
         badgeCounts={badgeCounts}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
-        onOpenSettings={() => setShowSettingsModal(true)}
-        onOpenHyperAdminModal={() => setShowHyperAdminModal(true)}
-        onOpenTransferModal={() => setShowTransferModal(true)}
+        onOpenSettings={() => openModalWithHistory(setShowSettingsModal, 'settings')}
+        onOpenHyperAdminModal={() => openModalWithHistory(setShowHyperAdminModal, 'hyperadmin')}
+        onOpenTransferModal={() => openModalWithHistory(setShowTransferModal, 'transfer')}
       />
 
       {/* Main Content Area */}
@@ -534,7 +648,7 @@ export default function App() {
         <Header
           currentView={currentView}
           supabaseConfig={supabaseConfig}
-          onOpenSupabaseModal={() => setShowSupabaseModal(true)}
+          onOpenSupabaseModal={() => openModalWithHistory(setShowSupabaseModal, 'supabase')}
           onOpenExcelModal={() => {
             if (!isWritable) {
               showToast(
@@ -545,20 +659,32 @@ export default function App() {
               return;
             }
             setExcelImportDefaultModule('produk');
-            setShowExcelModal(true);
+            openModalWithHistory(setShowExcelModal, 'excel');
           }}
-          onOpenAuthModal={() => setShowAuthModal(true)}
-          onToggleNotificationDrawer={() => setShowNotificationDrawer(!showNotificationDrawer)}
+          onOpenAuthModal={() => openModalWithHistory(setShowAuthModal, 'auth')}
+          onToggleNotificationDrawer={() => {
+            if (!showNotificationDrawer) {
+              openModalWithHistory(setShowNotificationDrawer, 'drawer');
+            } else {
+              setShowNotificationDrawer(false);
+            }
+          }}
           unreadCount={unreadNotifCount}
           pushPermission={pushPermission}
           onRequestPush={handleRequestPush}
           currentUser={currentUser}
-          onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+          onToggleMobileSidebar={() => {
+            if (!isMobileSidebarOpen) {
+              openModalWithHistory(setIsMobileSidebarOpen, 'sidebar');
+            } else {
+              setIsMobileSidebarOpen(false);
+            }
+          }}
           onLogout={handleLogout}
-          onOpenSettings={() => setShowSettingsModal(true)}
-          onNavigateToAccessLog={() => setCurrentView('log_akses')}
-          onOpenHyperAdminModal={() => setShowHyperAdminModal(true)}
-          onOpenTransferModal={() => setShowTransferModal(true)}
+          onOpenSettings={() => openModalWithHistory(setShowSettingsModal, 'settings')}
+          onNavigateToAccessLog={() => handleSelectView('log_akses')}
+          onOpenHyperAdminModal={() => openModalWithHistory(setShowHyperAdminModal, 'hyperadmin')}
+          onOpenTransferModal={() => openModalWithHistory(setShowTransferModal, 'transfer')}
         />
 
         {/* Dynamic View Container dengan Interceptor Proteksi Mode Lihat Saja */}
@@ -577,7 +703,7 @@ export default function App() {
                 distributionItems={distributionItems}
                 notifications={notifications}
                 journals={journals}
-                onNavigateTo={setCurrentView}
+                onNavigateTo={handleSelectView}
               />
             </ErrorBoundary>
           )}
@@ -716,9 +842,9 @@ export default function App() {
         {/* Mobile Bottom Navigation Bar */}
         <BottomNav
           currentView={currentView}
-          onSelectView={setCurrentView}
+          onSelectView={handleSelectView}
           currentUserRole={currentUser?.Role}
-          onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
+          onOpenMobileMenu={() => openModalWithHistory(setIsMobileSidebarOpen, 'sidebar')}
           badgeCounts={{
             spk: badgeCounts.spk,
             kritis: badgeCounts.kritis,
