@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Rounded App Icon -->
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Glow Ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#10b981" stroke-width="8" stroke-dasharray="16 12" opacity="0.4"/>
+  
+  <!-- Water Droplet Logo (AMDK As-Shofaa) -->
+  <path d="M256 90 C256 90, 140 250, 140 330 C140 396.27 191.73 450 256 450 C320.27 450 372 396.27 372 330 C372 250, 256 90, 256 90 Z" fill="url(#dropGrad)"/>
+  
+  <!-- Droplet Highlight Reflex -->
+  <path d="M210 270 C200 300, 205 350, 230 380 C215 370, 205 340, 210 300 Z" fill="#ffffff" opacity="0.6"/>
+  
+  <!-- Text Brand AIRIS -->
+  <text x="256" y="360" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-size="52" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">AIRIS</text>
+  <text x="256" y="395" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-size="20" font-weight="700" fill="#a7f3d0" text-anchor="middle" letter-spacing="2">AMDK AS-SHOFAA</text>
+</svg>
