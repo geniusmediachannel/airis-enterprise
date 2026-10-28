@@ -690,7 +690,7 @@ export default function App() {
         {/* Dynamic View Container dengan Interceptor Proteksi Mode Lihat Saja */}
         <main 
           onClickCapture={handleReadOnlyClickCapture}
-          className={`flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6 pb-24 lg:pb-6 ${
+          className={`flex-1 overflow-y-auto overflow-x-hidden min-w-0 w-full max-w-full p-3 sm:p-5 lg:p-6 pb-24 lg:pb-6 ${
             !isWritable && currentView !== 'dashboard' ? 'read-only-inspection-mode' : ''
           }`}
         >

@@ -1412,7 +1412,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Toast Notification */}
       {toastMsg && (
         <div 
@@ -1426,75 +1426,81 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       )}
 
       {/* Top Header & Navigation Tabs */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-200 no-print">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <Scale className="text-blue-600" size={24} />
-            Keuangan & Akuntansi Terpadu
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Pembukuan Double-Entry otomatis, Verifikasi Jurnal, Neraca, Laba Rugi, Aset Tetap, dan Piutang Usaha.
-          </p>
+      <div className="flex flex-col gap-3 pb-3 border-b border-slate-200 no-print w-full min-w-0">
+        {/* Baris 1: Judul dan Tombol Aksi Global */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full min-w-0">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              <Scale className="text-blue-600 shrink-0" size={22} />
+              <span className="truncate">Keuangan &amp; Akuntansi Terpadu</span>
+            </h2>
+            <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1 sm:line-clamp-none">
+              Pembukuan Double-Entry otomatis, Verifikasi Jurnal, Neraca, Laba Rugi, Aset Tetap, dan Piutang Usaha.
+            </p>
+          </div>
+
+          {/* Global Finance Actions */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Universal Working Print Button */}
+            <button
+              onClick={() => window.print()}
+              className="p-2 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
+              title="Cetak Halaman (Print)"
+            >
+              <Printer size={16} />
+            </button>
+
+            {/* Universal PDF Export Button */}
+            <button
+              onClick={() => {
+                if (activeTab === 'neraca') handleExportNeracaPDF();
+                else if (activeTab === 'labarugi') handleExportLabaRugiPDF();
+                else if (activeTab === 'piutang') handleExportPiutangPDF();
+                else {
+                  generateTableReportPDF({
+                    title: `LAPORAN KEUANGAN (${activeTab.toUpperCase()})`,
+                    subtitle: `Periode: ${filterPeriod} | PT. Anugerah Illahi Rabbi`,
+                    headers: ['Deskripsi', 'Nilai'],
+                    rows: [['Laporan Keuangan Resmi', 'Tercatat']],
+                    filename: `Keuangan_${activeTab}.pdf`
+                  });
+                }
+              }}
+              className="p-2 text-red-700 bg-red-50 hover:bg-red-100 active:bg-red-200 border border-red-200 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
+              title="Download PDF Laporan"
+            >
+              <FileDown size={16} />
+            </button>
+
+            {onOpenImport && (
+              <button
+                onClick={() => onOpenImport(getFinanceImportModule())}
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+                title="Import Data Excel untuk Keuangan"
+              >
+                <FileSpreadsheet size={14} />
+                <span>Import Excel</span>
+              </button>
+            )}
+
+            {/* Tombol Sinkronisasi Otomatis Semua Modul ke Keuangan */}
+            <button
+              onClick={handleSyncAllModules}
+              className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+              title="Sinkronkan Otomatis Seluruh Transaksi Distribusi, Produksi, dan Pembelian ke Keuangan"
+            >
+              <RefreshCw size={14} className="text-emerald-600" />
+              <span>Sinkron Otomatis</span>
+            </button>
+          </div>
         </div>
 
-        {/* Global Finance Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Universal Working Print Button */}
-          <button
-            onClick={() => window.print()}
-            className="p-2 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
-            title="Cetak Halaman (Print)"
-          >
-            <Printer size={16} />
-          </button>
-
-          {/* Universal PDF Export Button */}
-          <button
-            onClick={() => {
-              if (activeTab === 'neraca') handleExportNeracaPDF();
-              else if (activeTab === 'labarugi') handleExportLabaRugiPDF();
-              else if (activeTab === 'piutang') handleExportPiutangPDF();
-              else {
-                generateTableReportPDF({
-                  title: `LAPORAN KEUANGAN (${activeTab.toUpperCase()})`,
-                  subtitle: `Periode: ${filterPeriod} | PT. Anugerah Illahi Rabbi`,
-                  headers: ['Deskripsi', 'Nilai'],
-                  rows: [['Laporan Keuangan Resmi', 'Tercatat']],
-                  filename: `Keuangan_${activeTab}.pdf`
-                });
-              }
-            }}
-            className="p-2 text-red-700 bg-red-50 hover:bg-red-100 active:bg-red-200 border border-red-200 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
-            title="Download PDF Laporan"
-          >
-            <FileDown size={16} />
-          </button>
-
-          {onOpenImport && (
-            <button
-              onClick={() => onOpenImport(getFinanceImportModule())}
-              className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-              title="Import Data Excel untuk Keuangan"
-            >
-              <FileSpreadsheet size={14} />
-              <span>Import Excel {activeTab.toUpperCase()}</span>
-            </button>
-          )}
-
-          {/* Tombol Sinkronisasi Otomatis Semua Modul ke Keuangan */}
-          <button
-            onClick={handleSyncAllModules}
-            className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-            title="Sinkronkan Otomatis Seluruh Transaksi Distribusi, Produksi, dan Pembelian ke Keuangan"
-          >
-            <RefreshCw size={14} className="text-emerald-600" />
-            <span>Sinkron Otomatis Keuangan</span>
-          </button>
-
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl overflow-x-auto max-w-full text-xs font-medium no-print">
+        {/* Baris 2: Navigasi Tab Horizontal yang Responsif & Mandiri */}
+        <div className="w-full min-w-0 max-w-full overflow-x-auto no-scrollbar py-0.5">
+          <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-medium no-print shrink-0">
             <button
               onClick={() => setActiveTab('neraca')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'neraca' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1502,7 +1508,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('labarugi')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'labarugi' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1510,7 +1516,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('drafts')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer shrink-0 ${
                 activeTab === 'drafts' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1523,7 +1529,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('jurnal')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'jurnal' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1531,7 +1537,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('coa')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'coa' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1539,7 +1545,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('aset')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'aset' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1547,11 +1553,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('piutang')}
-              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer shrink-0 ${
                 activeTab === 'piutang' ? 'bg-white text-blue-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Piutang & Utang
+              Piutang &amp; Utang
             </button>
           </div>
         </div>
@@ -1561,18 +1567,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       {/* 1. TAB: LAPORAN NERACA (BALANCE SHEET)                    */}
       {/* ========================================================= */}
       {activeTab === 'neraca' && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-xs no-print">
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-slate-700">Periode Neraca:</label>
+        <div className="space-y-5 w-full min-w-0">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 bg-white rounded-xl border border-slate-200 shadow-xs no-print w-full min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">Periode Neraca:</label>
               <input
                 type="month"
                 value={filterPeriod}
                 onChange={e => setFilterPeriod(e.target.value)}
-                className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
+                className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-slate-50 focus:bg-white"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={() => {
                   const dataRows = [
@@ -1585,7 +1591,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   ];
                   exportDataToExcel(dataRows, 'Laporan_Neraca', `AIRIS_Neraca_${filterPeriod}`);
                 }}
-                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Download size={14} />
                 <span>Export Excel</span>
@@ -1608,29 +1614,29 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           </div>
 
           {/* Balance Indicator Status */}
-          <div className={`p-4 rounded-xl border flex items-center justify-between no-print ${
+          <div className={`p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 no-print w-full min-w-0 ${
             isBalance 
               ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900' 
               : 'bg-amber-50/80 border-amber-200 text-amber-900'
           }`}>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
               {isBalance ? (
-                <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+                <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
               ) : (
-                <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+                <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
               )}
-              <div>
-                <span className="font-bold text-xs uppercase tracking-wide block">
+              <div className="min-w-0">
+                <span className="font-bold text-xs uppercase tracking-wide block truncate">
                   Status Keseimbangan Neraca (Balance Verification)
                 </span>
-                <span className="text-xs">
+                <span className="text-xs text-slate-700 block break-words mt-0.5">
                   {isBalance 
                     ? 'NERACA SEIMBANG (BALANCED): Total Aktiva sama persis dengan Total Pasiva.' 
                     : `PERINGATAN SELISIH: Terdapat perbedaan Rp ${selisihNeraca.toLocaleString('id-ID')} antara Aktiva dan Pasiva.`}
                 </span>
               </div>
             </div>
-            <div className="text-right">
+            <div className="sm:text-right w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-emerald-200/60 shrink-0">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Nilai Neraca</span>
               <span className="text-sm font-mono font-black text-slate-900">Rp {totalAktiva.toLocaleString('id-ID')}</span>
             </div>
@@ -2039,21 +2045,21 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       {/* 3. TAB: LAPORAN LABA RUGI                                 */}
       {/* ========================================================= */}
       {activeTab === 'labarugi' && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-xs no-print">
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-slate-700">Periode:</label>
+        <div className="space-y-5 w-full min-w-0">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 bg-white rounded-xl border border-slate-200 shadow-xs no-print w-full min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">Periode:</label>
               <input
                 type="month"
                 value={filterPeriod}
                 onChange={e => setFilterPeriod(e.target.value)}
-                className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
+                className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-slate-50 focus:bg-white"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
                 onClick={() => exportDataToExcel(periodJournals, 'Laba_Rugi', `AIRIS_LabaRugi_${filterPeriod}`)}
-                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <Download size={14} />
                 <span>Export Excel</span>
