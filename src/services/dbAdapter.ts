@@ -366,22 +366,467 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'ID_Distribusi', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Metode_Bayar', 'No_Referensi', 'Keterangan']
 };
 
+/**
+ * Helper ekstraksi nilai dari baris dengan toleransi alias, spasi, garis bawah, dan huruf besar/kecil
+ */
+export function getRowVal(row: any, aliases: string[]): any {
+  if (!row || typeof row !== 'object') return undefined;
+
+  // 1. Direct key match
+  for (const alias of aliases) {
+    if (row[alias] !== undefined && row[alias] !== null && row[alias] !== '') {
+      return row[alias];
+    }
+  }
+
+  // 2. Normalized key match (lowercase, no spaces, no underscores, no dashes, no dots)
+  const normRowKeys = new Map<string, string>();
+  for (const k of Object.keys(row)) {
+    normRowKeys.set(k.toLowerCase().replace(/[\s_\-.]+/g, ''), k);
+  }
+
+  for (const alias of aliases) {
+    const normAlias = alias.toLowerCase().replace(/[\s_\-.]+/g, '');
+    const matchedKey = normRowKeys.get(normAlias);
+    if (matchedKey && row[matchedKey] !== undefined && row[matchedKey] !== null && row[matchedKey] !== '') {
+      return row[matchedKey];
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Konversi angka rupiah / kuantitas dari format Excel/teks ke numeric float murni
+ */
+export function parseNumeric(val: any, defaultVal: number = 0): number {
+  if (val === undefined || val === null || val === '') return defaultVal;
+  if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+  const str = String(val).trim().replace(/rp\.?/gi, '').trim();
+  if (!str || str === '-') return defaultVal;
+
+  let clean = str.replace(/[^0-9.,-]/g, '');
+  if (clean.includes('.') && clean.includes(',')) {
+    clean = clean.replace(/\./g, '').replace(/,/g, '.');
+  } else if (clean.includes('.')) {
+    if (/\.\d{3}(\.|$)/.test(clean)) {
+      clean = clean.replace(/\./g, '');
+    }
+  } else if (clean.includes(',')) {
+    if (/,\d{3}(,|$)/.test(clean)) {
+      clean = clean.replace(/,/g, '');
+    } else {
+      clean = clean.replace(/,/g, '.');
+    }
+  }
+  const num = parseFloat(clean);
+  return isNaN(num) ? defaultVal : num;
+}
+
+/**
+ * Konversi tanggal fleksibel ke ISO YYYY-MM-DD
+ */
+export function parseDateISO(rawDate: any): string {
+  if (!rawDate && rawDate !== 0) return new Date().toISOString().slice(0, 10);
+  if (rawDate instanceof Date && !isNaN(rawDate.getTime())) {
+    const yr = rawDate.getFullYear();
+    const mo = String(rawDate.getMonth() + 1).padStart(2, '0');
+    const da = String(rawDate.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  }
+  if (typeof rawDate === 'number' && rawDate > 1000) {
+    const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const str = String(rawDate).trim();
+  if (!str || str === '-') return new Date().toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+
+  // Format Indonesia / Inggris: 01-Okt-2026, 01 Okt 2026
+  const matchMonthText = str.match(/^(\d{1,2})[-\s/.]+([A-Za-z]{3,})[-\s/.]+(\d{2,4})/);
+  if (matchMonthText) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
+    const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const d = matchMonthText[1].padStart(2, '0');
+    const mStr = matchMonthText[2].toLowerCase().slice(0, 3);
+    let mIdx = months.indexOf(mStr);
+    if (mIdx === -1) mIdx = monthsEn.indexOf(mStr);
+    let yr = parseInt(matchMonthText[3], 10);
+    if (yr < 100) yr += 2000;
+    if (mIdx !== -1) {
+      return `${yr}-${String(mIdx + 1).padStart(2, '0')}-${d}`;
+    }
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
+  if (dmyMatch) {
+    let yr = parseInt(dmyMatch[3], 10);
+    if (yr < 100) yr += 2000;
+    return `${yr}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+
+  // YYYY/MM/DD
+  const ymdMatch = str.match(/^(\d{4})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})/);
+  if (ymdMatch) {
+    return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Normalisasi satu baris data sesuai tipe tabel dan Check Constraint PostgreSQL Supabase
+ */
+export function normalizeRecordForTable(tableName: string, row: any, idx: number): Record<string, any> {
+  if (!row || typeof row !== 'object') return {};
+
+  switch (tableName) {
+    case 'MD_Produk': {
+      const rawId = getRowVal(row, ['ID_Produk', 'ID Produk', 'Kode_Produk', 'Kode Produk', 'Kode', 'ID', 'Item ID', 'SKU']);
+      const rawName = getRowVal(row, ['Nama_Produk', 'Nama Produk', 'Produk', 'Nama', 'Nama Barang', 'Barang', 'Item', 'Description']);
+      const rawKat = getRowVal(row, ['Kategori', 'Category', 'Jenis', 'Tipe', 'Jenis Produk']);
+      const rawSat = getRowVal(row, ['Satuan', 'Unit', 'UoM', 'Kemasan']);
+      const rawHDist = getRowVal(row, ['Harga_Distributor', 'Harga Distributor', 'Distributor', 'Harga_Pokok', 'Harga Pokok', 'HPP', 'Harga']);
+      const rawHAgen = getRowVal(row, ['Harga_Agen', 'Harga Agen', 'Agen']);
+      const rawHRes = getRowVal(row, ['Harga_Reseller', 'Harga Reseller', 'Reseller']);
+      const rawHKon = getRowVal(row, ['Harga_Konsumen', 'Harga Konsumen', 'Konsumen', 'Harga Eceran', 'Eceran', 'Retail']);
+      const rawStatus = getRowVal(row, ['Status', 'Status Produk', 'Aktif']);
+
+      const name = String(rawName || rawId || `Produk AMDK ${idx + 1}`).trim();
+      let id = String(rawId || '').trim();
+      if (!id) {
+        const cleanName = name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        id = `ASH-${cleanName.slice(0, 8) || `PRD${String(idx + 1).padStart(3, '0')}`}`;
+      }
+
+      // Supabase constraint: CHECK ("Kategori" IN ('Air Mineral Cup', 'Air Mineral Botol', 'Air Mineral Galon'))
+      let kategori = 'Air Mineral Botol';
+      const katStr = (String(rawKat || '') + ' ' + name).toLowerCase();
+      if (katStr.includes('cup') || katStr.includes('120') || katStr.includes('220')) {
+        kategori = 'Air Mineral Cup';
+      } else if (katStr.includes('galon') || katStr.includes('gln') || katStr.includes('19')) {
+        kategori = 'Air Mineral Galon';
+      } else {
+        kategori = 'Air Mineral Botol';
+      }
+
+      // Supabase constraint: CHECK ("Satuan" IN ('Dus', 'Galon'))
+      let satuan = 'Dus';
+      const satStr = (String(rawSat || '') + ' ' + name).toLowerCase();
+      if (satStr.includes('galon') || satStr.includes('gln') || kategori === 'Air Mineral Galon') {
+        satuan = 'Galon';
+      } else {
+        satuan = 'Dus';
+      }
+
+      const hDist = parseNumeric(rawHDist, 0);
+      const hAgen = parseNumeric(rawHAgen, hDist > 0 ? Math.round(hDist * 1.08) : 0);
+      const hRes = parseNumeric(rawHRes, hAgen > 0 ? Math.round(hAgen * 1.08) : 0);
+      const hKon = parseNumeric(rawHKon, hRes > 0 ? Math.round(hRes * 1.15) : 0);
+
+      // Supabase constraint: CHECK ("Status" IN ('Aktif', 'Non-Aktif'))
+      let status = 'Aktif';
+      const statStr = String(rawStatus || '').toLowerCase();
+      if (statStr.includes('non') || statStr.includes('tidak') || statStr.includes('inaktif') || statStr === '0' || statStr === 'false') {
+        status = 'Non-Aktif';
+      }
+
+      return {
+        ID_Produk: id,
+        Nama_Produk: name,
+        Kategori: kategori,
+        Satuan: satuan,
+        Harga_Distributor: hDist,
+        Harga_Agen: hAgen,
+        Harga_Reseller: hRes,
+        Harga_Konsumen: hKon,
+        Status: status
+      };
+    }
+
+    case 'MD_Supplier': {
+      const rawId = getRowVal(row, ['ID_Supplier', 'ID Supplier', 'Kode_Supplier', 'Kode Supplier', 'Kode', 'ID', 'Vendor ID']);
+      const rawName = getRowVal(row, ['Nama_Supplier', 'Nama Supplier', 'Supplier', 'Pemasok', 'Nama Pemasok', 'Vendor', 'Nama Perusahaan', 'Nama']);
+      const rawPic = getRowVal(row, ['PIC', 'Kontak Person', 'Contact Person', 'Penanggung Jawab', 'PIC Supplier', 'Nama PIC']);
+      const rawTelp = getRowVal(row, ['No_Telp', 'No Telp', 'No. Telp', 'Telepon', 'No Telepon', 'No HP', 'No_HP', 'Kontak', 'HP', 'Phone']);
+      const rawAlamat = getRowVal(row, ['Alamat', 'Alamat Supplier', 'Alamat Pemasok', 'Lokasi', 'Kota', 'Address']);
+      const rawStatus = getRowVal(row, ['Status', 'Status Supplier', 'Aktif']);
+
+      const name = String(rawName || rawId || `Supplier ${idx + 1}`).trim();
+      let id = String(rawId || '').trim();
+      if (!id) {
+        id = `SUP-${String(idx + 1).padStart(4, '0')}`;
+      }
+
+      let status = 'Aktif';
+      const statStr = String(rawStatus || '').toLowerCase();
+      if (statStr.includes('non') || statStr.includes('tidak') || statStr.includes('inaktif') || statStr === '0' || statStr === 'false') {
+        status = 'Non-Aktif';
+      }
+
+      return {
+        ID_Supplier: id,
+        Nama_Supplier: name,
+        PIC: String(rawPic || '-').trim(),
+        No_Telp: String(rawTelp || '-').trim(),
+        Alamat: String(rawAlamat || '-').trim(),
+        Status: status
+      };
+    }
+
+    case 'MD_Pelanggan': {
+      const rawId = getRowVal(row, ['ID_Pelanggan', 'ID Pelanggan', 'Kode_Pelanggan', 'Kode Pelanggan', 'Kode', 'ID', 'Customer ID']);
+      const rawName = getRowVal(row, ['Nama_Pelanggan', 'Nama Pelanggan', 'Pelanggan', 'Customer', 'Nama Customer', 'Mitra', 'Toko', 'Pembeli', 'Agen', 'Distributor']);
+      const rawTelp = getRowVal(row, ['No_Telp', 'No Telp', 'No. Telp', 'Telepon', 'No Telepon', 'No HP', 'Kontak', 'HP', 'Phone']);
+      const rawAlamat = getRowVal(row, ['Alamat', 'Tujuan', 'Alamat Tujuan', 'Lokasi', 'Kota', 'Area', 'Address']);
+      const rawLevel = getRowVal(row, ['Level_Pelanggan', 'Level Pelanggan', 'Level', 'Tipe', 'Kategori', 'Golongan']);
+      const rawStatus = getRowVal(row, ['Status', 'Status Pelanggan', 'Aktif']);
+
+      const name = String(rawName || rawId || `Pelanggan ${idx + 1}`).trim();
+      let id = String(rawId || '').trim();
+      if (!id) {
+        id = `PLG-${String(idx + 1).padStart(4, '0')}`;
+      }
+
+      // Supabase constraint: CHECK ("Level_Pelanggan" IN ('Distributor', 'Agen', 'Reseller', 'Konsumen Biasa'))
+      let level = 'Distributor';
+      const lvlStr = (String(rawLevel || '') + ' ' + name).toLowerCase();
+      if (lvlStr.includes('konsumen') || lvlStr.includes('biasa') || lvlStr.includes('retail') || lvlStr.includes('eceran')) {
+        level = 'Konsumen Biasa';
+      } else if (lvlStr.includes('reseller') || lvlStr.includes('warung')) {
+        level = 'Reseller';
+      } else if (lvlStr.includes('agen')) {
+        level = 'Agen';
+      } else {
+        level = 'Distributor';
+      }
+
+      let status = 'Aktif';
+      const statStr = String(rawStatus || '').toLowerCase();
+      if (statStr.includes('non') || statStr.includes('tidak') || statStr.includes('inaktif') || statStr === '0' || statStr === 'false') {
+        status = 'Non-Aktif';
+      }
+
+      return {
+        ID_Pelanggan: id,
+        Nama_Pelanggan: name,
+        No_Telp: String(rawTelp || '-').trim(),
+        Alamat: String(rawAlamat || '-').trim(),
+        Level_Pelanggan: level,
+        Status: status
+      };
+    }
+
+    case 'MD_BahanPenolong': {
+      const rawId = getRowVal(row, ['ID_Bahan', 'ID Bahan', 'Kode_Bahan', 'Kode Bahan', 'Kode', 'ID']);
+      const rawName = getRowVal(row, ['Nama_Bahan', 'Nama Bahan', 'Bahan', 'Nama', 'Barang', 'Item']);
+      const rawKat = getRowVal(row, ['Kategori', 'Category']);
+      const rawSat = getRowVal(row, ['Satuan', 'Unit']);
+      const rawHarga = getRowVal(row, ['Harga_Satuan', 'Harga Satuan', 'Harga', 'Price']);
+      const rawMin = getRowVal(row, ['Minimum_Stock', 'Minimum Stock', 'Min_Stock', 'Min Stock', 'Stok_Minimum']);
+      const rawTgl = getRowVal(row, ['Tgl_Update_Harga', 'Tgl Update Harga', 'Tanggal', 'Tgl']);
+
+      const name = String(rawName || rawId || `Bahan ${idx + 1}`).trim();
+      const id = String(rawId || `BHN-${String(idx + 1).padStart(4, '0')}`).trim();
+
+      return {
+        ID_Bahan: id,
+        Nama_Bahan: name,
+        Kategori: String(rawKat || 'Kemasan').trim() || 'Kemasan',
+        Satuan: String(rawSat || 'Pcs').trim() || 'Pcs',
+        Harga_Satuan: parseNumeric(rawHarga, 0),
+        Minimum_Stock: parseNumeric(rawMin, 100),
+        Tgl_Update_Harga: rawTgl ? parseDateISO(rawTgl) : new Date().toISOString().slice(0, 10)
+      };
+    }
+
+    case 'MD_BOM': {
+      const rawId = getRowVal(row, ['ID_BOM', 'ID BOM', 'Kode_BOM', 'ID', 'No']);
+      const rawProd = getRowVal(row, ['ID_Produk', 'ID Produk', 'Produk', 'Kode_Produk']);
+      const rawBhn = getRowVal(row, ['ID_Bahan', 'ID Bahan', 'Bahan', 'Kode_Bahan']);
+      const rawJml = getRowVal(row, ['Jumlah_Dibutuhkan', 'Jumlah Dibutuhkan', 'Jumlah', 'Qty', 'Volume']);
+      const rawSat = getRowVal(row, ['Satuan', 'Unit']);
+      const rawKet = getRowVal(row, ['Keterangan', 'Catatan', 'Note']);
+
+      return {
+        ID_BOM: String(rawId || `BOM-${String(idx + 1).padStart(4, '0')}`).trim(),
+        ID_Produk: String(rawProd || '').trim(),
+        ID_Bahan: String(rawBhn || '').trim(),
+        Jumlah_Dibutuhkan: parseNumeric(rawJml, 1),
+        Satuan: String(rawSat || 'Pcs').trim() || 'Pcs',
+        Keterangan: String(rawKet || '').trim()
+      };
+    }
+
+    case 'MD_Karyawan': {
+      const rawId = getRowVal(row, ['ID_Karyawan', 'ID Karyawan', 'Kode_Karyawan', 'NIK', 'ID']);
+      const rawName = getRowVal(row, ['Nama_Karyawan', 'Nama Karyawan', 'Nama', 'Karyawan']);
+      const rawDept = getRowVal(row, ['Departemen', 'Bagian', 'Divisi', 'Dept']);
+      const rawJab = getRowVal(row, ['Jabatan', 'Posisi', 'Role']);
+      const rawTgl = getRowVal(row, ['Tgl_Masuk', 'Tgl Masuk', 'Tanggal Masuk', 'Tanggal', 'Tgl']);
+      const rawStat = getRowVal(row, ['Status', 'Status Karyawan']);
+      const rawGaji = getRowVal(row, ['Gaji_Pokok', 'Gaji Pokok', 'Gaji']);
+      const rawTunj = getRowVal(row, ['Tunjangan', 'Tunjangan Tetap']);
+
+      const name = String(rawName || rawId || `Karyawan ${idx + 1}`).trim();
+      const id = String(rawId || `KAR-${String(idx + 1).padStart(4, '0')}`).trim();
+
+      // Supabase constraint: CHECK ("Status" IN ('Aktif', 'Resign', 'Nonaktif'))
+      let status = 'Aktif';
+      const statStr = String(rawStat || '').toLowerCase();
+      if (statStr.includes('resign') || statStr.includes('keluar')) {
+        status = 'Resign';
+      } else if (statStr.includes('non') || statStr.includes('tidak') || statStr.includes('pasif')) {
+        status = 'Nonaktif';
+      }
+
+      return {
+        ID_Karyawan: id,
+        Nama_Karyawan: name,
+        Departemen: String(rawDept || 'Operasional').trim() || 'Operasional',
+        Jabatan: String(rawJab || 'Staff').trim() || 'Staff',
+        Tgl_Masuk: parseDateISO(rawTgl),
+        Status: status,
+        Gaji_Pokok: parseNumeric(rawGaji, 0),
+        Tunjangan: parseNumeric(rawTunj, 0)
+      };
+    }
+
+    case 'SPK': {
+      const rawId = getRowVal(row, ['ID_SPK', 'ID SPK', 'No_SPK', 'Nomor SPK', 'ID']);
+      const rawTgl = getRowVal(row, ['Tanggal', 'Tgl', 'Tanggal_SPK']);
+      const rawShift = getRowVal(row, ['Shift', 'Giliran']);
+      const rawProd = getRowVal(row, ['ID_Produk', 'ID Produk', 'Produk', 'Nama_Produk']);
+      const rawTarget = getRowVal(row, ['Target_Produksi', 'Target Produksi', 'Target', 'Jumlah', 'Qty']);
+      const rawKet = getRowVal(row, ['Keterangan', 'Catatan']);
+      const rawStat = getRowVal(row, ['Status', 'Status SPK']);
+
+      // Supabase constraint: CHECK ("Status" IN ('Aktif', 'Diproses', 'Selesai', 'Dibatalkan'))
+      let status = 'Aktif';
+      const statStr = String(rawStat || '').toLowerCase();
+      if (statStr.includes('selesai') || statStr.includes('done')) status = 'Selesai';
+      else if (statStr.includes('proses') || statStr.includes('jalan')) status = 'Diproses';
+      else if (statStr.includes('batal') || statStr.includes('cancel')) status = 'Dibatalkan';
+
+      return {
+        ID_SPK: String(rawId || `SPK-${Date.now().toString().slice(-6)}-${idx + 1}`).trim(),
+        Tanggal: parseDateISO(rawTgl),
+        Shift: String(rawShift || 'Shift 1 (Pagi)').trim() || 'Shift 1 (Pagi)',
+        ID_Produk: String(rawProd || 'ASH-CUP220').trim(),
+        Target_Produksi: parseNumeric(rawTarget, 0),
+        Keterangan: String(rawKet || '').trim(),
+        Status: status
+      };
+    }
+
+    case 'Produksi': {
+      const rawId = getRowVal(row, ['ID_Produksi', 'ID Produksi', 'Batch', 'ID']);
+      const rawTgl = getRowVal(row, ['Tanggal', 'Tgl', 'Tanggal_Produksi']);
+      const rawShift = getRowVal(row, ['Shift', 'Giliran']);
+      const rawProd = getRowVal(row, ['ID_Produk', 'ID Produk', 'Produk', 'Nama_Produk']);
+      const rawJml = getRowVal(row, ['Jumlah', 'Qty', 'Hasil', 'Realisasi']);
+      const rawPic = getRowVal(row, ['PIC_Produksi', 'PIC Produksi', 'PIC', 'Operator']);
+      const rawKet = getRowVal(row, ['Keterangan', 'Catatan']);
+
+      return {
+        ID_Produksi: String(rawId || `PRD-${Date.now().toString().slice(-6)}-${idx + 1}`).trim(),
+        Tanggal: parseDateISO(rawTgl),
+        Shift: String(rawShift || 'Shift 1 (Pagi)').trim() || 'Shift 1 (Pagi)',
+        ID_Produk: String(rawProd || 'ASH-CUP220').trim(),
+        Jumlah: parseNumeric(rawJml, 0),
+        PIC_Produksi: String(rawPic || '-').trim(),
+        Keterangan: String(rawKet || '').trim()
+      };
+    }
+
+    case 'Master_COA':
+    case 'Data_COA': {
+      const rawKode = getRowVal(row, ['KODE_AKUN', 'Kode_Akun', 'Kode Akun', 'Kode', 'Account Code', 'No Akun']);
+      const rawNama = getRowVal(row, ['NAMA_AKUN', 'Nama_Akun', 'Nama Akun', 'Nama', 'Account Name']);
+      const rawKat = getRowVal(row, ['KATEGORI', 'Kategori', 'Category', 'Tipe']);
+      const rawNorm = getRowVal(row, ['SALDO_NORMAL', 'Saldo_Normal', 'Saldo Normal', 'Normal', 'Posisi']);
+      const rawStat = getRowVal(row, ['STATUS', 'Status']);
+
+      let normal = 'Debit';
+      const normStr = String(rawNorm || '').toLowerCase();
+      if (normStr.includes('kredit') || normStr.includes('credit') || normStr === 'k' || normStr === 'cr') {
+        normal = 'Kredit';
+      }
+
+      let status = 'Aktif';
+      const statStr = String(rawStat || '').toLowerCase();
+      if (statStr.includes('non') || statStr.includes('tidak') || statStr === '0' || statStr === 'false') {
+        status = 'Non-Aktif';
+      }
+
+      return {
+        KODE_AKUN: String(rawKode || '').trim(),
+        NAMA_AKUN: String(rawNama || '').trim(),
+        KATEGORI: String(rawKat || 'Aktiva').trim(),
+        SALDO_NORMAL: normal,
+        STATUS: status
+      };
+    }
+
+    default: {
+      const cols = TABLE_COLUMNS[tableName];
+      const cleaned: Record<string, any> = {};
+      if (cols && cols.length > 0) {
+        cols.forEach(col => {
+          const val = getRowVal(row, [col, col.replace(/_/g, ' '), col.toLowerCase()]);
+          if (val !== undefined) {
+            cleaned[col] = val;
+          }
+        });
+      } else {
+        Object.assign(cleaned, row);
+      }
+      return cleaned;
+    }
+  }
+}
+
+/**
+ * Normalisasi seluruh array data tabel agar siap disimpan ke local storage dan cloud Supabase
+ */
+export function normalizeTableRows(tableName: string, rows: any[]): any[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r, idx) => {
+    if (!r || typeof r !== 'object') return null;
+    const norm = normalizeRecordForTable(tableName, r, idx);
+    // Pastikan primary key terisi
+    const pk = TABLE_PRIMARY_KEYS[tableName] || TABLE_COLUMNS[tableName]?.[0];
+    if (pk && (!norm[pk] || String(norm[pk]).trim() === '')) {
+      norm[pk] = `${tableName.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-6)}-${idx + 1}`;
+    }
+    return norm;
+  }).filter(Boolean);
+}
+
 function sanitizeRowsForTable(tableName: string, rows: any[]): any[] {
   if (!Array.isArray(rows)) return [];
   const validCols = TABLE_COLUMNS[tableName];
 
   return rows.map((row, idx) => {
     if (!row || typeof row !== 'object') return null;
+    
+    // Normalisasi cerdas terlebih dahulu untuk menangani alias dan check constraint
+    const normalized = normalizeRecordForTable(tableName, row, idx);
     const cleaned: Record<string, any> = {};
 
     if (validCols && validCols.length > 0) {
       validCols.forEach(col => {
-        if (row[col] !== undefined) {
+        if (normalized[col] !== undefined) {
+          cleaned[col] = normalized[col];
+        } else if (row[col] !== undefined) {
           cleaned[col] = row[col];
         }
       });
     } else {
-      Object.assign(cleaned, row);
+      Object.assign(cleaned, normalized, row);
     }
 
     // Auto-generate primary key ID_Detail pada Distribusi_Item jika belum terisi
@@ -477,16 +922,103 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
     // 3. KASUS C: Upsert Data Aktif
     const cleanPayload = sanitizeRowsForTable(tableName, data as any);
     if (cleanPayload.length > 0) {
-      for (let i = 0; i < cleanPayload.length; i += 500) {
-        const batch = cleanPayload.slice(i, i + 500);
+      for (let i = 0; i < cleanPayload.length; i += 200) {
+        const batch = cleanPayload.slice(i, i + 200);
         const { error: upsertErr } = await client.from(tableName).upsert(batch as any);
         if (upsertErr) {
-          console.warn(`[SupabaseSync] Upsert error on ${tableName}:`, upsertErr.message);
+          console.warn(`[SupabaseSync] Upsert batch error on ${tableName}:`, upsertErr.message);
+          // Fallback baris-per-baris jika salah satu baris ditolak constraint, agar baris valid tetap masuk
+          for (const singleRow of batch) {
+            try {
+              const { error: singleErr } = await client.from(tableName).upsert([singleRow] as any);
+              if (singleErr) {
+                console.warn(`[SupabaseSync] Single row failed on ${tableName}:`, singleRow, singleErr.message);
+              }
+            } catch (rowEx) {}
+          }
         }
       }
     }
   } catch (e) {
     console.warn(`[SupabaseSync] Exception during sync on ${tableName}:`, e);
+  }
+}
+
+/**
+ * Sinkronisasi eksplisit satu tabel ke Supabase Cloud dengan pelaporan hasil & pesan error nyata
+ */
+export async function syncTableToSupabaseExplicit(
+  tableName: string, 
+  data?: any[]
+): Promise<{ success: boolean; count: number; error?: string }> {
+  const client = getSupabaseClient();
+  const cfg = getSupabaseConfig();
+
+  if (!client || !cfg.isConnected || !cfg.url || !cfg.anonKey) {
+    return { 
+      success: false, 
+      count: 0, 
+      error: 'Supabase Cloud belum terhubung atau konfigurasi API Key belum aktif.' 
+    };
+  }
+
+  const rowsToSync = data !== undefined ? data : getTableData(tableName, []);
+  if (!Array.isArray(rowsToSync) || rowsToSync.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const cleanPayload = sanitizeRowsForTable(tableName, rowsToSync);
+  if (cleanPayload.length === 0) {
+    return { success: false, count: 0, error: `Tidak ada data valid yang dapat disinkronkan untuk tabel ${tableName}.` };
+  }
+
+  try {
+    let syncedCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < cleanPayload.length; i += 200) {
+      const batch = cleanPayload.slice(i, i + 200);
+      const { error: upsertErr } = await client.from(tableName).upsert(batch as any);
+      if (upsertErr) {
+        console.warn(`[SupabaseSyncExplicit] Batch upsert error on ${tableName}:`, upsertErr.message);
+        // Fallback per-baris
+        for (const singleRow of batch) {
+          try {
+            const { error: sErr } = await client.from(tableName).upsert([singleRow] as any);
+            if (!sErr) {
+              syncedCount++;
+            } else {
+              errors.push(sErr.message);
+            }
+          } catch (ex: any) {
+            errors.push(ex?.message || 'Error');
+          }
+        }
+      } else {
+        syncedCount += batch.length;
+      }
+    }
+
+    if (syncedCount === 0 && errors.length > 0) {
+      return {
+        success: false,
+        count: 0,
+        error: `Supabase menolak data ${tableName}: ${errors[0]}`
+      };
+    }
+
+    return { 
+      success: true, 
+      count: syncedCount,
+      error: errors.length > 0 ? `Tersimpan ${syncedCount} baris (${errors.length} baris ditolak)` : undefined
+    };
+  } catch (err: any) {
+    console.error(`[SupabaseSyncExplicit] Exception on ${tableName}:`, err);
+    return {
+      success: false,
+      count: 0,
+      error: `Gagal mengirim data ke Supabase: ${err?.message || 'Koneksi terputus'}`
+    };
   }
 }
 

@@ -4,7 +4,7 @@
  */
 
 import * as XLSX from 'xlsx';
-import { getTableData, setTableData } from './dbAdapter';
+import { getTableData, setTableData, normalizeTableRows, pushAllTablesToSupabase, isSupabaseConfigured } from './dbAdapter';
 
 export type ExcelTemplateType = 
   | 'produk' 
@@ -801,7 +801,9 @@ export async function restoreAllDatabaseFromExcel(file: File): Promise<{
       });
 
       if (parsedRows.length > 0) {
-        setTableData(targetTable, parsedRows);
+        // Normalisasi data tabel agar lolos format dan constraint PostgreSQL Supabase
+        const normalizedRows = normalizeTableRows(targetTable, parsedRows);
+        setTableData(targetTable, normalizedRows.length > 0 ? normalizedRows : parsedRows);
         restoredTables.push({ tableName: targetTable, sheetName, rowCount: parsedRows.length });
         totalRows += parsedRows.length;
       }
@@ -809,6 +811,15 @@ export async function restoreAllDatabaseFromExcel(file: File): Promise<{
 
     if (restoredTables.length === 0) {
       return { success: false, restoredTables: [], totalRows: 0, message: 'Tidak ada baris data valid yang dapat dipulihkan dari sheet Excel.' };
+    }
+
+    // Jika Supabase aktif, jalankan pushAllTablesToSupabase untuk memastikan seluruh data masuk ke cloud
+    if (isSupabaseConfigured()) {
+      try {
+        await pushAllTablesToSupabase();
+      } catch (pushErr) {
+        console.warn('[restoreAllDatabaseFromExcel] Cloud push warning:', pushErr);
+      }
     }
 
     return { success: true, restoredTables, totalRows };

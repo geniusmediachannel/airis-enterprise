@@ -7,7 +7,10 @@ import {
   EXCEL_TEMPLATES, ExcelTemplateType, downloadExcelTemplate, 
   parseExcelFile 
 } from '../services/excelService';
-import { saveTableData, getTableData } from '../services/dbAdapter';
+import { 
+  saveTableData, getTableData, normalizeTableRows, 
+  syncTableToSupabaseExplicit, getSupabaseConfig, TABLE_PRIMARY_KEYS 
+} from '../services/dbAdapter';
 import { syncAllModulesToFinance } from '../services/financeSyncService';
 import { sanitizeAndRepairDistributionDatabase, importDistributionExcelFile } from '../services/distributionService';
 import { showToast } from './ToastContainer';
@@ -1118,36 +1121,46 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         await saveTableData('MD_BahanPenolong', combined);
         await saveTableData('MD_Bahan', combined);
       } else {
-        // Standard tables: combine by primary key or append
-        let idKey = '';
-        if (selectedModule === 'produk') idKey = 'ID_Produk';
-        else if (selectedModule === 'pelanggan') idKey = 'ID_Pelanggan';
-        else if (selectedModule === 'supplier') idKey = 'ID_Supplier';
-        else if (selectedModule === 'karyawan') idKey = 'ID_Karyawan';
-        else if (selectedModule === 'bom') idKey = 'ID_BOM';
-        else if (selectedModule === 'spk') idKey = 'ID_SPK';
-        else if (selectedModule === 'po') idKey = 'ID_PO';
-        else if (selectedModule === 'aset') idKey = 'ID_Aset';
-        else if (selectedModule === 'pembelian_bahan') idKey = 'ID_Pembelian';
-        else if (selectedModule === 'mutasi_bahan') idKey = 'ID_Mutasi';
+        // Standard tables (MD_Produk, MD_Supplier, MD_Pelanggan, MD_Karyawan, SPK, MD_BOM, dll)
+        // 1. Normalisasi cerdas seluruh baris agar format kolom & check constraint Supabase terpenuhi
+        const normalizedRows = normalizeTableRows(tableName, parsedRows);
+        if (normalizedRows.length === 0) {
+          throw new Error(`Tidak ada baris data valid yang terdeteksi untuk modul ${currentTemplate.title}.`);
+        }
 
-        if (idKey) {
-          const map = new Map<string, any>();
-          existingData.forEach((item: any) => {
-            if (item && item[idKey]) map.set(item[idKey], item);
-          });
-          parsedRows.forEach((item: any) => {
-            if (item && item[idKey]) {
-              map.set(item[idKey], { ...(map.get(item[idKey]) || {}), ...item });
-            } else {
-              map.set(String(Math.random()), item);
-            }
-          });
-          const combined = Array.from(map.values());
-          await saveTableData(tableName, combined);
-        } else {
-          const combined = [...existingData, ...parsedRows];
-          await saveTableData(tableName, combined);
+        const pk = TABLE_PRIMARY_KEYS[tableName] || 'ID_Produk';
+        const map = new Map<string, any>();
+        (Array.isArray(existingData) ? existingData : []).forEach((item: any) => {
+          if (item && item[pk]) map.set(String(item[pk]), item);
+        });
+
+        normalizedRows.forEach((item: any) => {
+          if (item && item[pk]) {
+            map.set(String(item[pk]), { ...(map.get(String(item[pk])) || {}), ...item });
+          } else {
+            map.set(String(Math.random()), item);
+          }
+        });
+
+        const combined = Array.from(map.values());
+        await saveTableData(tableName, combined);
+      }
+
+      // Auto-sync operasional langsung ke database Cloud Supabase jika terhubung
+      let cloudSyncNote = '';
+      const cfg = getSupabaseConfig();
+      if (cfg.isConnected && cfg.url && cfg.anonKey) {
+        try {
+          const cloudRes = await syncTableToSupabaseExplicit(tableName);
+          if (cloudRes.success) {
+            cloudSyncNote = ' & Tersimpan di Cloud Supabase';
+          } else {
+            console.warn('[ImportModal] Cloud sync feedback:', cloudRes.error);
+            cloudSyncNote = ` (Peringatan Cloud: ${cloudRes.error || 'Ditolak Supabase'})`;
+          }
+        } catch (cErr: any) {
+          console.warn('[ImportModal] Cloud sync error:', cErr);
+          cloudSyncNote = ` (Gagal kirim ke Supabase: ${cErr.message || 'Koneksi terputus'})`;
         }
       }
 
@@ -1165,18 +1178,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       setImporting(false);
       showToast(
         'Import Berhasil!',
-        `Data ${currentTemplate.title} (${parsedRows.length} baris) berhasil disimpan ke sistem${syncNote}.`,
-        'success'
+        `Data ${currentTemplate.title} (${parsedRows.length} baris) berhasil disimpan ke sistem${cloudSyncNote}${syncNote}.`,
+        cloudSyncNote.includes('Gagal') || cloudSyncNote.includes('Peringatan') ? 'warning' : 'success'
       );
       setStatusMessage({
         type: 'success',
-        text: `Data ${currentTemplate.title} berhasil diimpor ke sistem (${parsedRows.length} baris tersimpan)${syncNote}.`,
+        text: `Data ${currentTemplate.title} berhasil diimpor ke sistem (${parsedRows.length} baris tersimpan)${cloudSyncNote}${syncNote}.`,
       });
 
       notifyImportDone();
       setTimeout(() => {
         onClose();
-      }, 800);
+      }, 1000);
     } catch (err: any) {
       setImporting(false);
       showToast('Gagal Import Data', err.message || 'Terjadi kesalahan sistem.', 'error');
