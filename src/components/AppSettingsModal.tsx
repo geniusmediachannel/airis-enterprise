@@ -514,20 +514,20 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-2 sm:p-4 md:p-6 overflow-y-auto no-print">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden my-auto flex flex-col max-h-[92vh] animate-in zoom-in-95">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden my-auto flex flex-col max-h-[92vh] sm:max-h-[90vh] animate-in zoom-in-95">
         
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-blue-600/30 text-cyan-400 ring-1 ring-cyan-500/30">
-              <Settings size={20} />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 bg-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-1.5 sm:p-2 rounded-xl bg-blue-600/30 text-cyan-400 ring-1 ring-cyan-500/30 shrink-0">
+              <Settings size={18} className="sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 className="font-extrabold text-sm sm:text-base tracking-tight text-white flex items-center gap-2">
-                <span>Konfigurasi &amp; Pengaturan Aplikasi</span>
+            <div className="min-w-0">
+              <h2 className="font-extrabold text-sm sm:text-base tracking-tight text-white flex items-center gap-2 truncate">
+                <span>Pengaturan Sistem</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-cyan-300 font-mono font-normal">v3.5</span>
               </h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 truncate hidden sm:block">
                 Sistem Manajemen Pabrik AMDK As-Shofaa' • PT. Anugerah Illahi Rabbi
               </p>
             </div>
@@ -535,18 +535,18 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0 ml-2"
             title="Tutup Pengaturan"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Modal Body: Left Vertical Tabs + Right Content Area */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* Modal Body: Left Vertical Tabs (Horizontal Pill on Mobile) + Right Content Area */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
           
-          {/* Sisi Kiri: Navigasi Tab */}
-          <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 sm:p-3 space-y-1 shrink-0 overflow-y-auto">
+          {/* Navigasi Tab: Horizontal Pill Bar di Mobile, Sidebar di Desktop */}
+          <div className="w-full md:w-64 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-3 shrink-0 flex flex-row md:flex-col overflow-x-auto md:overflow-y-auto gap-1.5 md:gap-0 md:space-y-1 no-scrollbar">
             {tabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -555,16 +555,16 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition cursor-pointer ${
+                  className={`shrink-0 flex items-center gap-2 px-3 py-2 md:py-2.5 rounded-xl text-left transition cursor-pointer whitespace-nowrap md:whitespace-normal md:w-full ${
                     isActive
                       ? 'bg-blue-600 text-white shadow-xs font-semibold'
-                      : 'text-slate-700 hover:bg-slate-200/70 hover:text-slate-900 font-medium'
+                      : 'text-slate-700 hover:bg-slate-200/70 hover:text-slate-900 font-medium bg-white md:bg-transparent border md:border-0 border-slate-200'
                   }`}
                 >
-                  <Icon size={16} className={isActive ? 'text-cyan-200' : 'text-slate-500'} />
+                  <Icon size={16} className={`shrink-0 ${isActive ? 'text-cyan-200' : 'text-slate-500'}`} />
                   <div className="min-w-0">
-                    <span className="text-xs block leading-tight truncate">{tab.label}</span>
-                    <span className={`text-[10px] block leading-tight truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                    <span className="text-xs block leading-tight">{tab.label}</span>
+                    <span className={`hidden md:block text-[10px] leading-tight truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
                       {tab.desc}
                     </span>
                   </div>
@@ -574,7 +574,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
           </div>
 
           {/* Sisi Kanan: Area Konten Pengaturan */}
-          <div className="flex-1 p-5 sm:p-6 overflow-y-auto bg-white text-slate-800 text-xs space-y-5">
+          <div className="flex-1 min-w-0 p-3.5 sm:p-5 md:p-6 overflow-y-auto bg-white text-slate-800 text-xs space-y-5">
             {/* Hidden File Inputs for Restores (Mounted in all tabs) */}
             <input 
               type="file" 
