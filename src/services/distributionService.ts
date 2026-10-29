@@ -21,13 +21,58 @@ const KLATEN_DISTRICTS = [
   'Manisrenggo', 'Wonosari', 'Jiwan'
 ];
 
-// Definisi standar 5 produk AMDK
-const DEFAULT_PRODUCT_DEFS = [
-  { code: 'C120', id: 'ASH-CUP120', name: 'As-Shofaa Cup 120ml', price: 12000 },
-  { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 14500 },
-  { code: 'B330', id: 'ASH-BTL330', name: 'As-Shofaa Botol 330ml', price: 24000 },
-  { code: 'B600', id: 'ASH-BTL600', name: 'As-Shofaa Botol 600ml', price: 28000 },
-  { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 9000 },
+// Definisi standar 5 produk AMDK beserta seluruh variasi alias nama kolom Excel
+export interface ProductDefWithAliases {
+  code: string;
+  id: string;
+  name: string;
+  price: number;
+  aliases: string[];
+}
+
+export const DEFAULT_PRODUCT_DEFS: ProductDefWithAliases[] = [
+  { 
+    code: 'C120', 
+    id: 'ASH-CUP120', 
+    name: 'As-Shofaa Cup 120ml', 
+    price: 12000,
+    aliases: ['c120', 'cup120', 'c120ml', 'cup120ml', '120ml', '120', 'ashcup120', 'ash-cup120', 'cup 120', 'cup 120ml', 'c 120', 'dusc120', 'dus c120', 'qty c120', 'jumlah c120', 'c120 (cup 120ml)']
+  },
+  { 
+    code: 'C220', 
+    id: 'ASH-CUP220', 
+    name: 'As-Shofaa Cup 220ml', 
+    price: 14500,
+    aliases: ['c220', 'cup220', 'c220ml', 'cup220ml', '220ml', '220', 'ashcup220', 'ash-cup220', 'cup 220', 'cup 220ml', 'c 220', 'dusc220', 'dus c220', 'qty c220', 'jumlah c220', 'c220 (cup 220ml)']
+  },
+  { 
+    code: 'B330', 
+    id: 'ASH-BTL330', 
+    name: 'As-Shofaa Botol 330ml', 
+    price: 24000,
+    aliases: ['b330', 'btl330', 'botol330', 'b330ml', 'botol330ml', '330ml', '330', 'ashbtl330', 'ash-btl330', 'botol 330', 'botol 330ml', 'b 330', 'dusb330', 'dus b330', 'qty b330', 'jumlah b330']
+  },
+  { 
+    code: 'B600', 
+    id: 'ASH-BTL600', 
+    name: 'As-Shofaa Botol 600ml', 
+    price: 28000,
+    aliases: ['b600', 'btl600', 'botol600', 'b600ml', 'botol600ml', '600ml', '600', 'ashbtl600', 'ash-btl600', 'botol 600', 'botol 600ml', 'b 600', 'dusb600', 'dus b600', 'qty b600', 'jumlah b600']
+  },
+  { 
+    code: 'G19', 
+    id: 'ASH-GLN19L', 
+    name: 'As-Shofaa Galon 19L', 
+    price: 9000,
+    aliases: [
+      'g19', 'gln19', 'gln19l', 'g19l', 'galon19', 'galon19l', 'galon', 'gln', '19l', '19', 
+      'galon19liter', 'airgalon', 'galonair', 'ashgln19l', 'ash-gln19l', 'ashgln', 'ash-gln',
+      'galon 19', 'galon 19l', 'galon 19 liter', 'gln 19 l', 'gln 19', 'g 19', 'g-19',
+      'qty g19', 'qty galon', 'jumlah g19', 'jumlah galon', 'volume galon', 'galon isi',
+      'g19 (galon)', 'galon (g19)', 'air minum galon', 'as-shofaa galon', 'as-shofaa galon 19l',
+      'galon as-shofaa', 'galon refill', 'refill galon', 'kemasan galon'
+    ]
+  },
 ];
 
 const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
@@ -285,14 +330,34 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         isModified = true;
       }
 
-      // 10. Sinkronisasi Detail Produk & Distribusi_Item
+      // 10. Sinkronisasi Detail Produk & Distribusi_Item (Khusus Galon & Seluruh Varian Produk)
       let distItems = itemMap.get(anyDist.ID_Distribusi) || [];
       let totalQtyCalc = 0;
       let totalTagihanCalc = 0;
 
+      // Ambil nilai Qty Galon yang tersimpan di berbagai kemungkinan field / alias
+      const galonQtyInDist = Number(
+        anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || 
+        anyDist.Galon || anyDist.galon || anyDist.GALON || anyDist.GLN || anyDist.gln || 
+        anyDist['GLN 19 L'] || anyDist['Galon 19L'] || anyDist['ASH-GLN19L'] || 0
+      );
+
+      // Pastikan semua field alias galon terisi jika galonQtyInDist > 0
+      if (galonQtyInDist > 0) {
+        if (!anyDist.G19) { anyDist.G19 = galonQtyInDist; isModified = true; }
+        if (!anyDist.Galon) { anyDist.Galon = galonQtyInDist; isModified = true; }
+        if (!anyDist.GLN19) { anyDist.GLN19 = galonQtyInDist; isModified = true; }
+        if (!anyDist['ASH-GLN19L']) { anyDist['ASH-GLN19L'] = galonQtyInDist; isModified = true; }
+      }
+
       if (distItems.length === 0) {
         DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
-          const q = Number(anyDist[pDef.code] || anyDist[pDef.id] || (pDef.code === 'G19' ? anyDist['GLN19'] : 0)) || 0;
+          let q = 0;
+          if (pDef.code === 'G19') {
+            q = galonQtyInDist;
+          } else {
+            q = Number(anyDist[pDef.code] || anyDist[pDef.code.toLowerCase()] || anyDist[pDef.id] || 0);
+          }
           if (q > 0) {
             const detailItem: DistributionProductDetail = {
               ID_Detail: `${anyDist.ID_Distribusi}-D${pIdx + 1}`,
@@ -304,7 +369,8 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
               Nama_Produk: pDef.name,
               Qty: q,
               Harga_Satuan: pDef.price,
-              Subtotal: q * pDef.price
+              Subtotal: q * pDef.price,
+              Satuan: pDef.code === 'G19' ? 'Galon' : 'Dus'
             };
             distItems.push(detailItem);
             repairedItemsList.push(detailItem);
@@ -314,6 +380,35 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         });
         if (distItems.length > 0) {
           itemMap.set(anyDist.ID_Distribusi, distItems);
+        }
+      } else {
+        // Jika distItems SUDAH ADA, tapi item Galon belum masuk sedangkan di record dist ada galon:
+        if (galonQtyInDist > 0) {
+          const hasGalonItem = distItems.some(it => 
+            it.ID_Produk === 'ASH-GLN19L' || 
+            String(it.ID_Produk || '').toLowerCase() === 'g19' || 
+            String(it.Nama_Produk || '').toLowerCase().includes('galon')
+          );
+          if (!hasGalonItem) {
+            const galonDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
+            const detailItem: DistributionProductDetail = {
+              ID_Detail: `${anyDist.ID_Distribusi}-D5`,
+              ID_Distribusi: anyDist.ID_Distribusi,
+              Nama_Pelanggan: custName,
+              Tanggal: anyDist.Tanggal,
+              Level_Pelanggan: anyDist.Level_Pelanggan,
+              ID_Produk: galonDef.id,
+              Nama_Produk: galonDef.name,
+              Qty: galonQtyInDist,
+              Harga_Satuan: galonDef.price,
+              Subtotal: galonQtyInDist * galonDef.price,
+              Satuan: 'Galon'
+            };
+            distItems.push(detailItem);
+            repairedItemsList.push(detailItem);
+            syncedItemsCount++;
+            isModified = true;
+          }
         }
       }
 
@@ -478,6 +573,57 @@ export async function importDistributionExcelFile(file: File): Promise<{
       return isNaN(n) ? 0 : Math.max(0, n);
     };
 
+    // Helper ekstraksi Qty produk dari seluruh variasi alias header kolom Excel
+    const extractProductQtyFromRow = (r: any, pDef: ProductDefWithAliases): number => {
+      if (!r || typeof r !== 'object') return 0;
+
+      // 1. Cek langsung dengan key exact
+      const exactKeys = [pDef.code, pDef.code.toLowerCase(), pDef.id, `Qty_${pDef.code}`, `Jumlah_${pDef.code}`];
+      for (const k of exactKeys) {
+        if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
+          const q = parseQty(r[k]);
+          if (q > 0) return q;
+        }
+      }
+
+      // 2. Scan semua keys di objek row dengan normalisasi
+      const keys = Object.keys(r);
+      for (const k of keys) {
+        const val = r[k];
+        if (val === undefined || val === null || String(val).trim() === '') continue;
+
+        const normKey = k.toLowerCase().replace(/[\s_\-./()]+/g, '');
+        
+        // Hindari false positive dari kolom metadata
+        if (
+          normKey.includes('pelanggan') || normKey.includes('pengirim') || 
+          normKey.includes('penerima') || normKey.includes('tujuan') || 
+          normKey.includes('keterangan') || normKey.includes('suratjalan') || 
+          normKey.includes('invoice') || normKey.includes('tagihan') || 
+          normKey.includes('total') || normKey === 'no' || normKey === 'nomor' ||
+          normKey === 'tanggal' || normKey === 'tgl' || normKey === 'level'
+        ) {
+          continue;
+        }
+
+        // Cocokkan dengan aliases
+        const isMatched = pDef.aliases.some(alias => {
+          const normAlias = alias.toLowerCase().replace(/[\s_\-./()]+/g, '');
+          if (normKey === normAlias) return true;
+          if (normKey === `qty${normAlias}` || normKey === `jumlah${normAlias}`) return true;
+          if (normAlias.length >= 4 && normKey.includes(normAlias)) return true;
+          return false;
+        });
+
+        if (isMatched) {
+          const q = parseQty(val);
+          if (q > 0) return q;
+        }
+      }
+
+      return 0;
+    };
+
     parsedRows.forEach((row, idx) => {
       const rawId = `DST-${Date.now().toString().slice(-6)}-${String(idx + 1).padStart(4, '0')}`;
       const rawDate = getVal(row, ['TANGGAL KIRIM', 'Tanggal_Kirim', 'Tanggal Kirim', 'Tanggal', 'Tgl', 'Tgl Kirim', 'TGL KIRIM']);
@@ -564,11 +710,21 @@ export async function importDistributionExcelFile(file: File): Promise<{
         Total_Tagihan: rawTagihan > 0 ? rawTagihan : 0
       };
 
+      let hasColumnProducts = false;
       DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
-        const qty = parseQty(getVal(row, [pDef.code, pDef.code.toLowerCase(), `Qty_${pDef.code}`, pDef.id]));
+        const qty = extractProductQtyFromRow(row, pDef);
         distRecord[pDef.code] = qty;
         distRecord[pDef.id] = qty;
+        if (pDef.code === 'G19') {
+          distRecord['Galon'] = qty;
+          distRecord['galon'] = qty;
+          distRecord['GLN19'] = qty;
+          distRecord['gln19'] = qty;
+          distRecord['GLN'] = qty;
+          distRecord['ASH-GLN19L'] = qty;
+        }
         if (qty > 0) {
+          hasColumnProducts = true;
           newDetailsList.push({
             ID_Detail: `${rawId}-D${pIdx + 1}`,
             ID_Distribusi: rawId,
@@ -576,10 +732,59 @@ export async function importDistributionExcelFile(file: File): Promise<{
             Nama_Produk: pDef.name,
             Qty: qty,
             Harga_Satuan: pDef.price,
-            Subtotal: qty * pDef.price
+            Subtotal: qty * pDef.price,
+            Satuan: pDef.code === 'G19' ? 'Galon' : 'Dus'
           });
         }
       });
+
+      // Fallback Cerdas: Format Single Item per Row jika Excel mencatat 1 baris per produk
+      if (!hasColumnProducts) {
+        const rawProd = String(getVal(row, ['ID_Produk', 'Nama_Produk', 'Nama Produk', 'Produk', 'Item', 'Barang', 'Kategori']) || '').trim();
+        const rawQty = parseQty(getVal(row, ['Qty', 'Jumlah', 'QTY', 'JUMLAH', 'Volume', 'Banyak']));
+        if (rawProd && rawQty > 0) {
+          const prodLower = rawProd.toLowerCase();
+          let matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.id === rawProd || p.code.toLowerCase() === prodLower);
+          if (!matchedDef) {
+            if (prodLower.includes('galon') || prodLower.includes('gln') || prodLower.includes('19')) {
+              matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19');
+            } else if (prodLower.includes('120')) {
+              matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'C120');
+            } else if (prodLower.includes('220')) {
+              matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'C220');
+            } else if (prodLower.includes('330')) {
+              matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'B330');
+            } else if (prodLower.includes('600')) {
+              matchedDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'B600');
+            }
+          }
+          const finalDef = matchedDef || DEFAULT_PRODUCT_DEFS[1]; // fallback C220
+          const rawPrice = parseQty(getVal(row, ['Harga_Satuan', 'Harga Satuan', 'Harga', 'Price']));
+          const price = rawPrice > 0 ? rawPrice : finalDef.price;
+
+          distRecord[finalDef.code] = rawQty;
+          distRecord[finalDef.id] = rawQty;
+          if (finalDef.code === 'G19') {
+            distRecord['Galon'] = rawQty;
+            distRecord['galon'] = rawQty;
+            distRecord['GLN19'] = rawQty;
+            distRecord['gln19'] = rawQty;
+            distRecord['GLN'] = rawQty;
+            distRecord['ASH-GLN19L'] = rawQty;
+          }
+
+          newDetailsList.push({
+            ID_Detail: `${rawId}-D1`,
+            ID_Distribusi: rawId,
+            ID_Produk: finalDef.id,
+            Nama_Produk: finalDef.name,
+            Qty: rawQty,
+            Harga_Satuan: price,
+            Subtotal: rawQty * price,
+            Satuan: finalDef.code === 'G19' ? 'Galon' : 'Dus'
+          });
+        }
+      }
 
       if (distRecord.Total_Tagihan === 0) {
         let sumSub = 0;
@@ -615,6 +820,13 @@ export async function importDistributionExcelFile(file: File): Promise<{
     setTableData('Distribusi_Item', combinedDetails);
     if (newCustomersToSave.length > 0) {
       setTableData('MD_Pelanggan', [...masterCustomers, ...newCustomersToSave]);
+    }
+
+    // Auto-sinkronisasi seluruh modul ke Keuangan (jurnal & piutang otomatis)
+    try {
+      syncAllModulesToFinance();
+    } catch (syncErr) {
+      console.warn('Finance sync warning inside importDistributionExcelFile:', syncErr);
     }
 
     return {

@@ -619,6 +619,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             const q = thisRowQuantities[pDef.code] || 0;
             distRecord[pDef.code] = q;
             distRecord[pDef.id] = q;
+            if (pDef.code === 'G19') {
+              distRecord['Galon'] = q;
+              distRecord['galon'] = q;
+              distRecord['GLN19'] = q;
+              distRecord['gln19'] = q;
+              distRecord['GLN'] = q;
+            }
           });
 
           // 2. Fallback: single item per row format

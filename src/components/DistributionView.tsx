@@ -19,7 +19,7 @@ import {
 import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
-import { importDistributionExcelFile } from '../services/distributionService';
+import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -198,7 +198,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return map;
   }, [distributionItems]);
 
-  // Auto-switch filterMonth jika ada data baru diimpor dari Excel
+  // Auto-sync & auto-repair galon serta auto-switch filterMonth jika ada data baru diimpor dari Excel
   useEffect(() => {
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
@@ -207,10 +207,33 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         setFilterMonth(hasData ? lastImported : 'all');
         localStorage.removeItem('airis_last_imported_dist_month');
       }
+
+      // Deteksi jika ada record distribusi yang memiliki data galon tapi belum masuk ke detail item
+      const hasUnsyncedGalon = distributions.some(d => {
+        const anyDist = d as any;
+        const gQty = Number(anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || anyDist.Galon || anyDist.galon || anyDist.GLN || anyDist['GLN 19 L'] || anyDist['Galon 19L'] || 0);
+        if (gQty > 0) {
+          const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+          const hasItem = items.some(it => 
+            String(it.ID_Produk || '').toLowerCase() === 'g19' || 
+            String(it.ID_Produk || '').toLowerCase().includes('gln') || 
+            String(it.Nama_Produk || '').toLowerCase().includes('galon')
+          );
+          return !hasItem;
+        }
+        return false;
+      });
+
+      if (hasUnsyncedGalon) {
+        const rep = sanitizeAndRepairDistributionDatabase();
+        if (rep.syncedItemsCount > 0) {
+          onRefresh();
+        }
+      }
     } catch {
       // ignore
     }
-  }, [distributions]);
+  }, [distributions, distItemsMap, onRefresh]);
 
   // Delivery Plans (Rencana Distribusi / List Pesanan)
   const deliveryPlans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
@@ -1011,19 +1034,37 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return prod.ID_Produk.slice(-4);
   };
 
-  // Flexible helper to get qty of any product for a given distribution (dynamic from Master Produk)
+  // Flexible helper to get qty of any product for a given distribution (dynamic from Master Produk & Ultra-resilient aliases)
   const getDistProductQty = (dist: DistributionItem, prod: ProductItem): number => {
     const code = getProductShortCode(prod);
     const anyDist = dist as any;
-    if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
-      const direct = Number(anyDist[code]);
-      if (!isNaN(direct)) return direct;
-    }
-    if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
-      const direct = Number(anyDist[prod.ID_Produk]);
-      if (!isNaN(direct)) return direct;
+    const isGalon = code === 'G19' || prod.ID_Produk.includes('GLN') || prod.Nama_Produk.toLowerCase().includes('galon');
+
+    // 1. Cek langsung pada kolom / property record distribusi
+    if (isGalon) {
+      const galonCandidates = [
+        'G19', 'g19', 'GLN19', 'gln19', 'GLN 19 L', 'ASH-GLN19L', 
+        'Galon', 'galon', 'GALON', 'GLN', 'gln', 'Qty_G19', 'Jumlah_G19', 
+        'Galon 19L', 'Galon 19', 'Qty_Galon', 'Jumlah_Galon'
+      ];
+      for (const cand of galonCandidates) {
+        if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
+          const direct = Number(anyDist[cand]);
+          if (!isNaN(direct) && direct > 0) return direct;
+        }
+      }
+    } else {
+      if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
+        const direct = Number(anyDist[code]);
+        if (!isNaN(direct)) return direct;
+      }
+      if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
+        const direct = Number(anyDist[prod.ID_Produk]);
+        if (!isNaN(direct)) return direct;
+      }
     }
 
+    // 2. Cek di relasi item (Distribusi_Item)
     const items = distItemsMap.get(String(dist.ID_Distribusi).trim()) || [];
     const foundExact = items.find(i => i.ID_Produk === prod.ID_Produk);
     if (foundExact) return foundExact.Qty;
@@ -1032,6 +1073,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       (prod.Nama_Produk && i.Nama_Produk && i.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
     );
     if (foundByName) return foundByName.Qty;
+
+    if (isGalon) {
+      const foundGalonItem = items.find(i => 
+        String(i.ID_Produk || '').toLowerCase() === 'g19' || 
+        String(i.ID_Produk || '').toLowerCase().includes('gln') || 
+        String(i.Nama_Produk || '').toLowerCase().includes('galon')
+      );
+      if (foundGalonItem) return foundGalonItem.Qty;
+    }
 
     return 0;
   };
