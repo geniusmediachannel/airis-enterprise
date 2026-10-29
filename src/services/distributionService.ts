@@ -239,104 +239,37 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         isModified = true;
       }
 
-      // 2. Perbaiki Nama Pelanggan & ID Pelanggan
+      // 2. Pastikan nilai kosong tetap '-' murni tanpa auto-fill buatan
       let custName = String(anyDist.Nama_Pelanggan || '').trim();
-      if (!custName || custName === '-' || custName.toLowerCase() === 'pelanggan') {
-        custName = 'Pelanggan Umum';
-        anyDist.Nama_Pelanggan = custName;
-        isModified = true;
+      if (!custName || custName === '') {
+        anyDist.Nama_Pelanggan = '-';
       }
-
-      const matchedCust = custMap.get(custName.toLowerCase()) || custMap.get(String(anyDist.ID_Pelanggan || '').toLowerCase());
-      if (!anyDist.ID_Pelanggan || String(anyDist.ID_Pelanggan).trim() === '' || anyDist.ID_Pelanggan === '-') {
-        anyDist.ID_Pelanggan = matchedCust ? matchedCust.ID_Pelanggan : `PLG-${custName.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
-        isModified = true;
+      if (!anyDist.ID_Pelanggan || String(anyDist.ID_Pelanggan).trim() === '') {
+        anyDist.ID_Pelanggan = '-';
       }
-
-      // 3. Perbaiki Level Pelanggan
-      if (!anyDist.Level_Pelanggan || String(anyDist.Level_Pelanggan).trim() === '' || anyDist.Level_Pelanggan === '-') {
-        if (matchedCust?.Level_Pelanggan) {
-          anyDist.Level_Pelanggan = matchedCust.Level_Pelanggan;
-        } else if (custName.toUpperCase().startsWith('D.') || custName.toUpperCase().includes('MWC')) {
-          anyDist.Level_Pelanggan = 'Distributor';
-        } else if (custName.toUpperCase().startsWith('AGEN') || custName.toUpperCase().includes('AGEN')) {
-          anyDist.Level_Pelanggan = 'Agen';
-        } else {
-          anyDist.Level_Pelanggan = 'Distributor';
-        }
-        isModified = true;
+      if (!anyDist.Level_Pelanggan || String(anyDist.Level_Pelanggan).trim() === '') {
+        anyDist.Level_Pelanggan = '-';
       }
-
-      // 4. Perbaiki Metode Kirim
-      if (!anyDist.Metode_Kirim || String(anyDist.Metode_Kirim).trim() === '' || anyDist.Metode_Kirim === '-') {
-        const ket = String(anyDist.Keterangan || '').toLowerCase();
-        const pgr = String(anyDist.Pengirim || '').toLowerCase();
-        if (ket.includes('ambil') || pgr.includes('ambil')) {
-          anyDist.Metode_Kirim = 'Ambil Sendiri';
-        } else {
-          anyDist.Metode_Kirim = 'Diantar Armada';
-        }
-        isModified = true;
+      if (!anyDist.Metode_Kirim || String(anyDist.Metode_Kirim).trim() === '') {
+        anyDist.Metode_Kirim = '-';
       }
-
-      // 5. Perbaiki Pengirim (Driver)
-      const rawPengirim = String(anyDist.Pengirim || '').trim();
-      if (!rawPengirim || rawPengirim === '-' || rawPengirim.toLowerCase() === 'driver') {
-        if (anyDist.Metode_Kirim === 'Ambil Sendiri') {
-          anyDist.Pengirim = 'Ambil Sendiri';
-        } else {
-          anyDist.Pengirim = drivers.length > 0 ? drivers[idx % drivers.length].Nama_Karyawan : defaultDriverName;
-        }
-        fixedPengirimCount++;
-        isModified = true;
+      if (!anyDist.Pengirim || String(anyDist.Pengirim).trim() === '') {
+        anyDist.Pengirim = '-';
       }
-
-      // 6. Perbaiki Tujuan / Alamat Pengiriman
-      const rawTujuan = String(anyDist.Tujuan || '').trim();
-      if (!rawTujuan || rawTujuan === '-' || rawTujuan === '.') {
-        if (matchedCust?.Alamat && String(matchedCust.Alamat).trim() !== '' && matchedCust.Alamat !== '-') {
-          anyDist.Tujuan = matchedCust.Alamat;
-        } else {
-          let foundArea = '';
-          for (const distName of KLATEN_DISTRICTS) {
-            if (custName.toLowerCase().includes(distName.toLowerCase())) {
-              foundArea = distName.toUpperCase();
-              break;
-            }
-          }
-          anyDist.Tujuan = foundArea || 'KLATEN';
-        }
-        fixedTujuanCount++;
-        isModified = true;
+      if (!anyDist.Tujuan || String(anyDist.Tujuan).trim() === '') {
+        anyDist.Tujuan = '-';
       }
-
-      // 7. Perbaiki Penerima
-      const rawPenerima = String(anyDist.Penerima || '').trim();
-      if (!rawPenerima || rawPenerima === '-' || rawPenerima === '.') {
-        if (anyDist.Pengirim && anyDist.Metode_Kirim === 'Ambil Sendiri') {
-          anyDist.Penerima = custName;
-        } else {
-          anyDist.Penerima = custName.replace(/^(D\.\s*MWC\s*NU|D\.\s*PR\s*NU|AGEN\s*|TOKO\s*)/i, '').trim() || custName;
-        }
-        fixedPenerimaCount++;
-        isModified = true;
+      if (!anyDist.Penerima || String(anyDist.Penerima).trim() === '') {
+        anyDist.Penerima = '-';
       }
-
-      // 8. Perbaiki No Surat Jalan
-      const rawSj = String(anyDist.No_Surat_Jalan || '').trim();
-      if (!rawSj || rawSj === '-' || rawSj.startsWith('SJ-') || rawSj.toLowerCase() === 'surat jalan') {
-        anyDist.No_Surat_Jalan = `${seqPadded}/${romanM}/${yy}`;
-        fixedSuratJalanCount++;
-        isModified = true;
+      if (!anyDist.No_Surat_Jalan || String(anyDist.No_Surat_Jalan).trim() === '') {
+        anyDist.No_Surat_Jalan = '-';
       }
-
-      // 9. Perbaiki No Invoice
-      const rawInv = String(anyDist.No_Invoice || '').trim();
-      const standardInv = `${seqPadded}-INV-${romanM}-${yy}`;
-      if (!rawInv || rawInv === '-' || !rawInv.includes('-INV-')) {
-        anyDist.No_Invoice = standardInv;
-        fixedInvoiceCount++;
-        isModified = true;
+      if (!anyDist.No_Invoice || String(anyDist.No_Invoice).trim() === '') {
+        anyDist.No_Invoice = '-';
+      }
+      if (!anyDist.Keterangan || String(anyDist.Keterangan).trim() === '') {
+        anyDist.Keterangan = '-';
       }
 
       // 10. Sinkronisasi Detail Produk & Distribusi_Item Murni Sesuai Nilai Import
@@ -712,8 +645,7 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
       ]) || '').trim();
 
       if (!custName || custName === '-' || custName.toLowerCase() === 'pelanggan') {
-        const rawAlt = getVal(row, ['PENERIMA', 'Penerima', 'TUJUAN', 'Tujuan']);
-        custName = (rawAlt && String(rawAlt).trim() && !String(rawAlt).includes('___')) ? String(rawAlt).trim() : 'Pelanggan Umum';
+        custName = '-';
       }
 
       // Pastikan ID Distribusi SELALU 100% UNIK untuk setiap baris file Excel:

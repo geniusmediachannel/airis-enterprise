@@ -2100,17 +2100,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           {dist.Nama_Pelanggan}
                         </div>
                         <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-                          {dist.Level_Pelanggan || 'DISTRIBUTOR'}
+                          {dist.Level_Pelanggan && dist.Level_Pelanggan !== '-' ? dist.Level_Pelanggan : '-'}
                         </div>
                       </td>
                       <td className="p-3 text-center font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">
                         {formatDisplayDate(dist.Tanggal)}
                       </td>
                       <td className="p-3 text-center font-mono text-slate-700 border-r border-slate-100 whitespace-nowrap">
-                        {dist.No_Surat_Jalan}
+                        {dist.No_Surat_Jalan || '-'}
                       </td>
                       <td className="p-3 uppercase font-medium text-slate-800 border-r border-slate-100">
-                        {dist.Tujuan}
+                        {dist.Tujuan || '-'}
                       </td>
 
                       {/* PRODUK / QTY DYNAMIC COLUMNS */}
@@ -2133,10 +2133,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-white font-semibold text-[10.5px] inline-block shadow-xs whitespace-nowrap">
                             Ambil Sendiri
                           </span>
-                        ) : (
+                        ) : (dist.Metode_Kirim === 'Diantar Armada' || (dist.Metode_Kirim && dist.Metode_Kirim !== '-')) ? (
                           <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10.5px] inline-block border border-slate-200/80 whitespace-nowrap">
-                            Diantar Armada
+                            {dist.Metode_Kirim}
                           </span>
+                        ) : (
+                          <span className="text-slate-400 font-mono text-xs">-</span>
                         )}
                       </td>
 
@@ -2230,10 +2232,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   <FolderOpen className="text-teal-200" size={20} />
                   <div>
                     <h3 className="font-bold text-sm tracking-tight">
-                      Surat Jalan No. {dist.No_Surat_Jalan}
+                      Surat Jalan No. {dist.No_Surat_Jalan || '-'}
                     </h3>
                     <p className="text-[11px] text-teal-100">
-                      Tujuan: {dist.Nama_Pelanggan} ({dist.Level_Pelanggan || 'Distributor'})
+                      Tujuan: {dist.Nama_Pelanggan || '-'} {dist.Level_Pelanggan && dist.Level_Pelanggan !== '-' ? `(${dist.Level_Pelanggan})` : ''}
                     </p>
                   </div>
                 </div>
@@ -2256,15 +2258,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   <div>
                     <span className="text-[10px] text-slate-500 font-semibold uppercase block">No. Invoice</span>
                     <span className="font-mono font-bold text-blue-700 text-xs">
-                      {formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal)}
+                      {dist.No_Invoice && dist.No_Invoice !== '-' ? dist.No_Invoice : (dist.No_Invoice === '-' ? '-' : formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal))}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-500 font-semibold uppercase block">Metode Pengiriman</span>
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      dist.Metode_Kirim === 'Ambil Sendiri' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-800'
+                      dist.Metode_Kirim === 'Ambil Sendiri' ? 'bg-slate-800 text-white' : (dist.Metode_Kirim && dist.Metode_Kirim !== '-') ? 'bg-slate-200 text-slate-800' : 'text-slate-500 bg-slate-100'
                     }`}>
-                      {dist.Metode_Kirim}
+                      {dist.Metode_Kirim || '-'}
                     </span>
                   </div>
                   <div>
