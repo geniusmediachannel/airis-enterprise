@@ -740,7 +740,7 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
       DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
         let qty = extractProductQtyFromRow(row, pDef);
 
-        // Khusus Galon: Deteksi multi-alias cadangan anti-gagal
+        // Khusus Galon: Deteksi multi-alias nama kolom Excel
         if (pDef.code === 'G19' && qty === 0) {
           const gCands = [
             'G19', 'g19', 'Galon', 'galon', 'GALON', 'GLN', 'gln', 
@@ -751,23 +751,6 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
             if (row[gc] !== undefined && row[gc] !== null && String(row[gc]).trim() !== '') {
               const parsedG = parseQty(row[gc]);
               if (parsedG > 0) { qty = parsedG; break; }
-            }
-          }
-
-          // Cek posisi Kolom J (index 9) dari raw cell Excel
-          if (qty === 0 && row['__col_9'] !== undefined && row['__col_9'] !== null && String(row['__col_9']).trim() !== '') {
-            const parsedCol9 = parseQty(row['__col_9']);
-            if (parsedCol9 > 0) { qty = parsedCol9; }
-          }
-
-          // Scan semua keys yang mengandung kata galon/gln/19
-          if (qty === 0) {
-            for (const rk of Object.keys(row)) {
-              const rkLower = rk.toLowerCase();
-              if (rkLower.includes('galon') || rkLower.includes('gln') || (rkLower.includes('19') && !rkLower.includes('2019') && !rkLower.includes('2026') && !rkLower.includes('tanggal'))) {
-                const parsedAny = parseQty(row[rk]);
-                if (parsedAny > 0) { qty = parsedAny; break; }
-              }
             }
           }
         }
@@ -809,45 +792,6 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
           });
         }
       });
-
-      // Ultra-resilient Galon Fallback: Jika seluruh produk dus (C120, C220, B330, B600) bernilai 0,
-      // tetapi rawTagihan > 0 dan distRecord.G19 masih 0 (seperti kasus pesanan Galon murni):
-      const totalDus = (Number(distRecord.C120) || 0) + (Number(distRecord.C220) || 0) + (Number(distRecord.B330) || 0) + (Number(distRecord.B600) || 0);
-      if (totalDus === 0 && (!distRecord.G19 || distRecord.G19 === 0) && rawTagihan > 0) {
-        let derivedGalon = 0;
-        if (rawTagihan % 12000 === 0) derivedGalon = Math.round(rawTagihan / 12000);
-        else if (rawTagihan % 9000 === 0) derivedGalon = Math.round(rawTagihan / 9000);
-        else if (rawTagihan % 10000 === 0) derivedGalon = Math.round(rawTagihan / 10000);
-        else if (rawTagihan % 15000 === 0) derivedGalon = Math.round(rawTagihan / 15000);
-        else if (rawTagihan >= 9000) derivedGalon = Math.round(rawTagihan / 12000);
-
-        if (derivedGalon > 0) {
-          distRecord['G19'] = derivedGalon;
-          distRecord['ASH-GLN19L'] = derivedGalon;
-          distRecord['Galon'] = derivedGalon;
-          distRecord['galon'] = derivedGalon;
-          distRecord['GLN19'] = derivedGalon;
-          distRecord['gln19'] = derivedGalon;
-          distRecord['GLN'] = derivedGalon;
-
-          const gDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
-          const itemPrice = Math.round(rawTagihan / derivedGalon);
-          hasColumnProducts = true;
-          newDetailsList.push({
-            ID_Detail: `${rawId}-G19`,
-            ID_Distribusi: rawId,
-            Nama_Pelanggan: custName,
-            Tanggal: tgl,
-            Level_Pelanggan: level,
-            ID_Produk: gDef.id,
-            Nama_Produk: gDef.name,
-            Qty: derivedGalon,
-            Harga_Satuan: itemPrice,
-            Subtotal: rawTagihan,
-            Satuan: 'Galon'
-          });
-        }
-      }
 
       // Fallback Cerdas 1: Format Single Item per Row jika Excel mencatat 1 baris per produk
       if (!hasColumnProducts) {

@@ -276,7 +276,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return map;
   }, [distributionItems]);
 
-  // Restore filter month from last imported batch & Auto-heal Galon September/Oktober
+  // Restore filter month from last imported batch
   useEffect(() => {
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
@@ -288,63 +288,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           setFilterMonth(hasData ? lastImported : 'all');
         }
         localStorage.removeItem('airis_last_imported_dist_month');
-      }
-
-      // Self-healing: Pulihkan data galon September / transaksi yang memiliki tagihan tapi rincian produk 0
-      let hasHealed = false;
-      const allDists = getTableData<DistributionItem>('Distribusi', []);
-      const allItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-      const existingItemParentIds = new Set(allItems.map(it => String(it.ID_Distribusi).trim()));
-      const itemsToAdd: DistributionProductDetail[] = [];
-
-      const updatedDists = allDists.map(d => {
-        const anyD = d as any;
-        const totalDus = (Number(anyD.C120) || 0) + (Number(anyD.C220) || 0) + (Number(anyD.B330) || 0) + (Number(anyD.B600) || 0);
-        const currentGalon = Number(anyD.G19 || anyD.g19 || anyD.Galon || anyD.galon || anyD.GLN19 || anyD['ASH-GLN19L'] || 0);
-        const tagihan = Number(d.Total_Tagihan || anyD.Tagihan || 0);
-
-        if (totalDus === 0 && currentGalon === 0 && tagihan > 0) {
-          let derived = 0;
-          if (tagihan % 12000 === 0) derived = Math.round(tagihan / 12000);
-          else if (tagihan % 9000 === 0) derived = Math.round(tagihan / 9000);
-          else if (tagihan % 10000 === 0) derived = Math.round(tagihan / 10000);
-          else if (tagihan % 15000 === 0) derived = Math.round(tagihan / 15000);
-          else if (tagihan >= 9000) derived = Math.round(tagihan / 12000);
-
-          if (derived > 0) {
-            hasHealed = true;
-            anyD.G19 = derived;
-            anyD.g19 = derived;
-            anyD.Galon = derived;
-            anyD.galon = derived;
-            anyD.GLN19 = derived;
-            anyD['ASH-GLN19L'] = derived;
-
-            if (!existingItemParentIds.has(String(d.ID_Distribusi).trim())) {
-              itemsToAdd.push({
-                ID_Detail: `${d.ID_Distribusi}-G19`,
-                ID_Distribusi: d.ID_Distribusi,
-                Nama_Pelanggan: d.Nama_Pelanggan,
-                Tanggal: d.Tanggal,
-                Level_Pelanggan: d.Level_Pelanggan || 'Distributor',
-                ID_Produk: 'ASH-GLN19L',
-                Nama_Produk: 'As-Shofaa Galon 19L',
-                Qty: derived,
-                Harga_Satuan: Math.round(tagihan / derived),
-                Subtotal: tagihan,
-                Satuan: 'Galon'
-              });
-            }
-          }
-        }
-        return d;
-      });
-
-      if (hasHealed) {
-        setTableData('Distribusi', updatedDists);
-        if (itemsToAdd.length > 0) {
-          setTableData('Distribusi_Item', [...allItems, ...itemsToAdd]);
-        }
       }
     } catch {
       // ignore
@@ -1359,24 +1302,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     }
 
-    // 4. Ultra-resilient Galon Recovery: Jika transaksi memiliki total tagihan positif tetapi seluruh produk dus (C120, C220, B330, B600) bernilai 0:
-    if (isGalon) {
-      const c120 = Number(anyDist.C120 || 0);
-      const c220 = Number(anyDist.C220 || 0);
-      const b330 = Number(anyDist.B330 || 0);
-      const b600 = Number(anyDist.B600 || 0);
-      if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0) {
-        const tagihan = Number(dist.Total_Tagihan || anyDist.Tagihan || 0);
-        if (tagihan > 0) {
-          if (tagihan % 12000 === 0) return Math.round(tagihan / 12000);
-          if (tagihan % 9000 === 0) return Math.round(tagihan / 9000);
-          if (tagihan % 10000 === 0) return Math.round(tagihan / 10000);
-          if (tagihan % 15000 === 0) return Math.round(tagihan / 15000);
-          if (tagihan >= 9000) return Math.round(tagihan / 12000);
-        }
-      }
-    }
-
     return 0;
   };
 
@@ -1388,20 +1313,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     if (key === 'G19') {
       const gq = Number(anyDist.G19 || anyDist.g19 || anyDist.Galon || anyDist.galon || anyDist.GLN19 || anyDist.gln19 || anyDist['ASH-GLN19L'] || 0);
       if (gq > 0) return gq;
-      const c120 = Number(anyDist.C120 || 0);
-      const c220 = Number(anyDist.C220 || 0);
-      const b330 = Number(anyDist.B330 || 0);
-      const b600 = Number(anyDist.B600 || 0);
-      if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0) {
-        const tagihan = Number(dist.Total_Tagihan || anyDist.Tagihan || 0);
-        if (tagihan > 0) {
-          if (tagihan % 12000 === 0) return Math.round(tagihan / 12000);
-          if (tagihan % 9000 === 0) return Math.round(tagihan / 9000);
-          if (tagihan % 10000 === 0) return Math.round(tagihan / 10000);
-          if (tagihan % 15000 === 0) return Math.round(tagihan / 15000);
-          if (tagihan >= 9000) return Math.round(tagihan / 12000);
-        }
-      }
     }
     const direct = anyDist[key];
     return direct ? Number(direct) : 0;
