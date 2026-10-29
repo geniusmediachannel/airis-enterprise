@@ -822,6 +822,105 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
       };
     }
 
+    case 'Distribusi': {
+      const rawId = getRowVal(row, ['ID_Distribusi', 'ID Distribusi', 'ID', 'No_Distribusi']);
+      const rawTgl = getRowVal(row, ['Tanggal', 'Tgl', 'Tanggal_Kirim', 'TANGGAL KIRIM']);
+      const rawCustId = getRowVal(row, ['ID_Pelanggan', 'ID Pelanggan', 'Cust_ID', 'ID_Customer']);
+      const rawCustName = getRowVal(row, ['Nama_Pelanggan', 'Nama Pelanggan', 'Pelanggan', 'NAMA PELANGGAN']);
+      const rawLvl = getRowVal(row, ['Level_Pelanggan', 'Level Pelanggan', 'Level', 'LEVEL']);
+      const rawPengirim = getRowVal(row, ['Pengirim', 'Driver', 'Sopir', 'PENGIRIM']);
+      const rawPenerima = getRowVal(row, ['Penerima', 'PENERIMA']);
+      const rawTujuan = getRowVal(row, ['Tujuan', 'Alamat', 'TUJUAN']);
+      const rawMetode = getRowVal(row, ['Metode_Kirim', 'Metode Kirim', 'Metode', 'METODE KIRIM']);
+      const rawSj = getRowVal(row, ['No_Surat_Jalan', 'No Surat Jalan', 'Surat Jalan', 'NO SURAT JALAN', 'SJ']);
+      const rawInv = getRowVal(row, ['No_Invoice', 'No Invoice', 'Invoice', 'NO INVOICE']);
+      const rawTagihan = getRowVal(row, ['Total_Tagihan', 'Total Tagihan', 'Tagihan', 'TOTAL TAGIHAN']);
+      const rawKet = getRowVal(row, ['Keterangan', 'Catatan', 'KETERANGAN']);
+
+      const custName = String(rawCustName || 'Pelanggan Umum').trim();
+      let custId = String(rawCustId || '').trim();
+      if (!custId || custId === '-') {
+        custId = `PLG-${custName.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'UMUM'}`;
+      }
+
+      let metode = 'Diantar Armada';
+      const metStr = String(rawMetode || '').toLowerCase();
+      if (metStr.includes('ambil') || metStr.includes('sendiri')) {
+        metode = 'Ambil Sendiri';
+      } else if (metStr.includes('kirim') && metStr.includes('armada')) {
+        metode = 'Kirim Armada';
+      } else {
+        metode = 'Diantar Armada';
+      }
+
+      return {
+        ID_Distribusi: String(rawId || `DST-${Date.now().toString().slice(-6)}-${idx + 1}`).trim(),
+        Tanggal: parseDateISO(rawTgl),
+        ID_Pelanggan: custId,
+        Nama_Pelanggan: custName,
+        Level_Pelanggan: String(rawLvl || 'Distributor').trim(),
+        Pengirim: String(rawPengirim || '-').trim(),
+        Penerima: String(rawPenerima || '-').trim(),
+        Tujuan: String(rawTujuan || '-').trim(),
+        Metode_Kirim: metode,
+        No_Surat_Jalan: String(rawSj || '-').trim(),
+        No_Invoice: String(rawInv || '-').trim(),
+        Total_Tagihan: parseNumeric(rawTagihan, 0),
+        Keterangan: String(rawKet || '').trim()
+      };
+    }
+
+    case 'Distribusi_Item': {
+      const rawId = getRowVal(row, ['ID_Detail', 'ID Detail', 'ID']);
+      const rawDistId = getRowVal(row, ['ID_Distribusi', 'ID Distribusi']);
+      const rawCustName = getRowVal(row, ['Nama_Pelanggan', 'Nama Pelanggan']);
+      const rawTgl = getRowVal(row, ['Tanggal', 'Tgl']);
+      const rawLvl = getRowVal(row, ['Level_Pelanggan', 'Level Pelanggan']);
+      const rawProdId = getRowVal(row, ['ID_Produk', 'ID Produk', 'Produk']);
+      const rawProdName = getRowVal(row, ['Nama_Produk', 'Nama Produk']);
+      const rawQty = getRowVal(row, ['Qty', 'Jumlah', 'QTY']);
+      const rawHarga = getRowVal(row, ['Harga_Satuan', 'Harga Satuan', 'Harga']);
+      const rawSub = getRowVal(row, ['Subtotal', 'Total']);
+
+      let prodId = String(rawProdId || 'ASH-CUP220').trim();
+      let prodName = String(rawProdName || '').trim();
+      const pStr = (prodId + ' ' + prodName).toLowerCase();
+
+      if (pStr.includes('gln') || pStr.includes('galon') || pStr.includes('19') || prodId === 'G19') {
+        prodId = 'ASH-GLN19L';
+        if (!prodName) prodName = 'As-Shofaa Galon 19L';
+      } else if (pStr.includes('600') || prodId === 'B600') {
+        prodId = 'ASH-BTL600';
+        if (!prodName) prodName = 'As-Shofaa Botol 600ml';
+      } else if (pStr.includes('330') || prodId === 'B330') {
+        prodId = 'ASH-BTL330';
+        if (!prodName) prodName = 'As-Shofaa Botol 330ml';
+      } else if (pStr.includes('220') || prodId === 'C220') {
+        prodId = 'ASH-CUP220';
+        if (!prodName) prodName = 'As-Shofaa Cup 220ml';
+      } else if (pStr.includes('120') || prodId === 'C120') {
+        prodId = 'ASH-CUP120';
+        if (!prodName) prodName = 'As-Shofaa Cup 120ml';
+      }
+
+      const qty = parseNumeric(rawQty, 0);
+      const harga = parseNumeric(rawHarga, 0);
+      const subtotal = parseNumeric(rawSub, qty * harga);
+
+      return {
+        ID_Detail: String(rawId || `DET-${rawDistId || 'D'}-${idx + 1}`).trim(),
+        ID_Distribusi: String(rawDistId || '').trim(),
+        Nama_Pelanggan: String(rawCustName || '-').trim(),
+        Tanggal: parseDateISO(rawTgl),
+        Level_Pelanggan: String(rawLvl || 'Distributor').trim(),
+        ID_Produk: prodId,
+        Nama_Produk: prodName || 'As-Shofaa Cup 220ml',
+        Qty: qty,
+        Harga_Satuan: harga,
+        Subtotal: subtotal
+      };
+    }
+
     default: {
       const cols = TABLE_COLUMNS[tableName];
       const cleaned: Record<string, any> = {};
@@ -1275,6 +1374,67 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
 
     await Promise.all(promises);
 
+    // Rekonsiliasi cerdas tabel Distribusi dengan Distribusi_Item:
+    // Pastikan seluruh baris Distribusi memiliki kolom kuantitas produk lengkap (C120, C220, B330, B600, G19, Galon)
+    // yang direkonstruksi langsung dari Distribusi_Item yang ditarik dari Supabase
+    try {
+      const currentDist = getTableData<any>('Distribusi', []);
+      const currentItems = getTableData<any>('Distribusi_Item', []);
+      if (currentDist.length > 0 && currentItems.length > 0) {
+        const itemMap = new Map<string, any[]>();
+        currentItems.forEach(it => {
+          if (!it || !it.ID_Distribusi) return;
+          const distId = String(it.ID_Distribusi).trim();
+          let arr = itemMap.get(distId);
+          if (!arr) {
+            arr = [];
+            itemMap.set(distId, arr);
+          }
+          arr.push(it);
+        });
+
+        let anyEnriched = false;
+        const fullyEnrichedDist = currentDist.map(dist => {
+          const items = itemMap.get(String(dist.ID_Distribusi).trim()) || [];
+          if (items.length > 0) {
+            let mod = false;
+            const updated = { ...dist };
+            items.forEach(it => {
+              const pId = String(it.ID_Produk || '').toUpperCase();
+              const pName = String(it.Nama_Produk || '').toLowerCase();
+              const q = Number(it.Qty) || 0;
+              if (pId.includes('GLN') || pId.includes('G19') || pName.includes('galon')) {
+                if (updated.G19 !== q || updated.Galon !== q) {
+                  updated.G19 = q;
+                  updated.Galon = q;
+                  updated['ASH-GLN19L'] = q;
+                  mod = true;
+                }
+              } else if (pId.includes('BTL600') || pId.includes('B600') || pName.includes('600')) {
+                if (updated.B600 !== q) { updated.B600 = q; mod = true; }
+              } else if (pId.includes('BTL330') || pId.includes('B330') || pName.includes('330')) {
+                if (updated.B330 !== q) { updated.B330 = q; mod = true; }
+              } else if (pId.includes('CUP220') || pId.includes('C220') || pName.includes('220')) {
+                if (updated.C220 !== q) { updated.C220 = q; mod = true; }
+              } else if (pId.includes('CUP120') || pId.includes('C120') || pName.includes('120')) {
+                if (updated.C120 !== q) { updated.C120 = q; mod = true; }
+              }
+            });
+            if (mod) anyEnriched = true;
+            return updated;
+          }
+          return dist;
+        });
+
+        if (anyEnriched) {
+          memoryTableCache['Distribusi'] = fullyEnrichedDist;
+          try {
+            localStorage.setItem(STORAGE_KEY_PREFIX + 'Distribusi', JSON.stringify(fullyEnrichedDist));
+          } catch (e) {}
+        }
+      }
+    } catch (enrichEx) {}
+
     // Sinkronkan juga pengaturan lisensi / masa aktif dari cloud
     try {
       const { data: hyperUser } = await client
@@ -1331,12 +1491,32 @@ export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Pr
       try {
         const cleanPayload = sanitizeRowsForTable(table, data);
         if (cleanPayload.length > 0) {
-          const { error } = await client.from(table).upsert(cleanPayload as any);
-          if (!error) {
+          let tableSuccess = true;
+          let tableErrors: string[] = [];
+          for (let i = 0; i < cleanPayload.length; i += 200) {
+            const batch = cleanPayload.slice(i, i + 200);
+            const { error: batchErr } = await client.from(table).upsert(batch as any);
+            if (batchErr) {
+              // Fallback per baris
+              for (const singleRow of batch) {
+                try {
+                  const { error: singleErr } = await client.from(table).upsert([singleRow] as any);
+                  if (singleErr) {
+                    tableSuccess = false;
+                    tableErrors.push(singleErr.message);
+                  }
+                } catch (rEx: any) {
+                  tableSuccess = false;
+                  tableErrors.push(rEx?.message || 'Row Exception');
+                }
+              }
+            }
+          }
+          if (tableSuccess) {
             pushed++;
           } else {
-            console.warn(`[PushAll] Gagal upload ${table}:`, error.message);
-            failureDetails.push(`${table}: ${error.message}`);
+            console.warn(`[PushAll] Gagal sebagian upload ${table}:`, tableErrors[0]);
+            failureDetails.push(`${table}: ${tableErrors[0] || 'Constraint error'}`);
           }
         }
       } catch (e: any) {

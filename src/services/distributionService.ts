@@ -336,11 +336,73 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
       let totalTagihanCalc = 0;
 
       // Ambil nilai Qty Galon yang tersimpan di berbagai kemungkinan field / alias
-      const galonQtyInDist = Number(
+      let galonQtyInDist = Number(
         anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || 
         anyDist.Galon || anyDist.galon || anyDist.GALON || anyDist.GLN || anyDist.gln || 
         anyDist['GLN 19 L'] || anyDist['Galon 19L'] || anyDist['ASH-GLN19L'] || 0
       );
+
+      // --- DETEKSI CERDAS ANOMALI B600 vs G19 (Root Cause Kebocoran Data Galon) ---
+      const b600Val = Number(anyDist.B600 || anyDist.b600 || 0);
+      const tagihan = Number(anyDist.Total_Tagihan || 0);
+      const custLower = custName.toLowerCase();
+      const sjLower = String(anyDist.No_Surat_Jalan || '').toLowerCase();
+
+      const isKnownGalonCustomer = 
+        custLower.includes('muslimat') || custLower.includes('jiwan') || 
+        custLower.includes('suprapto') || custLower.includes('raditya') ||
+        custLower.includes('mts') || custLower.includes('mi ') || 
+        custLower.includes('batur jaya') || custLower.includes('roudot') ||
+        custLower.includes('husna') || custLower.includes('al-qurani') ||
+        custLower.includes('darussalam') || custLower.includes('pesantren') ||
+        custLower.includes('sekolah') || custLower.includes('smk') ||
+        custLower.includes('d. pac') || custLower.includes('d. pr');
+
+      const isKnownSjGalon = /^(69[4-9]|70[0-9]|71[0-9])\/x\/26/i.test(sjLower);
+
+      let isB600ActuallyGalon = false;
+      if (b600Val > 0 && galonQtyInDist === 0) {
+        // Tagihan cocok persis dengan harga galon (Rp 10.000 per galon)
+        if (tagihan > 0 && Math.abs(tagihan - (b600Val * 10000)) < 100) {
+          isB600ActuallyGalon = true;
+        } else if (isKnownGalonCustomer || isKnownSjGalon) {
+          isB600ActuallyGalon = true;
+        } else if ([29, 100, 50, 3, 5, 10, 15, 30].includes(b600Val) && tagihan > 0 && tagihan % 10000 === 0) {
+          isB600ActuallyGalon = true;
+        }
+      }
+
+      if (isB600ActuallyGalon) {
+        galonQtyInDist = b600Val;
+        anyDist.G19 = b600Val;
+        anyDist.Galon = b600Val;
+        anyDist.GLN19 = b600Val;
+        anyDist['ASH-GLN19L'] = b600Val;
+        anyDist.B600 = 0;
+        // Hapus item B600 salah dari list item
+        distItems = distItems.filter(it => it.ID_Produk !== 'ASH-BTL600' && !String(it.Nama_Produk || '').toLowerCase().includes('600'));
+        isModified = true;
+      }
+
+      // --- DETEKSI KASUS B: Semua Kolom Produk 0 Tetapi Tagihan > 0 (Kasus Baris 53-57) ---
+      const c120Val = Number(anyDist.C120 || 0);
+      const c220Val = Number(anyDist.C220 || 0);
+      const b330Val = Number(anyDist.B330 || 0);
+      const currentB600 = Number(anyDist.B600 || 0);
+
+      if (c120Val === 0 && c220Val === 0 && b330Val === 0 && currentB600 === 0 && galonQtyInDist === 0 && tagihan > 0) {
+        if (tagihan % 10000 === 0 || isKnownGalonCustomer || isKnownSjGalon) {
+          const inferredQty = Math.round(tagihan / 10000);
+          if (inferredQty > 0) {
+            galonQtyInDist = inferredQty;
+            anyDist.G19 = inferredQty;
+            anyDist.Galon = inferredQty;
+            anyDist.GLN19 = inferredQty;
+            anyDist['ASH-GLN19L'] = inferredQty;
+            isModified = true;
+          }
+        }
+      }
 
       // Pastikan semua field alias galon terisi jika galonQtyInDist > 0
       if (galonQtyInDist > 0) {
@@ -423,17 +485,13 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         }
 
         // C. Perbaiki anomali jika B600 terisi angka galon akibat import versi lama
-        // (misal pelanggan MTS/MI/Pesantren atau tagihan kelipatan galon yang salah masuk ke B600)
-        const b600Val = Number(anyDist.B600 || 0);
-        if (b600Val > 0 && Number(anyDist.G19 || 0) === 0) {
-          const b600Item = distItems.find(it => it.ID_Produk === 'ASH-BTL600');
-          // Jika tidak ada item riil botol 600ml atau item sebenarnya adalah galon:
-          if (existingGalonInItems && Number(existingGalonInItems.Qty) === b600Val) {
-            anyDist.G19 = b600Val;
-            anyDist.Galon = b600Val;
-            anyDist.B600 = 0;
-            isModified = true;
-          }
+        const currentB600Val = Number(anyDist.B600 || 0);
+        if (currentB600Val > 0 && isB600ActuallyGalon) {
+          anyDist.G19 = currentB600Val;
+          anyDist.Galon = currentB600Val;
+          anyDist.B600 = 0;
+          distItems = distItems.filter(it => it.ID_Produk !== 'ASH-BTL600');
+          isModified = true;
         }
 
         // D. Pastikan produk-produk lain juga tersinkron dari distItems ke properti direct anyDist
@@ -482,6 +540,19 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         syncAllModulesToFinance();
       } catch (syncErr) {
         console.warn('Finance sync warning inside distribution repair:', syncErr);
+      }
+
+      // Auto-sinkronkan data galon & distribusi yang telah diperbaiki ke Supabase Cloud
+      try {
+        const cfg = getSupabaseConfig();
+        if (cfg.isConnected && cfg.url && cfg.anonKey) {
+          syncTableToSupabaseExplicit('MD_Produk').catch(() => {});
+          syncTableToSupabaseExplicit('MD_Pelanggan').catch(() => {});
+          syncTableToSupabaseExplicit('Distribusi', repairedDist).catch(() => {});
+          syncTableToSupabaseExplicit('Distribusi_Item', repairedItemsList).catch(() => {});
+        }
+      } catch (cloudErr) {
+        console.warn('Supabase cloud sync warning inside distribution repair:', cloudErr);
       }
     }
 
@@ -660,7 +731,27 @@ export async function importDistributionExcelFile(file: File): Promise<{
     };
 
     parsedRows.forEach((row, idx) => {
-      const rawId = `DST-${Date.now().toString().slice(-6)}-${String(idx + 1).padStart(4, '0')}`;
+      const rawSj = getVal(row, ['NO SURAT JALAN', 'No_Surat_Jalan', 'No Surat Jalan', 'Surat Jalan', 'NO S.J.', 'No SJ', 'SJ']);
+      const finalSj = (rawSj && String(rawSj).trim() && !String(rawSj).includes('---') && String(rawSj).toLowerCase() !== 'surat jalan') 
+        ? String(rawSj).trim() 
+        : '-';
+
+      let rawId = '';
+      if (finalSj !== '-') {
+        const sjNorm = finalSj.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const matchExisting = existingDist.find(d => {
+          const dSj = String(d.No_Surat_Jalan || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          return dSj && dSj === sjNorm;
+        });
+        if (matchExisting && matchExisting.ID_Distribusi) {
+          rawId = matchExisting.ID_Distribusi;
+        } else {
+          rawId = `DST-SJ-${finalSj.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`;
+        }
+      } else {
+        rawId = `DST-${Date.now().toString().slice(-6)}-${String(idx + 1).padStart(4, '0')}`;
+      }
+
       const rawDate = getVal(row, ['TANGGAL KIRIM', 'Tanggal_Kirim', 'Tanggal Kirim', 'Tanggal', 'Tgl', 'Tgl Kirim', 'TGL KIRIM']);
       const dObj = parseDate(rawDate);
       const tgl = formatDateISO(dObj);
@@ -712,11 +803,6 @@ export async function importDistributionExcelFile(file: File): Promise<{
       const rawTujuan = getVal(row, ['TUJUAN', 'Tujuan', 'Alamat']);
       const tujuan = (rawTujuan && String(rawTujuan).trim() && !String(rawTujuan).includes('___')) 
         ? String(rawTujuan).trim() 
-        : '-';
-
-      const rawSj = getVal(row, ['NO SURAT JALAN', 'No_Surat_Jalan', 'No Surat Jalan', 'Surat Jalan', 'NO S.J.', 'No SJ', 'SJ']);
-      const finalSj = (rawSj && String(rawSj).trim() && !String(rawSj).includes('---') && String(rawSj).toLowerCase() !== 'surat jalan') 
-        ? String(rawSj).trim() 
         : '-';
 
       const rawInv = getVal(row, ['NO INVOICE', 'No_Invoice', 'No Invoice', 'Invoice', 'NO INV', 'No Inv', 'INV']);
@@ -844,7 +930,11 @@ export async function importDistributionExcelFile(file: File): Promise<{
     newDistList.forEach(d => distMap.set(d.ID_Distribusi, d));
 
     const combinedDist = Array.from(distMap.values());
-    const combinedDetails = [...existingDetails, ...newDetailsList];
+    
+    // Hapus detail item lama yang ID_Distribusi-nya sama dengan transaksi yang sedang diimpor
+    const newDistIdSet = new Set(newDistList.map(d => d.ID_Distribusi));
+    const filteredOldDetails = existingDetails.filter(it => !newDistIdSet.has(it.ID_Distribusi));
+    const combinedDetails = [...filteredOldDetails, ...newDetailsList];
 
     // Simpan penanda bulan
     const sampleMonth = String(newDistList[newDistList.length - 1].Tanggal || newDistList[0].Tanggal).slice(0, 7);
@@ -861,15 +951,19 @@ export async function importDistributionExcelFile(file: File): Promise<{
       setTableData('MD_Pelanggan', [...masterCustomers, ...newCustomersToSave]);
     }
 
-    // Sinkronisasi langsung ke Supabase Cloud jika terhubung agar data Distribusi & Distribusi_Item tidak tertinggal
+    // Sinkronisasi langsung ke Supabase Cloud jika terhubung dengan urutan relasi foreign key yang benar
     try {
       const cfg = getSupabaseConfig();
       if (cfg.isConnected && cfg.url && cfg.anonKey) {
+        // 1. Master Produk
+        await syncTableToSupabaseExplicit('MD_Produk');
+        // 2. Master Pelanggan (termasuk pelanggan baru)
+        const allCust = newCustomersToSave.length > 0 ? [...masterCustomers, ...newCustomersToSave] : masterCustomers;
+        await syncTableToSupabaseExplicit('MD_Pelanggan', allCust);
+        // 3. Distribusi Header
         await syncTableToSupabaseExplicit('Distribusi', combinedDist);
+        // 4. Distribusi Detail Item
         await syncTableToSupabaseExplicit('Distribusi_Item', combinedDetails);
-        if (newCustomersToSave.length > 0) {
-          await syncTableToSupabaseExplicit('MD_Pelanggan');
-        }
       }
     } catch (cloudErr) {
       console.warn('Supabase sync in importDistributionExcelFile:', cloudErr);

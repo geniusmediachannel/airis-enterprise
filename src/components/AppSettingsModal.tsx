@@ -12,6 +12,7 @@ import {
 import { SupabaseConfig, UserAccount } from '../types';
 import { 
   getTableData, resetAllDatabase, syncAllTablesFromSupabase,
+  getSupabaseConfig, syncTableToSupabaseExplicit,
   OPERATIONAL_PURGE_MODULES, previewOperationalPurge, executeOperationalPurge
 } from '../services/dbAdapter';
 import { isSuperAdmin } from '../services/permissionService';
@@ -106,20 +107,42 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
   const [isProcessingPurge, setIsProcessingPurge] = useState<boolean>(false);
   const [purgeTick, setPurgeTick] = useState<number>(0);
 
-  // Sanitasi & Perbaikan Database Distribusi
+  // Sanitasi & Perbaikan Database Distribusi (Galon, Surat Jalan, Supabase Sync)
   const [isRepairingDist, setIsRepairingDist] = useState<boolean>(false);
   const handleRepairDistributionData = async () => {
     setIsRepairingDist(true);
     try {
       const res = sanitizeAndRepairDistributionDatabase();
+      
+      // Sinkronisasikan secara eksplisit ke Supabase Cloud jika aktif
+      let cloudMsg = '';
+      const cfg = getSupabaseConfig();
+      if (cfg.isConnected && cfg.url && cfg.anonKey) {
+        try {
+          await syncTableToSupabaseExplicit('MD_Produk');
+          await syncTableToSupabaseExplicit('MD_Pelanggan');
+          const distSync = await syncTableToSupabaseExplicit('Distribusi');
+          const itemSync = await syncTableToSupabaseExplicit('Distribusi_Item');
+          if (distSync.success && itemSync.success) {
+            cloudMsg = ` & ${distSync.count} baris distribusi + ${itemSync.count} detail produk (Galon) berhasil diunggah ke Supabase Cloud!`;
+          }
+        } catch (cErr: any) {
+          console.warn('Supabase sync during repair error:', cErr);
+        }
+      }
+
       if (res.fixedRecordsCount > 0 || res.syncedItemsCount > 0) {
         showToast(
-          'Database Distribusi Berhasil Diperbaiki',
-          `Melengkapi ${res.fixedRecordsCount} data distribusi (Surat Jalan: +${res.fixedSuratJalanCount}, Pengirim: +${res.fixedPengirimCount}, Tujuan: +${res.fixedTujuanCount}, Invoice: +${res.fixedInvoiceCount}) & ${res.syncedItemsCount} item disinkronisasi.`,
+          'Database Distribusi & Galon Berhasil Diperbaiki',
+          `Melengkapi ${res.fixedRecordsCount} data distribusi (Surat Jalan: +${res.fixedSuratJalanCount}, Pengirim: +${res.fixedPengirimCount}, Tujuan: +${res.fixedTujuanCount}, Invoice: +${res.fixedInvoiceCount}) & ${res.syncedItemsCount} item disinkronisasi${cloudMsg || '.'}`,
           'success'
         );
       } else {
-        showToast('Data Distribusi Lengkap', 'Semua data distribusi sudah valid dan memiliki data lengkap.', 'info');
+        showToast(
+          'Data Distribusi & Galon Bersih',
+          `Semua data distribusi sudah valid dan memiliki data kuantitas galon yang sinkron${cloudMsg || '.'}`,
+          'info'
+        );
       }
       if (onRefreshData) onRefreshData();
     } catch (e: any) {
@@ -1156,6 +1179,35 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                     <FileSpreadsheet size={15} />
                     <span>Buka Pusat Import Excel</span>
                   </button>
+                </div>
+
+                {/* Card Pintasan Khusus: Perbaiki & Sinkronkan Data Galon ke Supabase */}
+                <div className="p-4 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-cyan-50/90 border border-blue-200 rounded-xl space-y-2.5 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-blue-600" />
+                        <span className="font-extrabold text-xs text-blue-950">
+                          Perbaiki &amp; Sinkronkan Data Galon ke Supabase Cloud
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                          Solusi 1-Klik Galon
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 max-w-xl leading-relaxed">
+                        Jika data galon yang diimpor dari Excel belum tampil di kolom G19 atau belum tersimpan di Supabase Cloud, klik tombol ini untuk otomatis menata kuantitas galon, membersihkan anomali kolom B600, dan mengunggahnya ke Cloud Supabase.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isRepairingDist}
+                      onClick={handleRepairDistributionData}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold text-xs flex items-center gap-2 shrink-0 shadow-sm cursor-pointer transition disabled:opacity-50"
+                    >
+                      <Sparkles size={14} className={isRepairingDist ? "animate-spin" : ""} />
+                      <span>{isRepairingDist ? 'Sedang Memproses...' : 'Sinkronkan & Bersihkan Data Galon'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Cadangan Lengkap Seluruh Database Excel Multi-Tab */}
