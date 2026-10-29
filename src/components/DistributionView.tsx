@@ -2309,6 +2309,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <span className="text-[10px] text-slate-500 font-semibold uppercase block">Alamat / Wilayah</span>
                     <span className="font-semibold text-slate-800 uppercase">{dist.Tujuan || '-'}</span>
                   </div>
+                  {dist.Keterangan && dist.Keterangan !== '-' && (
+                    <div className="col-span-2 sm:col-span-3 pt-2 border-t border-slate-200/80">
+                      <span className="text-[10px] text-slate-500 font-semibold uppercase block">Keterangan / Catatan</span>
+                      <span className="font-medium text-slate-700">{dist.Keterangan}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Table of Products Sent */}
@@ -3338,6 +3344,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   value={formData.Tujuan}
                   onChange={e => setFormData({ ...formData, Tujuan: e.target.value })}
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Keterangan / Catatan Pengiriman</label>
+                <input
+                  type="text"
+                  placeholder="Keterangan tambahan (opsional)..."
+                  value={formData.Keterangan}
+                  onChange={e => setFormData({ ...formData, Keterangan: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none text-xs"
                 />
               </div>
 
