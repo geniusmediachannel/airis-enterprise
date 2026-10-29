@@ -330,79 +330,17 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         isModified = true;
       }
 
-      // 10. Sinkronisasi Detail Produk & Distribusi_Item (Khusus Galon & Seluruh Varian Produk)
+      // 10. Sinkronisasi Detail Produk & Distribusi_Item Murni Sesuai Nilai Import
       let distItems = itemMap.get(anyDist.ID_Distribusi) || [];
       let totalQtyCalc = 0;
       let totalTagihanCalc = 0;
 
-      // Ambil nilai Qty Galon yang tersimpan di berbagai kemungkinan field / alias
+      // Ambil nilai Qty Galon yang tersimpan dari hasil import Excel
       let galonQtyInDist = Number(
         anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || 
         anyDist.Galon || anyDist.galon || anyDist.GALON || anyDist.GLN || anyDist.gln || 
         anyDist['GLN 19 L'] || anyDist['Galon 19L'] || anyDist['ASH-GLN19L'] || 0
       );
-
-      // --- DETEKSI CERDAS ANOMALI B600 vs G19 (Root Cause Kebocoran Data Galon) ---
-      const b600Val = Number(anyDist.B600 || anyDist.b600 || 0);
-      const tagihan = Number(anyDist.Total_Tagihan || 0);
-      const custLower = custName.toLowerCase();
-      const sjLower = String(anyDist.No_Surat_Jalan || '').toLowerCase();
-
-      const isKnownGalonCustomer = 
-        custLower.includes('muslimat') || custLower.includes('jiwan') || 
-        custLower.includes('suprapto') || custLower.includes('raditya') ||
-        custLower.includes('mts') || custLower.includes('mi ') || 
-        custLower.includes('batur jaya') || custLower.includes('roudot') ||
-        custLower.includes('husna') || custLower.includes('al-qurani') ||
-        custLower.includes('darussalam') || custLower.includes('pesantren') ||
-        custLower.includes('sekolah') || custLower.includes('smk') ||
-        custLower.includes('d. pac') || custLower.includes('d. pr');
-
-      const isKnownSjGalon = /^(69[4-9]|70[0-9]|71[0-9])\/x\/26/i.test(sjLower);
-
-      let isB600ActuallyGalon = false;
-      if (b600Val > 0 && galonQtyInDist === 0) {
-        // Tagihan cocok persis dengan harga galon (Rp 10.000 per galon)
-        if (tagihan > 0 && Math.abs(tagihan - (b600Val * 10000)) < 100) {
-          isB600ActuallyGalon = true;
-        } else if (isKnownGalonCustomer || isKnownSjGalon) {
-          isB600ActuallyGalon = true;
-        } else if ([29, 100, 50, 3, 5, 10, 15, 30].includes(b600Val) && tagihan > 0 && tagihan % 10000 === 0) {
-          isB600ActuallyGalon = true;
-        }
-      }
-
-      if (isB600ActuallyGalon) {
-        galonQtyInDist = b600Val;
-        anyDist.G19 = b600Val;
-        anyDist.Galon = b600Val;
-        anyDist.GLN19 = b600Val;
-        anyDist['ASH-GLN19L'] = b600Val;
-        anyDist.B600 = 0;
-        // Hapus item B600 salah dari list item
-        distItems = distItems.filter(it => it.ID_Produk !== 'ASH-BTL600' && !String(it.Nama_Produk || '').toLowerCase().includes('600'));
-        isModified = true;
-      }
-
-      // --- DETEKSI KASUS B: Semua Kolom Produk 0 Tetapi Tagihan > 0 (Kasus Baris 53-57) ---
-      const c120Val = Number(anyDist.C120 || 0);
-      const c220Val = Number(anyDist.C220 || 0);
-      const b330Val = Number(anyDist.B330 || 0);
-      const currentB600 = Number(anyDist.B600 || 0);
-
-      if (c120Val === 0 && c220Val === 0 && b330Val === 0 && currentB600 === 0 && galonQtyInDist === 0 && tagihan > 0) {
-        if (tagihan % 10000 === 0 || isKnownGalonCustomer || isKnownSjGalon) {
-          const inferredQty = Math.round(tagihan / 10000);
-          if (inferredQty > 0) {
-            galonQtyInDist = inferredQty;
-            anyDist.G19 = inferredQty;
-            anyDist.Galon = inferredQty;
-            anyDist.GLN19 = inferredQty;
-            anyDist['ASH-GLN19L'] = inferredQty;
-            isModified = true;
-          }
-        }
-      }
 
       // Pastikan semua field alias galon terisi jika galonQtyInDist > 0
       if (galonQtyInDist > 0) {
@@ -422,7 +360,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           }
           if (q > 0) {
             const detailItem: DistributionProductDetail = {
-              ID_Detail: `${anyDist.ID_Distribusi}-D${pIdx + 1}`,
+              ID_Detail: `${anyDist.ID_Distribusi}-${pDef.code}`,
               ID_Distribusi: anyDist.ID_Distribusi,
               Nama_Pelanggan: custName,
               Tanggal: anyDist.Tanggal,
@@ -445,7 +383,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           itemMap.set(anyDist.ID_Distribusi, distItems);
         }
       } else {
-        // Bi-Directional Sync:
+        // Bi-Directional Sync murni:
         // A. Jika distItems SUDAH ADA item Galon, pastikan field anyDist.G19 juga sinkron terisi!
         const existingGalonInItems = distItems.find(it => 
           it.ID_Produk === 'ASH-GLN19L' || 
@@ -466,7 +404,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           // B. Jika record dist memiliki data galon tapi belum masuk ke distItems
           const galonDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
           const detailItem: DistributionProductDetail = {
-            ID_Detail: `${anyDist.ID_Distribusi}-D5`,
+            ID_Detail: `${anyDist.ID_Distribusi}-G19`,
             ID_Distribusi: anyDist.ID_Distribusi,
             Nama_Pelanggan: custName,
             Tanggal: anyDist.Tanggal,
@@ -484,17 +422,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           isModified = true;
         }
 
-        // C. Perbaiki anomali jika B600 terisi angka galon akibat import versi lama
-        const currentB600Val = Number(anyDist.B600 || 0);
-        if (currentB600Val > 0 && isB600ActuallyGalon) {
-          anyDist.G19 = currentB600Val;
-          anyDist.Galon = currentB600Val;
-          anyDist.B600 = 0;
-          distItems = distItems.filter(it => it.ID_Produk !== 'ASH-BTL600');
-          isModified = true;
-        }
-
-        // D. Pastikan produk-produk lain juga tersinkron dari distItems ke properti direct anyDist
+        // C. Pastikan produk-produk lain juga tersinkron dari distItems ke properti direct anyDist
         DEFAULT_PRODUCT_DEFS.forEach(pDef => {
           if (pDef.code !== 'G19') {
             const itm = distItems.find(i => i.ID_Produk === pDef.id || String(i.Nama_Produk || '').toLowerCase().includes(pDef.code.toLowerCase()));
