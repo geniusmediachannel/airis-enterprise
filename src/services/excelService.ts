@@ -130,25 +130,25 @@ export const EXCEL_TEMPLATES: Record<ExcelTemplateType, TemplateDefinition> = {
     title: 'Pengiriman Distribusi Armada (Format Standar AMDK)',
     filename: 'Template_AIRIS_Distribusi.xlsx',
     headers: [
-      'NAMA PELANGGAN', 'LEVEL', 'TANGGAL KIRIM', 'NO SURAT JALAN', 'TUJUAN', 
+      'ID DISTRIBUSI', 'NAMA PELANGGAN', 'LEVEL', 'TANGGAL KIRIM', 'NO SURAT JALAN', 'TUJUAN', 
       'C120', 'C220', 'B330', 'B600', 'G19', 
       'METODE KIRIM', 'TOTAL TAGIHAN', 'PENGIRIM', 'PENERIMA', 'KETERANGAN'
     ],
     sampleRows: [
-      ['MARKO DWI NUGROHO', 'Agen', '21-Okt-2026', '689/X/26', 'KLATEN', 0, 2, 0, 0, 0, 'Ambil Sendiri', 34500, 'Tri Wahyudi', '-', ''],
-      ['AGEN AHMAD ZAMRONI', 'Agen', '22-Okt-2026', '690/X/26', 'KLATEN', 0, 10, 0, 0, 0, 'Ambil Sendiri', 172500, 'Tri Wahyudi', '-', ''],
-      ['ONA SETYO PURNOMO', 'Agen', '22-Okt-2026', '691/X/26', 'KLATEN', 0, 4, 0, 0, 0, 'Ambil Sendiri', 69000, 'Tri Wahyudi', '-', ''],
-      ['D. PR GP ANSOR DRONO', 'Distributor', '22-Okt-2026', '692/X/26', 'DRONO', 0, 100, 0, 0, 60, 'Ambil Sendiri', 1990000, 'Agus Setiawan', '-', ''],
-      ['AGEN PAC FATAYAT JATINOM', 'Agen', '22-Okt-2026', '693/X/26', 'JATINOM', 20, 150, 0, 0, 30, 'Ambil Sendiri', 3265000, 'Tri Wahyudi', '-', ''],
-      ['MTS AL-QURANI KARANGNONGKO', 'Agen', '22-Okt-2026', '694/X/26', 'KARANGNONGKO', 5, 0, 0, 0, 0, 'Ambil Sendiri', 60000, 'Tri Wahyudi', '-', ''],
-      ['AGEN MI DARUSSALAM', 'Agen', '22-Okt-2026', '695/X/26', 'KLATEN', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
-      ['MTS TQ AL-HUSNA', 'Agen', '22-Okt-2026', '696/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
-      ['SMK BATUR JAYA 2', 'Agen', '22-Okt-2026', '697/X/26', 'CEPER', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
-      ['MI ROUDOTUZZAHIDIN', 'Agen', '22-Okt-2026', '698/X/26', 'KLATEN', 15, 0, 0, 0, 0, 'Ambil Sendiri', 180000, 'Tri Wahyudi', '-', ''],
-      ['D. PR NU JIWAN', 'Distributor', '23-Okt-2026', '699/X/26', 'JIWAN', 0, 200, 0, 0, 0, 'Ambil Sendiri', 3600000, 'Agus Setiawan', '-', ''],
-      ['AGEN SUPRAPTO', 'Agen', '23-Okt-2026', '700/X/26', 'KARANGANOM', 0, 100, 0, 0, 0, 'Ambil Sendiri', 1900000, 'Tri Wahyudi', '-', ''],
-      ['AGEN AL-AMIN', 'Agen', '23-Okt-2026', '701/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
-      ['D. MWC NU KARANGNONGKO', 'Distributor', '23-Okt-2026', '702/X/26', 'KARANGNONGKO', 20, 50, 10, 15, 30, 'Diantar Armada', 2725000, 'Tri Wahyudi', 'Bpk Rohmad', '']
+      ['DST-202610-689-MARKO-00001', 'MARKO DWI NUGROHO', 'Agen', '21-Okt-2026', '689/X/26', 'KLATEN', 0, 2, 0, 0, 0, 'Ambil Sendiri', 34500, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-690-AHMAD-00002', 'AGEN AHMAD ZAMRONI', 'Agen', '22-Okt-2026', '690/X/26', 'KLATEN', 0, 10, 0, 0, 0, 'Ambil Sendiri', 172500, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-691-ONA-00003', 'ONA SETYO PURNOMO', 'Agen', '22-Okt-2026', '691/X/26', 'KLATEN', 0, 4, 0, 0, 0, 'Ambil Sendiri', 69000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-692-DRONO-00004', 'D. PR GP ANSOR DRONO', 'Distributor', '22-Okt-2026', '692/X/26', 'DRONO', 0, 100, 0, 0, 60, 'Ambil Sendiri', 1990000, 'Agus Setiawan', '-', ''],
+      ['DST-202610-693-JATIN-00005', 'AGEN PAC FATAYAT JATINOM', 'Agen', '22-Okt-2026', '693/X/26', 'JATINOM', 20, 150, 0, 0, 30, 'Ambil Sendiri', 3265000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-694-MTS-00006', 'MTS AL-QURANI KARANGNONGKO', 'Agen', '22-Okt-2026', '694/X/26', 'KARANGNONGKO', 5, 0, 0, 0, 0, 'Ambil Sendiri', 60000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-695-DARUS-00007', 'AGEN MI DARUSSALAM', 'Agen', '22-Okt-2026', '695/X/26', 'KLATEN', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-696-HUSNA-00008', 'MTS TQ AL-HUSNA', 'Agen', '22-Okt-2026', '696/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-697-SMK-00009', 'SMK BATUR JAYA 2', 'Agen', '22-Okt-2026', '697/X/26', 'CEPER', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-698-ROUDO-00010', 'MI ROUDOTUZZAHIDIN', 'Agen', '22-Okt-2026', '698/X/26', 'KLATEN', 15, 0, 0, 0, 0, 'Ambil Sendiri', 180000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-699-JIWAN-00011', 'D. PR NU JIWAN', 'Distributor', '23-Okt-2026', '699/X/26', 'JIWAN', 0, 200, 0, 0, 0, 'Ambil Sendiri', 3600000, 'Agus Setiawan', '-', ''],
+      ['DST-202610-700-SUPRA-00012', 'AGEN SUPRAPTO', 'Agen', '23-Okt-2026', '700/X/26', 'KARANGANOM', 0, 100, 0, 0, 0, 'Ambil Sendiri', 1900000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-701-ALAMI-00013', 'AGEN AL-AMIN', 'Agen', '23-Okt-2026', '701/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
+      ['DST-202610-702-KARAN-00014', 'D. MWC NU KARANGNONGKO', 'Distributor', '23-Okt-2026', '702/X/26', 'KARANGNONGKO', 20, 50, 10, 15, 30, 'Diantar Armada', 2725000, 'Tri Wahyudi', 'Bpk Rohmad', '']
     ]
   },
   pembelian_bahan: {

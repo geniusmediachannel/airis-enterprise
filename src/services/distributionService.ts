@@ -579,7 +579,8 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
           normKey.includes('keterangan') || normKey.includes('suratjalan') || 
           normKey.includes('invoice') || normKey.includes('tagihan') || 
           normKey.includes('total') || normKey === 'no' || normKey === 'nomor' ||
-          normKey === 'tanggal' || normKey === 'tgl' || normKey === 'level'
+          normKey === 'tanggal' || normKey === 'tgl' || normKey === 'level' ||
+          normKey.includes('iddistribusi') || normKey === 'iddist' || normKey === 'id' || normKey === 'kodedistribusi'
         ) {
           continue;
         }
@@ -648,12 +649,21 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
         custName = '-';
       }
 
-      // Pastikan ID Distribusi SELALU 100% UNIK untuk setiap baris file Excel:
-      // Row sequence 5-digit menjamin tidak akan ada 2 baris yang saling menimpa!
+      // Baca ID Distribusi jika ada di kolom file Excel pengguna
+      const rawInputId = getVal(row, [
+        'ID DISTRIBUSI', 'ID_Distribusi', 'ID Distribusi', 'ID_DISTRIBUSI', 
+        'Id_Distribusi', 'Id Distribusi', 'ID DIST', 'ID_DIST', 'ID', 'Id', 'KODE DISTRIBUSI', 'KODE_DISTRIBUSI'
+      ]);
+      const cleanInputId = (rawInputId && String(rawInputId).trim() && !String(rawInputId).includes('---') && String(rawInputId).trim() !== '-') 
+        ? String(rawInputId).trim() 
+        : '';
+
+      // Pastikan ID Distribusi SELALU 100% UNIK jika kolom ID Distribusi kosong:
       const cleanSj = finalSj !== '-' ? finalSj.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) : 'NOSJ';
       const cleanCust = custName !== '-' ? custName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : 'UMUM';
       const rowSeq = String(idx + 1).padStart(5, '0');
-      const rawId = `DST-${dObj.getFullYear()}${String(dObj.getMonth() + 1).padStart(2, '0')}-${cleanSj}-${cleanCust}-${rowSeq}`;
+      const generatedId = `DST-${dObj.getFullYear()}${String(dObj.getMonth() + 1).padStart(2, '0')}-${cleanSj}-${cleanCust}-${rowSeq}`;
+      const rawId = cleanInputId || generatedId;
 
       const ymKey = `${dObj.getFullYear()}-${dObj.getMonth()}`;
       const nextSeq = (monthCounts.get(ymKey) || 0) + 1;
@@ -901,11 +911,15 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
       return { success: false, totalRows: 0, sampleMonth: '', error: 'Tidak ada baris data transaksi yang berhasil diparsing.' };
     }
 
-    // Merge cerdas: Cocokkan Surat Jalan riil & Pelanggan agar data lama yang bernilai 0 tertimpa secara bersih!
+    // Merge cerdas: Cocokkan ID Distribusi, Surat Jalan riil & Pelanggan agar data lama tertimpa secara bersih!
+    const oldIdById = new Map<string, string>();
     const oldIdBySjAndCust = new Map<string, string>();
     const oldIdBySjOnly = new Map<string, string>();
 
     existingDist.forEach(d => {
+      if (d && d.ID_Distribusi) {
+        oldIdById.set(String(d.ID_Distribusi).trim().toLowerCase(), d.ID_Distribusi);
+      }
       if (d && d.No_Surat_Jalan) {
         const cleanSj = String(d.No_Surat_Jalan).trim().toLowerCase();
         const cleanCust = String(d.Nama_Pelanggan || '').trim().toLowerCase();
@@ -921,12 +935,13 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
     existingDist.forEach(d => { if (d && d.ID_Distribusi) distMap.set(d.ID_Distribusi, d); });
 
     newDistList.forEach(newD => {
+      const directIdMatch = newD.ID_Distribusi ? oldIdById.get(String(newD.ID_Distribusi).trim().toLowerCase()) : undefined;
       const cleanSj = String(newD.No_Surat_Jalan || '').trim().toLowerCase();
       const cleanCust = String(newD.Nama_Pelanggan || '').trim().toLowerCase();
       const uniqueKey = `${cleanSj}___${cleanCust}`;
-      const matchedOldId = (cleanSj && cleanSj !== '-' && !cleanSj.startsWith('sj-')) 
+      const matchedOldId = directIdMatch || ((cleanSj && cleanSj !== '-' && !cleanSj.startsWith('sj-')) 
         ? (oldIdBySjAndCust.get(uniqueKey) || oldIdBySjOnly.get(cleanSj))
-        : undefined;
+        : undefined);
 
       if (matchedOldId) {
         const oldId = matchedOldId;
