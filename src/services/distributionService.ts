@@ -575,10 +575,10 @@ export async function importDistributionExcelFile(file: File): Promise<{
     };
 
     // Helper ekstraksi Qty produk dari seluruh variasi alias header kolom Excel
-    const extractProductQtyFromRow = (r: any, pDef: ProductDefWithAliases, pIdx: number): number => {
+    const extractProductQtyFromRow = (r: any, pDef: ProductDefWithAliases): number => {
       if (!r || typeof r !== 'object') return 0;
 
-      // 1. Cek langsung dengan key exact
+      // 1. Cek langsung dengan key exact pada objek row
       const exactKeys = [
         pDef.code, pDef.code.toLowerCase(), pDef.id, 
         `Qty_${pDef.code}`, `Jumlah_${pDef.code}`, `Dus_${pDef.code}`,
@@ -587,20 +587,17 @@ export async function importDistributionExcelFile(file: File): Promise<{
       ];
       for (const k of exactKeys) {
         if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
-          const q = parseQty(r[k]);
-          if (q > 0) return q;
+          return parseQty(r[k]);
         }
       }
 
-      // 2. Scan semua keys di objek row dengan normalisasi alias
+      // 2. Scan semua keys di objek row dengan normalisasi nama kolom
       const keys = Object.keys(r);
+      const targetNorm = pDef.code.toLowerCase().replace(/[\s_\-./()]+/g, '');
       for (const k of keys) {
-        const val = r[k];
-        if (val === undefined || val === null || String(val).trim() === '') continue;
-
         const normKey = k.toLowerCase().replace(/[\s_\-./()]+/g, '');
         
-        // Hindari false positive dari kolom metadata
+        // Lewati kolom metadata dan finansial agar tidak pernah tertukar
         if (
           normKey.includes('pelanggan') || normKey.includes('pengirim') || 
           normKey.includes('penerima') || normKey.includes('tujuan') || 
@@ -612,44 +609,14 @@ export async function importDistributionExcelFile(file: File): Promise<{
           continue;
         }
 
-        // Cocokkan dengan aliases
-        const isMatched = pDef.aliases.some(alias => {
+        // Cocokkan apakah nama kolom memang kolom produk ini
+        const isMatched = (normKey === targetNorm) || pDef.aliases.some(alias => {
           const normAlias = alias.toLowerCase().replace(/[\s_\-./()]+/g, '');
-          if (normKey === normAlias) return true;
-          if (normKey === `qty${normAlias}` || normKey === `jumlah${normAlias}` || normKey === `dus${normAlias}`) return true;
-          if (normAlias.length >= 4 && normKey.includes(normAlias)) return true;
-          return false;
+          return normKey === normAlias || normKey === `qty${normAlias}` || normKey === `jumlah${normAlias}` || normKey === `dus${normAlias}`;
         });
 
-        if (isMatched) {
-          const q = parseQty(val);
-          if (q > 0) return q;
-        }
-      }
-
-      // 3. Posisi kolom standar template (Template Baru: idx 5..9 | Template Lama: idx 8..12)
-      const positionalCandidates = [
-        `_c_${pIdx + 5}`, `_c_${pIdx + 8}`,
-        `Kolom_${pIdx + 6}`, `Kolom_${pIdx + 9}`,
-        `kolom_${pIdx + 6}`, `kolom_${pIdx + 9}`
-      ];
-      for (const pk of positionalCandidates) {
-        if (r[pk] !== undefined && r[pk] !== null && String(r[pk]).trim() !== '') {
-          const q = parseQty(r[pk]);
-          if (q > 0) return q;
-        }
-      }
-
-      if (Array.isArray(r.__rawArray)) {
-        const newPosVal = r.__rawArray[pIdx + 5];
-        if (newPosVal !== undefined && newPosVal !== null && String(newPosVal).trim() !== '') {
-          const q = parseQty(newPosVal);
-          if (q > 0) return q;
-        }
-        const oldPosVal = r.__rawArray[pIdx + 8];
-        if (oldPosVal !== undefined && oldPosVal !== null && String(oldPosVal).trim() !== '') {
-          const q = parseQty(oldPosVal);
-          if (q > 0) return q;
+        if (isMatched && r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
+          return parseQty(r[k]);
         }
       }
 
@@ -744,7 +711,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
 
       let hasColumnProducts = false;
       DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
-        const qty = extractProductQtyFromRow(row, pDef, pIdx);
+        const qty = extractProductQtyFromRow(row, pDef);
         distRecord[pDef.code] = qty;
         distRecord[pDef.id] = qty;
         if (pDef.code === 'G19') {

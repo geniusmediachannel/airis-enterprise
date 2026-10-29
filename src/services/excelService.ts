@@ -482,9 +482,7 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
     const rowObj: Record<string, any> = {};
     cleanHeaders.forEach((h, colIdx) => {
       rowObj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
-      rowObj[`_c_${colIdx}`] = row[colIdx];
     });
-    rowObj.__rawArray = row;
     result.push(rowObj);
   }
 
