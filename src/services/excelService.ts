@@ -508,7 +508,9 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
     const rowObj: Record<string, any> = {};
     cleanHeaders.forEach((h, colIdx) => {
       rowObj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
+      rowObj[`__col_${colIdx}`] = row[colIdx] !== undefined ? row[colIdx] : '';
     });
+    rowObj['__rawRow'] = row;
     result.push(rowObj);
   }
 
