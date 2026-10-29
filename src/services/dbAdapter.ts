@@ -1070,6 +1070,15 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
     }
 
     // 3. KASUS C: Upsert Data Aktif
+    // Proteksi Foreign Key Supabase: Pastikan master produk (khususnya 5 produk standar AMDK termasuk ASH-GLN19L) sudah terdaftar di Supabase
+    if (tableName === 'Distribusi_Item') {
+      try {
+        const prodData = getTableData<any>('MD_Produk', DEFAULT_PRODUCTS);
+        const cleanProds = sanitizeRowsForTable('MD_Produk', prodData.length > 0 ? prodData : DEFAULT_PRODUCTS);
+        await client.from('MD_Produk').upsert(cleanProds as any).catch(() => {});
+      } catch (prodSyncErr) {}
+    }
+
     const cleanPayload = sanitizeRowsForTable(tableName, data as any);
     if (cleanPayload.length > 0) {
       for (let i = 0; i < cleanPayload.length; i += 200) {
@@ -1134,6 +1143,15 @@ export async function syncTableToSupabaseExplicit(
   const cleanPayload = sanitizeRowsForTable(tableName, rowsToSync);
   if (cleanPayload.length === 0) {
     return { success: false, count: 0, error: `Tidak ada data valid yang dapat disinkronkan untuk tabel ${tableName}.` };
+  }
+
+  // Proteksi Foreign Key Supabase: Pastikan master produk (khususnya 5 produk standar AMDK termasuk ASH-GLN19L) sudah terdaftar di Supabase
+  if (tableName === 'Distribusi_Item') {
+    try {
+      const prodData = getTableData<any>('MD_Produk', DEFAULT_PRODUCTS);
+      const cleanProds = sanitizeRowsForTable('MD_Produk', prodData.length > 0 ? prodData : DEFAULT_PRODUCTS);
+      await client.from('MD_Produk').upsert(cleanProds as any).catch(() => {});
+    } catch (prodSyncErr) {}
   }
 
   try {
@@ -1283,6 +1301,123 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
   try {
     const data = await fetchAllRowsFromTable<T>(client, tableName);
     if (data) {
+      if (tableName === 'Distribusi') {
+        // Enriched dengan data lokal dan Distribusi_Item agar kuantitas produk (G19, Galon, C120, dll) TIDAK PERNAH terhapus!
+        const localDist = getTableData<any>('Distribusi', []);
+        const localItems = getTableData<any>('Distribusi_Item', []);
+        const localMap = new Map<string, any>();
+        localDist.forEach((d: any) => { if (d && d.ID_Distribusi) localMap.set(d.ID_Distribusi, d); });
+
+        const itemMap = new Map<string, any[]>();
+        localItems.forEach((it: any) => {
+          if (!it || !it.ID_Distribusi) return;
+          const pid = String(it.ID_Distribusi).trim();
+          let arr = itemMap.get(pid);
+          if (!arr) { arr = []; itemMap.set(pid, arr); }
+          arr.push(it);
+        });
+
+        const enrichedRows = (data as any[]).map((r: any) => {
+          const distId = String(r.ID_Distribusi || '').trim();
+          const localMatch = localMap.get(distId);
+          const relatedItems = itemMap.get(distId) || [];
+
+          let g19Qty = localMatch?.G19 ?? localMatch?.Galon ?? 0;
+          let c120Qty = localMatch?.C120 ?? 0;
+          let c220Qty = localMatch?.C220 ?? 0;
+          let b330Qty = localMatch?.B330 ?? 0;
+          let b600Qty = localMatch?.B600 ?? 0;
+
+          // Rekonstruksi dari items
+          relatedItems.forEach(it => {
+            const pId = String(it.ID_Produk || '').toUpperCase();
+            const pName = String(it.Nama_Produk || '').toLowerCase();
+            const q = Number(it.Qty) || 0;
+            if (pId.includes('GLN') || pId.includes('G19') || pName.includes('galon')) {
+              if (q > 0) g19Qty = q;
+            } else if (pId.includes('BTL600') || pId.includes('B600') || pName.includes('600')) {
+              if (q > 0) b600Qty = q;
+            } else if (pId.includes('BTL330') || pId.includes('B330') || pName.includes('330')) {
+              if (q > 0) b330Qty = q;
+            } else if (pId.includes('CUP220') || pId.includes('C220') || pName.includes('220')) {
+              if (q > 0) c220Qty = q;
+            } else if (pId.includes('CUP120') || pId.includes('C120') || pName.includes('120')) {
+              if (q > 0) c120Qty = q;
+            }
+          });
+
+          return {
+            ...r,
+            C120: r.C120 !== undefined ? r.C120 : c120Qty,
+            C220: r.C220 !== undefined ? r.C220 : c220Qty,
+            B330: r.B330 !== undefined ? r.B330 : b330Qty,
+            B600: r.B600 !== undefined ? r.B600 : b600Qty,
+            G19: r.G19 !== undefined ? r.G19 : g19Qty,
+            g19: r.g19 !== undefined ? r.g19 : g19Qty,
+            Galon: r.Galon !== undefined ? r.Galon : g19Qty,
+            galon: r.galon !== undefined ? r.galon : g19Qty,
+            GLN19: r.GLN19 !== undefined ? r.GLN19 : g19Qty,
+            'ASH-GLN19L': r['ASH-GLN19L'] !== undefined ? r['ASH-GLN19L'] : g19Qty
+          };
+        });
+
+        memoryTableCache[tableName] = enrichedRows;
+        try {
+          localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(enrichedRows));
+        } catch (e) {}
+        return enrichedRows as T[];
+      }
+
+      if (tableName === 'Distribusi_Item') {
+        const localItems = getTableData<any>('Distribusi_Item', []);
+        const remoteIds = new Set((data as any[]).map(d => String(d.ID_Detail || '')));
+        const unsyncedLocals = localItems.filter(li => li && li.ID_Detail && !remoteIds.has(String(li.ID_Detail)));
+        const combined = [...(data as any[]), ...unsyncedLocals];
+
+        memoryTableCache[tableName] = combined;
+        try {
+          localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(combined));
+        } catch (e) {}
+
+        // Rekonsiliasi langsung ke Distribusi agar properti G19 langsung terisi!
+        try {
+          const currentDist = getTableData<any>('Distribusi', []);
+          if (currentDist.length > 0) {
+            const itemMap = new Map<string, any[]>();
+            combined.forEach((it: any) => {
+              if (!it || !it.ID_Distribusi) return;
+              const pid = String(it.ID_Distribusi).trim();
+              let arr = itemMap.get(pid);
+              if (!arr) { arr = []; itemMap.set(pid, arr); }
+              arr.push(it);
+            });
+            let distModified = false;
+            const updatedDist = currentDist.map(dist => {
+              const itms = itemMap.get(String(dist.ID_Distribusi).trim()) || [];
+              const galonItm = itms.find(it => 
+                String(it.ID_Produk || '').toUpperCase() === 'ASH-GLN19L' ||
+                String(it.ID_Produk || '').toLowerCase() === 'g19' ||
+                String(it.Nama_Produk || '').toLowerCase().includes('galon')
+              );
+              if (galonItm && Number(galonItm.Qty) > 0) {
+                const gq = Number(galonItm.Qty);
+                if (dist.G19 !== gq || dist.Galon !== gq) {
+                  distModified = true;
+                  return { ...dist, G19: gq, g19: gq, Galon: gq, galon: gq, GLN19: gq, 'ASH-GLN19L': gq };
+                }
+              }
+              return dist;
+            });
+            if (distModified) {
+              memoryTableCache['Distribusi'] = updatedDist;
+              localStorage.setItem(STORAGE_KEY_PREFIX + 'Distribusi', JSON.stringify(updatedDist));
+            }
+          }
+        } catch (enrichErr) {}
+
+        return combined as T[];
+      }
+
       memoryTableCache[tableName] = data;
       try {
         localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(data));

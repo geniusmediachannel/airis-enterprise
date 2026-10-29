@@ -521,27 +521,25 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
 }
 
 /**
- * Mengimpor file Excel distribusi secara langsung dan tuntas ke database.
- * Mendukung format multi-bulan, header gabungan, dan auto-sinkronisasi item & invoice.
+ * Mengimpor baris data distribusi (dari file Excel yang telah diparsing) secara langsung dan tuntas ke database.
+ * Mendukung format multi-bulan, header gabungan, deteksi galon multi-alias anti-gagal, dan auto-sinkronisasi item & invoice.
  */
-export async function importDistributionExcelFile(file: File): Promise<{
+export async function importDistributionRows(parsedRows: any[]): Promise<{
   success: boolean;
   totalRows: number;
   sampleMonth: string;
   error?: string;
 }> {
   try {
-    const parseResult = await parseExcelFile(file, 'distribusi');
-    if (!parseResult.success || !parseResult.data || parseResult.data.length === 0) {
+    if (!parsedRows || !Array.isArray(parsedRows) || parsedRows.length === 0) {
       return {
         success: false,
         totalRows: 0,
         sampleMonth: '',
-        error: parseResult.error || 'File Excel kosong atau tidak memiliki baris data yang valid.'
+        error: 'Data baris transaksi kosong atau tidak memiliki baris data yang valid.'
       };
     }
 
-    const parsedRows = parseResult.data;
     const existingDist = getTableData<DistributionItem>('Distribusi', []) || [];
     const existingDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []) || [];
     const masterCustomers = getTableData<CustomerItem>('MD_Pelanggan', []) || [];
@@ -798,7 +796,23 @@ export async function importDistributionExcelFile(file: File): Promise<{
 
       let hasColumnProducts = false;
       DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
-        const qty = extractProductQtyFromRow(row, pDef);
+        let qty = extractProductQtyFromRow(row, pDef);
+
+        // Khusus Galon: Deteksi multi-alias cadangan anti-gagal
+        if (pDef.code === 'G19' && qty === 0) {
+          const gCands = [
+            'G19', 'g19', 'Galon', 'galon', 'GALON', 'GLN', 'gln', 
+            'GLN19', 'gln19', 'ASH-GLN19L', 'Galon 19L', 'Galon 19', 
+            'G 19', 'g 19', 'G-19', 'Qty G19', 'Qty Galon', 'Jumlah Galon'
+          ];
+          for (const gc of gCands) {
+            if (row[gc] !== undefined && row[gc] !== null && String(row[gc]).trim() !== '') {
+              const parsedG = parseQty(row[gc]);
+              if (parsedG > 0) { qty = parsedG; break; }
+            }
+          }
+        }
+
         distRecord[pDef.code] = qty;
         distRecord[pDef.id] = qty;
         if (pDef.code === 'G19') {
@@ -809,10 +823,20 @@ export async function importDistributionExcelFile(file: File): Promise<{
           distRecord['GLN'] = qty;
           distRecord['ASH-GLN19L'] = qty;
         }
+
         if (qty > 0) {
           hasColumnProducts = true;
+          // Hitung harga satuan cerdas
+          let itemPrice = pDef.price;
+          if (rawTagihan > 0) {
+            const otherColsHaveQty = DEFAULT_PRODUCT_DEFS.some(o => o.code !== pDef.code && extractProductQtyFromRow(row, o) > 0);
+            if (!otherColsHaveQty) {
+              itemPrice = Math.round(rawTagihan / qty);
+            }
+          }
+
           newDetailsList.push({
-            ID_Detail: `${rawId}-D${pIdx + 1}`,
+            ID_Detail: `${rawId}-${pDef.code}`,
             ID_Distribusi: rawId,
             Nama_Pelanggan: custName,
             Tanggal: tgl,
@@ -820,8 +844,8 @@ export async function importDistributionExcelFile(file: File): Promise<{
             ID_Produk: pDef.id,
             Nama_Produk: pDef.name,
             Qty: qty,
-            Harga_Satuan: pDef.price,
-            Subtotal: qty * pDef.price,
+            Harga_Satuan: itemPrice,
+            Subtotal: qty * itemPrice,
             Satuan: pDef.code === 'G19' ? 'Galon' : 'Dus'
           });
         }
@@ -849,7 +873,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
           }
           const finalDef = matchedDef || DEFAULT_PRODUCT_DEFS[1]; // fallback C220
           const rawPrice = parseQty(getVal(row, ['Harga_Satuan', 'Harga Satuan', 'Harga', 'Price']));
-          const price = rawPrice > 0 ? rawPrice : finalDef.price;
+          const price = rawPrice > 0 ? rawPrice : (rawTagihan > 0 ? Math.round(rawTagihan / rawQty) : finalDef.price);
 
           distRecord[finalDef.code] = rawQty;
           distRecord[finalDef.id] = rawQty;
@@ -864,7 +888,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
 
           hasColumnProducts = true;
           newDetailsList.push({
-            ID_Detail: `${rawId}-D1`,
+            ID_Detail: `${rawId}-${finalDef.code}`,
             ID_Distribusi: rawId,
             ID_Produk: finalDef.id,
             Nama_Produk: finalDef.name,
@@ -889,16 +913,47 @@ export async function importDistributionExcelFile(file: File): Promise<{
       return { success: false, totalRows: 0, sampleMonth: '', error: 'Tidak ada baris data transaksi yang berhasil diparsing.' };
     }
 
-    // Merge clean
+    // Merge cerdas: Cocokkan Surat Jalan riil & Pelanggan agar data lama yang bernilai 0 tertimpa secara bersih!
+    const oldIdBySjAndCust = new Map<string, string>();
+    existingDist.forEach(d => {
+      if (d && d.No_Surat_Jalan) {
+        const cleanSj = String(d.No_Surat_Jalan).trim().toLowerCase();
+        const cleanCust = String(d.Nama_Pelanggan || '').trim().toLowerCase();
+        if (cleanSj && cleanSj !== '-' && !cleanSj.startsWith('sj-') && cleanSj.length > 2) {
+          oldIdBySjAndCust.set(`${cleanSj}___${cleanCust}`, d.ID_Distribusi);
+        }
+      }
+    });
+
+    const replacedOldIds = new Set<string>();
     const distMap = new Map<string, DistributionItem>();
     existingDist.forEach(d => { if (d && d.ID_Distribusi) distMap.set(d.ID_Distribusi, d); });
-    newDistList.forEach(d => distMap.set(d.ID_Distribusi, d));
+
+    newDistList.forEach(newD => {
+      const cleanSj = String(newD.No_Surat_Jalan || '').trim().toLowerCase();
+      const cleanCust = String(newD.Nama_Pelanggan || '').trim().toLowerCase();
+      const uniqueKey = `${cleanSj}___${cleanCust}`;
+      const matchedOldId = (cleanSj && cleanSj !== '-' && !cleanSj.startsWith('sj-')) ? oldIdBySjAndCust.get(uniqueKey) : undefined;
+
+      if (matchedOldId) {
+        const oldId = matchedOldId;
+        newDetailsList.forEach(det => {
+          if (det && det.ID_Distribusi === newD.ID_Distribusi) {
+            det.ID_Distribusi = oldId;
+            det.ID_Detail = String(det.ID_Detail).replace(newD.ID_Distribusi, oldId);
+          }
+        });
+        newD.ID_Distribusi = oldId;
+        distMap.set(oldId, newD);
+        replacedOldIds.add(oldId);
+      } else {
+        distMap.set(newD.ID_Distribusi, newD);
+      }
+    });
 
     const combinedDist = Array.from(distMap.values());
-    
-    // Hapus detail item lama yang ID_Distribusi-nya sama dengan transaksi yang sedang diimpor
-    const newDistIdSet = new Set(newDistList.map(d => d.ID_Distribusi));
-    const filteredOldDetails = existingDetails.filter(it => !newDistIdSet.has(it.ID_Distribusi));
+    const allReplacedIds = new Set([...newDistList.map(d => d.ID_Distribusi), ...replacedOldIds]);
+    const filteredOldDetails = existingDetails.filter(it => !allReplacedIds.has(it.ID_Distribusi));
     const combinedDetails = [...filteredOldDetails, ...newDetailsList];
 
     // Deteksi seluruh bulan yang ada di dalam data import
@@ -932,7 +987,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
     try {
       syncAllModulesToFinance();
     } catch (syncErr) {
-      console.warn('Finance sync warning inside importDistributionExcelFile:', syncErr);
+      console.warn('Finance sync warning inside importDistributionRows:', syncErr);
     }
 
     // Background push ke Supabase Cloud secara asinkron tanpa memblokir UI pengguna
@@ -940,18 +995,18 @@ export async function importDistributionExcelFile(file: File): Promise<{
       try {
         const cfg = getSupabaseConfig();
         if (cfg.isConnected && cfg.url && cfg.anonKey) {
-          // 1. Master Produk
+          // 1. Master Produk (wajib pertama agar foreign key terjamin valid)
           await syncTableToSupabaseExplicit('MD_Produk');
           // 2. Master Pelanggan (termasuk pelanggan baru)
           const allCust = newCustomersToSave.length > 0 ? [...masterCustomers, ...newCustomersToSave] : masterCustomers;
           await syncTableToSupabaseExplicit('MD_Pelanggan', allCust);
           // 3. Distribusi Header
           await syncTableToSupabaseExplicit('Distribusi', combinedDist);
-          // 4. Distribusi Detail Item
+          // 4. Distribusi Detail Item (dengan foreign key valid ke MD_Produk)
           await syncTableToSupabaseExplicit('Distribusi_Item', combinedDetails);
         }
       } catch (cloudErr) {
-        console.warn('Background Supabase sync in importDistributionExcelFile:', cloudErr);
+        console.warn('Background Supabase sync in importDistributionRows:', cloudErr);
       }
     }, 100);
 
@@ -960,6 +1015,39 @@ export async function importDistributionExcelFile(file: File): Promise<{
       totalRows: newDistList.length,
       sampleMonth
     };
+  } catch (err: any) {
+    console.error('Error in importDistributionRows:', err);
+    return {
+      success: false,
+      totalRows: 0,
+      sampleMonth: '',
+      error: err?.message || 'Terjadi kesalahan sistem saat memproses data distribusi.'
+    };
+  }
+}
+
+/**
+ * Mengimpor file Excel distribusi secara langsung dan tuntas ke database.
+ * Mendukung format multi-bulan, header gabungan, dan auto-sinkronisasi item & invoice.
+ */
+export async function importDistributionExcelFile(file: File): Promise<{
+  success: boolean;
+  totalRows: number;
+  sampleMonth: string;
+  error?: string;
+}> {
+  try {
+    const parseResult = await parseExcelFile(file, 'distribusi');
+    if (!parseResult.success || !parseResult.data || parseResult.data.length === 0) {
+      return {
+        success: false,
+        totalRows: 0,
+        sampleMonth: '',
+        error: parseResult.error || 'File Excel kosong atau tidak memiliki baris data yang valid.'
+      };
+    }
+
+    return await importDistributionRows(parseResult.data);
   } catch (err: any) {
     console.error('Error in importDistributionExcelFile:', err);
     return {

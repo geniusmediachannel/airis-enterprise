@@ -1013,7 +1013,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const anyDist = dist as any;
     const isGalon = code === 'G19' || prod.ID_Produk.includes('GLN') || prod.Nama_Produk.toLowerCase().includes('galon');
 
-    // 1. Cek di relasi item resmi (Distribusi_Item) terlebih dahulu
+    // 1. Cek langsung pada kolom / property record distribusi (dari hasil import Excel)
+    if (isGalon) {
+      const galonCandidates = [
+        'G19', 'g19', 'GLN19', 'gln19', 'GLN 19 L', 'ASH-GLN19L', 
+        'Galon', 'galon', 'GALON', 'GLN', 'gln', 'Qty_G19', 'Jumlah_G19', 
+        'Galon 19L', 'Galon 19', 'Qty_Galon', 'Jumlah_Galon'
+      ];
+      for (const cand of galonCandidates) {
+        if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
+          const direct = Number(anyDist[cand]);
+          if (!isNaN(direct) && direct > 0) return direct;
+        }
+      }
+    } else {
+      if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
+        const direct = Number(anyDist[code]);
+        if (!isNaN(direct) && direct > 0) return direct;
+      }
+      if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
+        const direct = Number(anyDist[prod.ID_Produk]);
+        if (!isNaN(direct) && direct > 0) return direct;
+      }
+    }
+
+    // 2. Cek di relasi item resmi (Distribusi_Item) terlebih dahulu
     const items = distItemsMap.get(String(dist.ID_Distribusi).trim()) || [];
     if (items.length > 0) {
       if (isGalon) {
@@ -1035,56 +1059,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     }
 
-    // 2. Cek langsung pada kolom / property record distribusi (dari hasil import Excel)
-    if (isGalon) {
-      const galonCandidates = [
-        'G19', 'g19', 'GLN19', 'gln19', 'GLN 19 L', 'ASH-GLN19L', 
-        'Galon', 'galon', 'GALON', 'GLN', 'gln', 'Qty_G19', 'Jumlah_G19', 
-        'Galon 19L', 'Galon 19', 'Qty_Galon', 'Jumlah_Galon'
-      ];
-      for (const cand of galonCandidates) {
-        if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
-          const direct = Number(anyDist[cand]);
-          if (!isNaN(direct) && direct > 0) return direct;
-        }
-      }
-
-      // Proteksi fallback ke detail item dari localStorage langsung
-      const globalDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-      const directDetail = globalDetails.find(d => 
-        d.ID_Distribusi === dist.ID_Distribusi && (
+    // 3. Fallback ke detail item langsung dari localStorage
+    const globalDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []);
+    const directDetail = globalDetails.find(d => 
+      (d.ID_Distribusi === dist.ID_Distribusi || (dist.No_Surat_Jalan && dist.No_Surat_Jalan !== '-' && d.ID_Detail?.includes(dist.No_Surat_Jalan))) && (
+        isGalon ? (
           d.ID_Produk === prod.ID_Produk ||
           String(d.ID_Produk || '').toUpperCase() === 'ASH-GLN19L' ||
           String(d.ID_Produk || '').toLowerCase() === 'g19' || 
           String(d.ID_Produk || '').toLowerCase().includes('gln') || 
           String(d.Nama_Produk || '').toLowerCase().includes('galon')
-        )
-      );
-      if (directDetail && Number(directDetail.Qty) > 0) {
-        return Number(directDetail.Qty);
-      }
-    } else {
-      // Produk Non-Galon (C120, C220, B330, B600) murni membaca kolomnya sendiri sesuai file import
-      if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
-        const direct = Number(anyDist[code]);
-        if (!isNaN(direct) && direct > 0) return direct;
-      }
-      if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
-        const direct = Number(anyDist[prod.ID_Produk]);
-        if (!isNaN(direct) && direct > 0) return direct;
-      }
-
-      // Fallback ke detail item langsung
-      const globalDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-      const directDetail = globalDetails.find(d => 
-        d.ID_Distribusi === dist.ID_Distribusi && (
+        ) : (
           d.ID_Produk === prod.ID_Produk ||
-          String(d.ID_Produk || '').toLowerCase() === code.toLowerCase()
+          String(d.ID_Produk || '').toLowerCase() === code.toLowerCase() ||
+          (d.Nama_Produk && prod.Nama_Produk && d.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
         )
-      );
-      if (directDetail && Number(directDetail.Qty) > 0) {
-        return Number(directDetail.Qty);
-      }
+      )
+    );
+    if (directDetail && Number(directDetail.Qty) > 0) {
+      return Number(directDetail.Qty);
     }
 
     return 0;
@@ -1094,7 +1087,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const getProductQtyByCode = (dist: DistributionItem, key: 'C120' | 'C220' | 'B330' | 'B600' | 'G19'): number => {
     const prod = products.find(p => getProductShortCode(p) === key || p.ID_Produk.includes(key));
     if (prod) return getDistProductQty(dist, prod);
-    const direct = (dist as any)[key];
+    const anyDist = dist as any;
+    if (key === 'G19') {
+      const gq = Number(anyDist.G19 || anyDist.g19 || anyDist.Galon || anyDist.galon || anyDist.GLN19 || anyDist.gln19 || anyDist['ASH-GLN19L'] || 0);
+      if (gq > 0) return gq;
+    }
+    const direct = anyDist[key];
     return direct ? Number(direct) : 0;
   };
 
