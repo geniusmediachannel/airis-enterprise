@@ -88,6 +88,15 @@ const parseDate = (raw: any): Date => {
   const str = String(raw).trim();
   if (!str) return new Date();
 
+  // Excel serial number as string (misal "45678")
+  if (/^\d{5}$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (num > 30000 && num < 60000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + num * 86400000);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
   // YYYY-MM-DD
   const iso = str.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
   if (iso) {
@@ -630,7 +639,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
       const keys = Object.keys(r);
       const targetNorm = pDef.code.toLowerCase().replace(/[\s_\-./()]+/g, '');
       for (const k of keys) {
-        const normKey = k.toLowerCase().replace(/[\s_\-./()]+/g, '');
+        let normKey = k.toLowerCase().replace(/[\s_\-./()]+/g, '');
         
         // Lewati kolom metadata dan finansial agar tidak pernah tertukar
         if (
@@ -644,10 +653,20 @@ export async function importDistributionExcelFile(file: File): Promise<{
           continue;
         }
 
+        // Hapus prefix kategori umum jika ada gabungan 2 baris header (misal "produkc120" -> "c120", "produkg19" -> "g19")
+        normKey = normKey.replace(/^(produk|item|barang|kemasan|varian|pesanan)/, '');
+
         // Cocokkan apakah nama kolom memang kolom produk ini
         const isMatched = (normKey === targetNorm) || pDef.aliases.some(alias => {
           const normAlias = alias.toLowerCase().replace(/[\s_\-./()]+/g, '');
-          return normKey === normAlias || normKey === `qty${normAlias}` || normKey === `jumlah${normAlias}` || normKey === `dus${normAlias}`;
+          return (
+            normKey === normAlias || 
+            normKey === `qty${normAlias}` || 
+            normKey === `jumlah${normAlias}` || 
+            normKey === `dus${normAlias}` ||
+            normKey === `vol${normAlias}` ||
+            normKey === `volume${normAlias}`
+          );
         });
 
         if (isMatched && r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
@@ -658,42 +677,60 @@ export async function importDistributionExcelFile(file: File): Promise<{
       return 0;
     };
 
+    let lastValidDate = new Date();
+    let hasFoundAnyDate = false;
+
     parsedRows.forEach((row, idx) => {
-      const rawSj = getVal(row, ['NO SURAT JALAN', 'No_Surat_Jalan', 'No Surat Jalan', 'Surat Jalan', 'NO S.J.', 'No SJ', 'SJ']);
+      const rawSj = getVal(row, [
+        'NO SURAT JALAN', 'No_Surat_Jalan', 'No Surat Jalan', 'Surat Jalan', 
+        'NO S.J.', 'No SJ', 'SJ', 'NO. SJ', 'NOMOR SJ', 'NOMOR SURAT JALAN'
+      ]);
       const finalSj = (rawSj && String(rawSj).trim() && !String(rawSj).includes('---') && String(rawSj).toLowerCase() !== 'surat jalan') 
         ? String(rawSj).trim() 
         : '-';
 
-      let rawId = '';
-      if (finalSj !== '-') {
-        const sjNorm = finalSj.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const matchExisting = existingDist.find(d => {
-          const dSj = String(d.No_Surat_Jalan || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          return dSj && dSj === sjNorm;
-        });
-        if (matchExisting && matchExisting.ID_Distribusi) {
-          rawId = matchExisting.ID_Distribusi;
-        } else {
-          rawId = `DST-SJ-${finalSj.toUpperCase().replace(/[^A-Z0-9]/g, '-')}`;
-        }
+      const rawDate = getVal(row, [
+        'TANGGAL KIRIM', 'Tanggal_Kirim', 'Tanggal Kirim', 'Tanggal', 'Tgl', 
+        'Tgl Kirim', 'TGL KIRIM', 'Tanggal Pengiriman', 'Tgl Pengiriman', 'Tgl SJ', 'Tanggal SJ'
+      ]);
+      
+      let dObj: Date;
+      if (rawDate !== undefined && rawDate !== null && String(rawDate).trim() !== '' && String(rawDate).trim() !== '-') {
+        dObj = parseDate(rawDate);
+        lastValidDate = dObj;
+        hasFoundAnyDate = true;
+      } else if (hasFoundAnyDate) {
+        // Jika sel tanggal kosong (karena merged cell di Excel), warisi tanggal dari baris transaksi sebelumnya
+        dObj = lastValidDate;
       } else {
-        rawId = `DST-${Date.now().toString().slice(-6)}-${String(idx + 1).padStart(4, '0')}`;
+        dObj = parseDate(rawDate);
+      }
+      const tgl = formatDateISO(dObj);
+
+      let custName = String(getVal(row, [
+        'NAMA PELANGGAN', 'Nama_Pelanggan', 'Nama Pelanggan', 'Pelanggan', 'Customer',
+        'Nama Customer', 'Mitra', 'Nama Mitra', 'Toko', 'Nama Toko', 'Pembeli', 'Agen', 
+        'Distributor', 'Outlet', 'Nama Outlet', 'Pemesan'
+      ]) || '').trim();
+
+      if (!custName || custName === '-' || custName.toLowerCase() === 'pelanggan') {
+        const rawAlt = getVal(row, ['PENERIMA', 'Penerima', 'TUJUAN', 'Tujuan']);
+        custName = (rawAlt && String(rawAlt).trim() && !String(rawAlt).includes('___')) ? String(rawAlt).trim() : 'Pelanggan Umum';
       }
 
-      const rawDate = getVal(row, ['TANGGAL KIRIM', 'Tanggal_Kirim', 'Tanggal Kirim', 'Tanggal', 'Tgl', 'Tgl Kirim', 'TGL KIRIM']);
-      const dObj = parseDate(rawDate);
-      const tgl = formatDateISO(dObj);
+      // Pastikan ID Distribusi SELALU 100% UNIK untuk setiap baris file Excel:
+      // Row sequence 5-digit menjamin tidak akan ada 2 baris yang saling menimpa!
+      const cleanSj = finalSj !== '-' ? finalSj.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) : 'NOSJ';
+      const cleanCust = custName !== '-' ? custName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : 'UMUM';
+      const rowSeq = String(idx + 1).padStart(5, '0');
+      const rawId = `DST-${dObj.getFullYear()}${String(dObj.getMonth() + 1).padStart(2, '0')}-${cleanSj}-${cleanCust}-${rowSeq}`;
+
       const ymKey = `${dObj.getFullYear()}-${dObj.getMonth()}`;
       const nextSeq = (monthCounts.get(ymKey) || 0) + 1;
       monthCounts.set(ymKey, nextSeq);
       const seqPadded = String(nextSeq).padStart(3, '0');
       const romanMonth = ROMAN_MONTHS[dObj.getMonth()] || 'X';
       const yy = String(dObj.getFullYear()).slice(-2);
-
-      let custName = String(getVal(row, ['NAMA PELANGGAN', 'Nama_Pelanggan', 'Nama Pelanggan', 'Pelanggan', 'Customer']) || '').trim();
-      if (!custName || custName === '-') {
-        custName = '-';
-      }
 
       let custId = '-';
       if (custName !== '-') {
@@ -864,8 +901,20 @@ export async function importDistributionExcelFile(file: File): Promise<{
     const filteredOldDetails = existingDetails.filter(it => !newDistIdSet.has(it.ID_Distribusi));
     const combinedDetails = [...filteredOldDetails, ...newDetailsList];
 
-    // Simpan penanda bulan
-    const sampleMonth = String(newDistList[newDistList.length - 1].Tanggal || newDistList[0].Tanggal).slice(0, 7);
+    // Deteksi seluruh bulan yang ada di dalam data import
+    const distinctMonths = new Set<string>();
+    newDistList.forEach(d => {
+      if (d.Tanggal && d.Tanggal.length >= 7) {
+        distinctMonths.add(d.Tanggal.slice(0, 7));
+      }
+    });
+
+    // Jika file memuat data transaksi dari multi-bulan (misal riwayat 2025 s.d. 2026),
+    // set penanda bulan ke 'all' agar seluruh 1.706 baris data langsung tampil lengkap di tabel!
+    const sampleMonth = distinctMonths.size > 1 
+      ? 'all' 
+      : (String(newDistList[newDistList.length - 1].Tanggal || newDistList[0].Tanggal).slice(0, 7));
+
     try {
       localStorage.setItem('airis_last_imported_dist_month', sampleMonth);
     } catch {

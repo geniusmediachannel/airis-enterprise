@@ -201,8 +201,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
       if (lastImported) {
-        const hasData = distributions.some(d => isMatchMonth(d.Tanggal, lastImported));
-        setFilterMonth(hasData ? lastImported : 'all');
+        if (lastImported === 'all') {
+          setFilterMonth('all');
+        } else {
+          const hasData = distributions.some(d => isMatchMonth(d.Tanggal, lastImported));
+          setFilterMonth(hasData ? lastImported : 'all');
+        }
         localStorage.removeItem('airis_last_imported_dist_month');
       }
 

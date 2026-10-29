@@ -420,13 +420,14 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
     const nextRow = rawRows[dataStartIdx];
     const subHeaderKeywords = ['c120', 'c220', 'b330', 'b600', 'g19', 'galon', 'qty', 'dus', 'btl', 'botol', 'cup', 'volume', 'subtotal', 'satuan'];
     if (Array.isArray(nextRow)) {
-      // Baris data transaksi pasti memiliki angka jumlah/tagihan atau tanggal transaksi
+      // Baris data transaksi pasti memiliki angka jumlah/tagihan, tanggal transaksi, nomor surat jalan, atau nama pelanggan
       const hasDataValues = nextRow.some(c => {
         if (typeof c === 'number' && c > 0) return true;
         if (c instanceof Date) return true;
         const str = String(c || '').trim();
         if (/^\d{1,2}[\/\-. ]\d{1,2}[\/\-. ]\d{2,4}/.test(str)) return true;
         if (/^\d{4}-\d{2}-\d{2}/.test(str)) return true;
+        if (/\d+\/[A-Z0-9]+\/\d+/.test(str)) return true;
         return false;
       });
 
@@ -448,8 +449,15 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
               const parentClean = cleanHeaders[colIdx] || '';
               if (parentClean.startsWith('Kolom_') || !parentClean) {
                 cleanHeaders[colIdx] = subClean;
-              } else if (!parentClean.toLowerCase().includes(subClean.toLowerCase())) {
-                cleanHeaders[colIdx] = `${parentClean} ${subClean}`;
+              } else {
+                const parentLower = parentClean.toLowerCase();
+                // Jika parent adalah kata umum kategori, gunakan sub-header produk langsung (misal 'C120' atau 'G19')
+                const isGenericParent = ['produk', 'item', 'barang', 'kemasan', 'pesanan', 'varian'].some(g => parentLower === g || parentLower.startsWith(g));
+                if (isGenericParent) {
+                  cleanHeaders[colIdx] = subClean;
+                } else if (!parentLower.includes(subClean.toLowerCase())) {
+                  cleanHeaders[colIdx] = `${parentClean} ${subClean}`;
+                }
               }
             } else if (subClean && colIdx >= cleanHeaders.length) {
               cleanHeaders.push(subClean);
@@ -469,14 +477,32 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
     const nonEmpties = row.filter(c => String(c !== undefined && c !== null ? c : '').trim() !== '');
     if (nonEmpties.length === 0) continue;
 
-    // Abaikan baris ringkasan / TOTAL di bagian bawah tabel
+    // Abaikan baris ringkasan / TOTAL di bagian bawah tabel HANYA jika baris tersebut BUKAN transaksi riil
     const firstCell = String(row[0] || '').trim().toLowerCase();
     const secondCell = String(row[1] || '').trim().toLowerCase();
     const thirdCell = String(row[2] || '').trim().toLowerCase();
-    if (firstCell.startsWith('total') || firstCell.startsWith('grand total') || firstCell.startsWith('jumlah total') || firstCell.startsWith('rekap') ||
-        secondCell.startsWith('total') || secondCell.startsWith('grand total') || secondCell.startsWith('jumlah total') ||
-        thirdCell.startsWith('total') || thirdCell.startsWith('grand total')) {
-      continue;
+    const isTotalKeyword = (
+      firstCell.startsWith('total') || firstCell.startsWith('grand total') || firstCell.startsWith('jumlah total') || firstCell.startsWith('rekap') ||
+      secondCell.startsWith('total') || secondCell.startsWith('grand total') || secondCell.startsWith('jumlah total') ||
+      thirdCell.startsWith('total') || thirdCell.startsWith('grand total')
+    );
+
+    if (isTotalKeyword) {
+      // Pastikan baris ini bukan transaksi riil (tidak ada tanggal, no surat jalan, atau tujuan)
+      const hasTransactionData = row.some(c => {
+        if (!c) return false;
+        if (c instanceof Date) return true;
+        const str = String(c).trim();
+        if (/^\d{1,2}[\/\-. ]\d{1,2}[\/\-. ]\d{2,4}/.test(str)) return true;
+        if (/^\d{4}-\d{2}-\d{2}/.test(str)) return true;
+        if (/\d+\/[A-Z0-9]+\/\d+/.test(str)) return true;
+        return false;
+      });
+
+      // Hanya lewati jika benar-benar baris ringkasan footer (bukan transaksi pengiriman)
+      if (!hasTransactionData) {
+        continue;
+      }
     }
 
     const rowObj: Record<string, any> = {};

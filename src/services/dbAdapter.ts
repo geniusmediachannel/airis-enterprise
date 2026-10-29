@@ -1153,6 +1153,20 @@ export async function syncTableToSupabaseExplicit(
             const { error: subErr } = await client.from(tableName).upsert(subBatch as any);
             if (!subErr) {
               syncedCount += subBatch.length;
+            } else {
+              // Jika sub-batch 50 gagal, fallback per-baris sehingga baris yang valid tetap 100% tersimpan
+              for (const singleRow of subBatch) {
+                try {
+                  const { error: rowErr } = await client.from(tableName).upsert([singleRow] as any);
+                  if (!rowErr) {
+                    syncedCount++;
+                  } else {
+                    errors.push(rowErr.message);
+                  }
+                } catch (rEx: any) {
+                  errors.push(rEx?.message || 'Row error');
+                }
+              }
             }
           } catch (ex: any) {
             errors.push(ex?.message || 'Error');
