@@ -463,6 +463,75 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return `${numStr}-INV-${romanMonth}-${year2Digits}`;
   };
 
+  // Helper to format Surat Jalan Number: {NOMOR}/{ROMAN_MONTH}/{2_DIGIT_YEAR} (e.g. 707/X/26)
+  // NOMOR = no terbesar di data tahun tersebut + 1 (reset setiap tahun)
+  // X = Bulan dalam Romawi
+  // 26 = 2 digit tahun
+  const generateSuratJalanNumber = (tanggalStr?: string, customDistList?: DistributionItem[]): string => {
+    const d = tanggalStr ? new Date(tanggalStr) : new Date();
+    const validD = isNaN(d.getTime()) ? new Date() : d;
+    const targetYear = validD.getFullYear();
+    const targetMonth = validD.getMonth(); // 0 = Jan, 9 = Oct
+    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+    const romanMonth = romanMonths[targetMonth];
+    const year2Digits = String(targetYear).slice(-2);
+
+    const distSource = (customDistList && customDistList.length > 0)
+      ? customDistList
+      : (distributions && distributions.length > 0)
+        ? distributions
+        : getTableData<DistributionItem>('Distribusi', []);
+
+    let maxNumberInYear = 0;
+    for (let i = 0; i < distSource.length; i++) {
+      const item = distSource[i];
+      if (!item) continue;
+
+      // Check if item belongs to the target year
+      let isSameYear = false;
+      if (item.Tanggal) {
+        const itemD = new Date(item.Tanggal);
+        if (!isNaN(itemD.getTime()) && itemD.getFullYear() === targetYear) {
+          isSameYear = true;
+        } else if (String(item.Tanggal).includes(String(targetYear)) || String(item.Tanggal).endsWith(year2Digits)) {
+          isSameYear = true;
+        }
+      }
+      if (!isSameYear && item.No_Surat_Jalan && String(item.No_Surat_Jalan).endsWith(`/${year2Digits}`)) {
+        isSameYear = true;
+      }
+
+      if (isSameYear && item.No_Surat_Jalan) {
+        // Extract starting number (e.g. "706/X/26" -> 706, "224/X/26" -> 224, "55/SJ/X/26" -> 55)
+        const match = String(item.No_Surat_Jalan).trim().match(/^(\d+)/);
+        if (match) {
+          const val = parseInt(match[1], 10);
+          if (!isNaN(val) && val > maxNumberInYear) {
+            maxNumberInYear = val;
+          }
+        }
+      }
+    }
+
+    const nextSeq = maxNumberInYear + 1;
+    return `${nextSeq}/${romanMonth}/${year2Digits}`;
+  };
+
+  // State for Customer Search Dropdown in Add/Edit Distribution Modal
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+
+  const filteredCustomersList = useMemo(() => {
+    const q = customerSearchQuery.trim().toLowerCase();
+    if (!q) return customers || [];
+    return (customers || []).filter(c => 
+      (c.Nama_Pelanggan && c.Nama_Pelanggan.toLowerCase().includes(q)) ||
+      (c.ID_Pelanggan && c.ID_Pelanggan.toLowerCase().includes(q)) ||
+      (c.Alamat && c.Alamat.toLowerCase().includes(q)) ||
+      (c.Level_Pelanggan && c.Level_Pelanggan.toLowerCase().includes(q))
+    );
+  }, [customers, customerSearchQuery]);
+
   // Form State for Direct Distribution
   const [formData, setFormData] = useState({
     Tanggal: new Date().toISOString().slice(0, 10),
@@ -500,8 +569,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Open Add Distribution Modal
   const handleOpenAddDist = () => {
     setEditingDist(null);
-    const num = distributions.length + 1;
     const today = new Date().toISOString().slice(0, 10);
+    const initialSj = generateSuratJalanNumber(today);
     const initialInv = formatInvoiceNumber('', today);
     setFormData({
       Tanggal: today,
@@ -512,10 +581,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Penerima: '',
       Tujuan: customers[0]?.Alamat || '',
       Metode_Kirim: 'Kirim Armada',
-      No_Surat_Jalan: `${num}/SJ/X/26`,
+      No_Surat_Jalan: initialSj,
       No_Invoice: initialInv,
       Keterangan: ''
     });
+    setCustomerSearchQuery(customers[0]?.Nama_Pelanggan || '');
+    setIsCustomerDropdownOpen(false);
     setFormItems([
       { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: products[0] ? getProductPriceForCustomer(products[0].ID_Produk, customers[0]?.ID_Pelanggan || '') : '' as any }
     ]);
@@ -550,6 +621,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       No_Invoice: effectiveInvoice,
       Keterangan: dist.Keterangan || ''
     });
+    setCustomerSearchQuery(finalCustName);
+    setIsCustomerDropdownOpen(false);
 
     const rawItems = distributionItems.filter(i => i.ID_Distribusi === dist.ID_Distribusi);
     let finalItems: { ID_Produk: string; Qty: number; Harga_Satuan: number }[] = [];
@@ -633,9 +706,27 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Level_Pelanggan: c ? c.Level_Pelanggan : prev.Level_Pelanggan,
       Tujuan: c?.Alamat || prev.Tujuan
     }));
+    setCustomerSearchQuery(c ? c.Nama_Pelanggan : '');
     setFormItems(prev => prev.map(item => ({
       ...item,
       Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, custId)
+    })));
+  };
+
+  // Customer selection from searchable dropdown
+  const handleCustomerSelect = (c: CustomerItem) => {
+    setFormData(prev => ({
+      ...prev,
+      ID_Pelanggan: c.ID_Pelanggan,
+      Nama_Pelanggan: c.Nama_Pelanggan,
+      Level_Pelanggan: c.Level_Pelanggan || 'Distributor',
+      Tujuan: c.Alamat || prev.Tujuan
+    }));
+    setCustomerSearchQuery(c.Nama_Pelanggan);
+    setIsCustomerDropdownOpen(false);
+    setFormItems(prev => prev.map(item => ({
+      ...item,
+      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, c.ID_Pelanggan)
     })));
   };
 
@@ -948,7 +1039,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const prefix = `DST-${yy}${mm}${dd}`;
     const count = currentDist.filter(dist => dist.ID_Distribusi.startsWith(prefix)).length;
     const distId = `${prefix}${String(count + 1).padStart(3, '0')}`;
-    const sjNo = `${currentDist.length + 1}/SJ/X/${yy}`;
+    const sjNo = generateSuratJalanNumber(plan.Tanggal_Rencana, currentDist);
     const invNo = formatInvoiceNumber(distId, plan.Tanggal_Rencana, currentDist);
 
     const distRecord: DistributionItem = {
@@ -2943,10 +3034,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       setFormData(prev => ({
                         ...prev,
                         Tanggal: newTgl,
+                        No_Surat_Jalan: editingDist ? prev.No_Surat_Jalan : generateSuratJalanNumber(newTgl),
                         No_Invoice: editingDist ? prev.No_Invoice : formatInvoiceNumber('', newTgl)
                       }));
                     }}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none"
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800"
                   />
                 </div>
                 <div>
@@ -2956,6 +3048,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     value={formData.No_Surat_Jalan}
                     onChange={e => setFormData({ ...formData, No_Surat_Jalan: e.target.value })}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-mono font-bold text-blue-700"
+                    placeholder="Contoh: 707/X/26"
                   />
                 </div>
                 <div>
@@ -2981,24 +3074,99 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Pilih Pelanggan / Mitra</label>
-                  <select
-                    value={formData.ID_Pelanggan}
-                    onChange={e => handleCustomerChange(e.target.value)}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800"
-                  >
-                    {!customers.some(c => c.ID_Pelanggan === formData.ID_Pelanggan) && formData.ID_Pelanggan && (
-                      <option value={formData.ID_Pelanggan}>
-                        {formData.Nama_Pelanggan || editingDist?.Nama_Pelanggan || formData.ID_Pelanggan} ({formData.Level_Pelanggan || editingDist?.Level_Pelanggan || 'Pelanggan'})
-                      </option>
+                {/* Searchable Customer Input with Dropdown */}
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700">Pilih Pelanggan / Mitra</label>
+                    {formData.Level_Pelanggan && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                        {formData.Level_Pelanggan}
+                      </span>
                     )}
-                    {customers.map(c => (
-                      <option key={c.ID_Pelanggan} value={c.ID_Pelanggan}>
-                        {c.Nama_Pelanggan} ({c.Level_Pelanggan})
-                      </option>
-                    ))}
-                  </select>
+                  </div>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Ketik untuk mencari pelanggan..."
+                      value={isCustomerDropdownOpen ? customerSearchQuery : (formData.Nama_Pelanggan || customerSearchQuery)}
+                      onFocus={() => {
+                        setCustomerSearchQuery(formData.Nama_Pelanggan || '');
+                        setIsCustomerDropdownOpen(true);
+                      }}
+                      onChange={e => {
+                        setCustomerSearchQuery(e.target.value);
+                        setIsCustomerDropdownOpen(true);
+                        setFormData(prev => ({ ...prev, Nama_Pelanggan: e.target.value }));
+                      }}
+                      className="w-full pl-9 pr-8 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    {(formData.Nama_Pelanggan || customerSearchQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerSearchQuery('');
+                          setFormData(prev => ({
+                            ...prev,
+                            ID_Pelanggan: '',
+                            Nama_Pelanggan: '',
+                            Level_Pelanggan: 'Distributor',
+                            Tujuan: ''
+                          }));
+                          setIsCustomerDropdownOpen(true);
+                        }}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        title="Hapus pilihan pelanggan"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown Menu Hasil Pencarian */}
+                  {isCustomerDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-20" 
+                        onClick={() => setIsCustomerDropdownOpen(false)}
+                      />
+                      <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xl divide-y divide-slate-100 text-xs">
+                        {filteredCustomersList.length === 0 ? (
+                          <div className="p-3 text-center text-slate-400">
+                            <p className="font-medium">Tidak ada pelanggan cocok dengan "{customerSearchQuery}".</p>
+                            <p className="text-[11px] text-blue-600 mt-1">Nama ini akan disimpan sebagai pelanggan baru.</p>
+                          </div>
+                        ) : (
+                          filteredCustomersList.map(c => {
+                            const isSelected = c.ID_Pelanggan === formData.ID_Pelanggan;
+                            return (
+                              <div
+                                key={c.ID_Pelanggan}
+                                onClick={() => handleCustomerSelect(c)}
+                                className={`p-2.5 cursor-pointer transition flex items-center justify-between hover:bg-blue-50/80 ${
+                                  isSelected ? 'bg-blue-50 border-l-4 border-blue-600 font-bold' : ''
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                    <span>{c.Nama_Pelanggan}</span>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                      {c.Level_Pelanggan || 'Distributor'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10.5px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                    <span className="font-mono text-slate-400">{c.ID_Pelanggan}</span>
+                                    {c.Alamat && <span className="truncate max-w-[280px]">• {c.Alamat}</span>}
+                                  </div>
+                                </div>
+                                {isSelected && <Check size={14} className="text-blue-600 shrink-0" />}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Sopir / Pengirim</label>
@@ -3086,12 +3254,81 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Rincian Total Tagihan & Keterangan Pengurangan Ambil Sendiri */}
+              {(() => {
+                const totalFormQty = formItems.reduce((acc, it) => acc + (Number(it.Qty) || 0), 0);
+                const subtotalKotor = formItems.reduce((acc, it) => acc + ((Number(it.Qty) || 0) * (Number(it.Harga_Satuan) || 0)), 0);
+                const isAmbilSendiri = formData.Metode_Kirim === 'Ambil Sendiri';
+                const potonganAmbilSendiri = isAmbilSendiri ? (totalFormQty * 1000) : 0;
+                const totalTagihanNetto = Math.max(0, subtotalKotor - potonganAmbilSendiri);
+
+                return (
+                  <div className="bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 mt-2">
+                    <div className="flex items-center justify-between text-xs text-slate-600">
+                      <span>Subtotal Muatan Produk ({totalFormQty} Unit):</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        Rp {subtotalKotor.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+
+                    {isAmbilSendiri && (
+                      <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1">
+                        <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                          <span className="flex items-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                            <span>Pengurangan Biaya (Ambil Sendiri):</span>
+                          </span>
+                          <span className="font-mono text-emerald-700">
+                            - Rp {potonganAmbilSendiri.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-emerald-700 leading-relaxed">
+                          Keterangan: Karena barang <strong>diambil sendiri</strong> langsung oleh pembeli di pabrik, sistem otomatis menerapkan potongan ongkos kirim sebesar <strong>Rp 1.000 / unit</strong> ({totalFormQty} unit × Rp 1.000 = Rp {potonganAmbilSendiri.toLocaleString('id-ID')}).
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="border-t border-slate-200 pt-2 flex items-center justify-between">
+                      <div>
+                        <span className="font-extrabold text-xs text-slate-900 block">
+                          Jumlah Total yang Harus Dibayar:
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {isAmbilSendiri 
+                            ? '* Total tagihan netto setelah dikurangi potongan ambil sendiri' 
+                            : '* Total tagihan pengiriman armada pabrik'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-base font-extrabold font-mono text-blue-700">
+                          Rp {totalTagihanNetto.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
-            <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50 border-t border-slate-200">
-              <span className="text-[11px] text-slate-500">
-                Otomatis menghasilkan draf pembukuan & piutang keuangan
-              </span>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3.5 bg-slate-50 border-t border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Total Tagihan:</span>
+                <span className="text-sm font-extrabold font-mono text-blue-700">
+                  {(() => {
+                    const totalFormQty = formItems.reduce((acc, it) => acc + (Number(it.Qty) || 0), 0);
+                    const subtotalKotor = formItems.reduce((acc, it) => acc + ((Number(it.Qty) || 0) * (Number(it.Harga_Satuan) || 0)), 0);
+                    const isAmbilSendiri = formData.Metode_Kirim === 'Ambil Sendiri';
+                    const potonganAmbilSendiri = isAmbilSendiri ? (totalFormQty * 1000) : 0;
+                    return `Rp ${Math.max(0, subtotalKotor - potonganAmbilSendiri).toLocaleString('id-ID')}`;
+                  })()}
+                </span>
+                {formData.Metode_Kirim === 'Ambil Sendiri' && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Potongan Rp 1.000/unit
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowAddDistModal(false)} className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 cursor-pointer">Batal</button>
                 <button onClick={handleSaveDistribution} className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs cursor-pointer">
