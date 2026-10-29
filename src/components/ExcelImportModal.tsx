@@ -162,13 +162,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       if (selectedModule === 'distribusi') {
         if (file) {
           const distRes = await importDistributionExcelFile(file);
+          setImporting(false);
           if (!distRes.success) {
             throw new Error(distRes.error || 'Gagal memproses file distribusi.');
           }
-          setImporting(false);
           showToast(
             'Import Distribusi Berhasil!',
-            `Data Distribusi & Detail Item Galon/Karton (${distRes.totalRows} pengiriman) berhasil diimpor & disinkronkan ke Cloud Supabase.`,
+            `Data Distribusi & Detail Item Galon/Karton (${distRes.totalRows} pengiriman) berhasil diimpor & disimpan ke sistem.`,
             'success'
           );
           setStatusMessage({
@@ -178,7 +178,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           notifyImportDone();
           setTimeout(() => {
             onClose();
-          }, 800);
+          }, 600);
           return;
         } else {
         const existingDist = getTableData<any>('Distribusi', []);

@@ -872,29 +872,11 @@ export async function importDistributionExcelFile(file: File): Promise<{
       // ignore
     }
 
-    // Simpan ke storage
+    // Simpan ke storage lokal seketika (Anti-Hang, Instan < 50ms)
     setTableData('Distribusi', combinedDist);
     setTableData('Distribusi_Item', combinedDetails);
     if (newCustomersToSave.length > 0) {
       setTableData('MD_Pelanggan', [...masterCustomers, ...newCustomersToSave]);
-    }
-
-    // Sinkronisasi langsung ke Supabase Cloud jika terhubung dengan urutan relasi foreign key yang benar
-    try {
-      const cfg = getSupabaseConfig();
-      if (cfg.isConnected && cfg.url && cfg.anonKey) {
-        // 1. Master Produk
-        await syncTableToSupabaseExplicit('MD_Produk');
-        // 2. Master Pelanggan (termasuk pelanggan baru)
-        const allCust = newCustomersToSave.length > 0 ? [...masterCustomers, ...newCustomersToSave] : masterCustomers;
-        await syncTableToSupabaseExplicit('MD_Pelanggan', allCust);
-        // 3. Distribusi Header
-        await syncTableToSupabaseExplicit('Distribusi', combinedDist);
-        // 4. Distribusi Detail Item
-        await syncTableToSupabaseExplicit('Distribusi_Item', combinedDetails);
-      }
-    } catch (cloudErr) {
-      console.warn('Supabase sync in importDistributionExcelFile:', cloudErr);
     }
 
     // Auto-sinkronisasi seluruh modul ke Keuangan (jurnal & piutang otomatis)
@@ -903,6 +885,26 @@ export async function importDistributionExcelFile(file: File): Promise<{
     } catch (syncErr) {
       console.warn('Finance sync warning inside importDistributionExcelFile:', syncErr);
     }
+
+    // Background push ke Supabase Cloud secara asinkron tanpa memblokir UI pengguna
+    setTimeout(async () => {
+      try {
+        const cfg = getSupabaseConfig();
+        if (cfg.isConnected && cfg.url && cfg.anonKey) {
+          // 1. Master Produk
+          await syncTableToSupabaseExplicit('MD_Produk');
+          // 2. Master Pelanggan (termasuk pelanggan baru)
+          const allCust = newCustomersToSave.length > 0 ? [...masterCustomers, ...newCustomersToSave] : masterCustomers;
+          await syncTableToSupabaseExplicit('MD_Pelanggan', allCust);
+          // 3. Distribusi Header
+          await syncTableToSupabaseExplicit('Distribusi', combinedDist);
+          // 4. Distribusi Detail Item
+          await syncTableToSupabaseExplicit('Distribusi_Item', combinedDetails);
+        }
+      } catch (cloudErr) {
+        console.warn('Background Supabase sync in importDistributionExcelFile:', cloudErr);
+      }
+    }, 100);
 
     return {
       success: true,

@@ -1077,13 +1077,11 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
         const { error: upsertErr } = await client.from(tableName).upsert(batch as any);
         if (upsertErr) {
           console.warn(`[SupabaseSync] Upsert batch error on ${tableName}:`, upsertErr.message);
-          // Fallback baris-per-baris jika salah satu baris ditolak constraint, agar baris valid tetap masuk
-          for (const singleRow of batch) {
+          // Fallback sub-batch cepat (50 baris) agar tidak memicu ratusan request per-baris
+          for (let j = 0; j < batch.length; j += 50) {
+            const sub = batch.slice(j, j + 50);
             try {
-              const { error: singleErr } = await client.from(tableName).upsert([singleRow] as any);
-              if (singleErr) {
-                console.warn(`[SupabaseSync] Single row failed on ${tableName}:`, singleRow, singleErr.message);
-              }
+              await client.from(tableName).upsert(sub as any);
             } catch (rowEx) {}
           }
         }
@@ -1147,14 +1145,14 @@ export async function syncTableToSupabaseExplicit(
       const { error: upsertErr } = await client.from(tableName).upsert(batch as any);
       if (upsertErr) {
         console.warn(`[SupabaseSyncExplicit] Batch upsert error on ${tableName}:`, upsertErr.message);
-        // Fallback per-baris
-        for (const singleRow of batch) {
+        errors.push(upsertErr.message);
+        // Fallback sub-batch cepat (50 baris) agar tidak hang di jaringan
+        for (let j = 0; j < batch.length; j += 50) {
+          const subBatch = batch.slice(j, j + 50);
           try {
-            const { error: sErr } = await client.from(tableName).upsert([singleRow] as any);
-            if (!sErr) {
-              syncedCount++;
-            } else {
-              errors.push(sErr.message);
+            const { error: subErr } = await client.from(tableName).upsert(subBatch as any);
+            if (!subErr) {
+              syncedCount += subBatch.length;
             }
           } catch (ex: any) {
             errors.push(ex?.message || 'Error');
