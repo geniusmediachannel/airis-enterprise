@@ -767,10 +767,37 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     })));
   };
 
+  // Helper cerdas menentukan produk urutan berikutnya saat tombol '+ Tambah Produk' diklik
+  const getNextProductForItems = (currentItems: { ID_Produk: string }[]): ProductItem | undefined => {
+    if (!products || products.length === 0) return undefined;
+    if (!currentItems || currentItems.length === 0) return products[0];
+
+    const usedIds = new Set(currentItems.map(it => it.ID_Produk));
+    const lastItem = currentItems[currentItems.length - 1];
+    const lastIdx = lastItem ? products.findIndex(p => p.ID_Produk === lastItem.ID_Produk) : -1;
+
+    // Cari produk berikutnya berurutan dari setelah baris terakhir yang belum ada di daftar
+    for (let offset = 1; offset <= products.length; offset++) {
+      const candidateIdx = (lastIdx + offset) % products.length;
+      const candidate = products[candidateIdx];
+      if (candidate && !usedIds.has(candidate.ID_Produk)) {
+        return candidate;
+      }
+    }
+
+    // Jika seluruh produk sudah ada di form, ambil produk berikutnya secara siklik
+    if (lastIdx !== -1) {
+      return products[(lastIdx + 1) % products.length];
+    }
+
+    return products[currentItems.length % products.length] || products[0];
+  };
+
   const handleAddItemRow = () => {
-    const p = products[0];
-    const price = getProductPriceForCustomer(p?.ID_Produk || '', formData.ID_Pelanggan);
-    setFormItems([...formItems, { ID_Produk: p?.ID_Produk || '', Qty: '' as any, Harga_Satuan: price }]);
+    const nextP = getNextProductForItems(formItems) || products[0];
+    const pId = nextP?.ID_Produk || '';
+    const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan);
+    setFormItems([...formItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price }]);
   };
 
   const handleRemoveItemRow = (idx: number) => {
@@ -780,9 +807,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
   // Dynamic row handlers for Plan modal (Input Pesanan Baru)
   const handleAddPlanItemRow = () => {
-    const p = products[0];
-    const price = getProductPriceForCustomer(p?.ID_Produk || '', planForm.ID_Pelanggan);
-    setPlanItems([...planItems, { ID_Produk: p?.ID_Produk || '', Qty: '' as any, Harga_Satuan: price }]);
+    const nextP = getNextProductForItems(planItems) || products[0];
+    const pId = nextP?.ID_Produk || '';
+    const price = getProductPriceForCustomer(pId, planForm.ID_Pelanggan);
+    setPlanItems([...planItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price }]);
   };
 
   const handleRemovePlanItemRow = (idx: number) => {
