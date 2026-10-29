@@ -206,25 +206,28 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         localStorage.removeItem('airis_last_imported_dist_month');
       }
 
-      // Deteksi jika ada record distribusi yang memiliki data galon tapi belum masuk ke detail item
+      // Deteksi dua arah:
+      // 1. Record punya galon tapi detail item belum punya
+      // 2. Detail item punya galon tapi properti direct G19 kosong (karena baru ditarik dari Supabase)
+      // 3. Kasus bocor lama: B600 terisi angka galon padahal di item adalah galon
       const hasUnsyncedGalon = distributions.some(d => {
         const anyDist = d as any;
         const gQty = Number(anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || anyDist.Galon || anyDist.galon || anyDist.GLN || anyDist['GLN 19 L'] || anyDist['Galon 19L'] || 0);
-        if (gQty > 0) {
-          const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
-          const hasItem = items.some(it => 
-            String(it.ID_Produk || '').toLowerCase() === 'g19' || 
-            String(it.ID_Produk || '').toLowerCase().includes('gln') || 
-            String(it.Nama_Produk || '').toLowerCase().includes('galon')
-          );
-          return !hasItem;
-        }
+        const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+        const hasGalonInItems = items.some(it => 
+          String(it.ID_Produk || '').toLowerCase() === 'g19' || 
+          String(it.ID_Produk || '').toLowerCase().includes('gln') || 
+          String(it.Nama_Produk || '').toLowerCase().includes('galon')
+        );
+        if (gQty > 0 && !hasGalonInItems) return true;
+        if (hasGalonInItems && gQty === 0) return true;
+        if (hasGalonInItems && Number(anyDist.B600 || 0) > 0 && gQty === 0) return true;
         return false;
       });
 
       if (hasUnsyncedGalon) {
         const rep = sanitizeAndRepairDistributionDatabase();
-        if (rep.syncedItemsCount > 0) {
+        if (rep.syncedItemsCount > 0 || rep.fixedRecordsCount > 0) {
           onRefresh();
         }
       }
@@ -1006,7 +1009,29 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const anyDist = dist as any;
     const isGalon = code === 'G19' || prod.ID_Produk.includes('GLN') || prod.Nama_Produk.toLowerCase().includes('galon');
 
-    // 1. Cek langsung pada kolom / property record distribusi
+    // 1. Cek di relasi item resmi (Distribusi_Item) terlebih dahulu
+    const items = distItemsMap.get(String(dist.ID_Distribusi).trim()) || [];
+    if (items.length > 0) {
+      if (isGalon) {
+        const foundGalonItem = items.find(i => 
+          i.ID_Produk === prod.ID_Produk ||
+          String(i.ID_Produk || '').toLowerCase() === 'g19' || 
+          String(i.ID_Produk || '').toLowerCase().includes('gln') || 
+          String(i.Nama_Produk || '').toLowerCase().includes('galon')
+        );
+        if (foundGalonItem && Number(foundGalonItem.Qty) > 0) return Number(foundGalonItem.Qty);
+      } else {
+        const foundExact = items.find(i => i.ID_Produk === prod.ID_Produk);
+        if (foundExact && Number(foundExact.Qty) > 0) return Number(foundExact.Qty);
+        
+        const foundByName = items.find(i => i.Nama_Produk === prod.Nama_Produk || 
+          (prod.Nama_Produk && i.Nama_Produk && i.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
+        );
+        if (foundByName && Number(foundByName.Qty) > 0) return Number(foundByName.Qty);
+      }
+    }
+
+    // 2. Cek langsung pada kolom / property record distribusi
     if (isGalon) {
       const galonCandidates = [
         'G19', 'g19', 'GLN19', 'gln19', 'GLN 19 L', 'ASH-GLN19L', 
@@ -1019,7 +1044,32 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           if (!isNaN(direct) && direct > 0) return direct;
         }
       }
+
+      // Proteksi fallback ke detail item dari localStorage langsung
+      const globalDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []);
+      const directDetail = globalDetails.find(d => 
+        d.ID_Distribusi === dist.ID_Distribusi && (
+          d.ID_Produk === prod.ID_Produk ||
+          String(d.ID_Produk || '').toLowerCase().includes('gln') || 
+          String(d.Nama_Produk || '').toLowerCase().includes('galon')
+        )
+      );
+      if (directDetail && Number(directDetail.Qty) > 0) {
+        return Number(directDetail.Qty);
+      }
     } else {
+      // Proteksi anomali kebocoran lama: jika produk adalah B600 tapi item riilnya adalah Galon
+      if (code === 'B600') {
+        const hasGalonItem = items.some(i => 
+          String(i.ID_Produk || '').toLowerCase().includes('gln') || 
+          String(i.Nama_Produk || '').toLowerCase().includes('galon')
+        );
+        const galonDirect = Number(anyDist.G19 || anyDist.Galon || 0);
+        if ((hasGalonItem || galonDirect > 0) && Number(anyDist.B600) === (galonDirect || items[0]?.Qty)) {
+          return 0;
+        }
+      }
+
       if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
         const direct = Number(anyDist[code]);
         if (!isNaN(direct) && direct > 0) return direct;
@@ -1028,25 +1078,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         const direct = Number(anyDist[prod.ID_Produk]);
         if (!isNaN(direct) && direct > 0) return direct;
       }
-    }
-
-    // 2. Cek di relasi item (Distribusi_Item)
-    const items = distItemsMap.get(String(dist.ID_Distribusi).trim()) || [];
-    const foundExact = items.find(i => i.ID_Produk === prod.ID_Produk);
-    if (foundExact) return foundExact.Qty;
-    
-    const foundByName = items.find(i => i.Nama_Produk === prod.Nama_Produk || 
-      (prod.Nama_Produk && i.Nama_Produk && i.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
-    );
-    if (foundByName) return foundByName.Qty;
-
-    if (isGalon) {
-      const foundGalonItem = items.find(i => 
-        String(i.ID_Produk || '').toLowerCase() === 'g19' || 
-        String(i.ID_Produk || '').toLowerCase().includes('gln') || 
-        String(i.Nama_Produk || '').toLowerCase().includes('galon')
-      );
-      if (foundGalonItem) return foundGalonItem.Qty;
     }
 
     return 0;

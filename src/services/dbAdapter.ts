@@ -993,6 +993,22 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
   } catch (e) {
     console.warn(`[SupabaseSync] Exception during sync on ${tableName}:`, e);
   }
+
+  // Auto-sync child table Distribusi_Item jika parent Distribusi berhasil disinkronkan
+  if (tableName === 'Distribusi') {
+    try {
+      const currentItems = getTableData<any>('Distribusi_Item', []);
+      if (currentItems && currentItems.length > 0) {
+        const cleanItems = sanitizeRowsForTable('Distribusi_Item', currentItems);
+        if (cleanItems.length > 0) {
+          for (let i = 0; i < cleanItems.length; i += 200) {
+            const batch = cleanItems.slice(i, i + 200);
+            await client.from('Distribusi_Item').upsert(batch as any).catch(() => {});
+          }
+        }
+      }
+    } catch (itemSyncErr) {}
+  }
 }
 
 /**
@@ -1202,18 +1218,55 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
       try {
         const rows = await fetchAllRowsFromTable(client, table);
         if (rows && rows.length > 0) {
-          memoryTableCache[table] = rows;
-          try {
-            localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(rows));
-          } catch (e) {}
+          // Khusus tabel Distribusi: Gabungkan properti kuantitas produk lokal (C120, C220, B330, B600, G19)
+          // agar tidak terhapus akibat skema Supabase yang hanya memiliki kolom header
+          if (table === 'Distribusi') {
+            const localDist = getTableData<any>('Distribusi', []);
+            const localMap = new Map<string, any>();
+            localDist.forEach((d: any) => { if (d && d.ID_Distribusi) localMap.set(d.ID_Distribusi, d); });
+
+            const enrichedRows = rows.map((r: any) => {
+              const localMatch = localMap.get(r.ID_Distribusi);
+              if (localMatch) {
+                return {
+                  ...r,
+                  C120: r.C120 !== undefined ? r.C120 : localMatch.C120,
+                  C220: r.C220 !== undefined ? r.C220 : localMatch.C220,
+                  B330: r.B330 !== undefined ? r.B330 : localMatch.B330,
+                  B600: r.B600 !== undefined ? r.B600 : localMatch.B600,
+                  G19: r.G19 !== undefined ? r.G19 : (localMatch.G19 ?? localMatch.Galon),
+                  Galon: r.Galon !== undefined ? r.Galon : (localMatch.Galon ?? localMatch.G19),
+                  'ASH-GLN19L': r['ASH-GLN19L'] !== undefined ? r['ASH-GLN19L'] : localMatch['ASH-GLN19L']
+                };
+              }
+              return r;
+            });
+            memoryTableCache[table] = enrichedRows;
+            try {
+              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(enrichedRows));
+            } catch (e) {}
+          } else {
+            memoryTableCache[table] = rows;
+            try {
+              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(rows));
+            } catch (e) {}
+          }
           tablesWithData++;
         } else {
           // Supabase kosong (0 baris) untuk tabel ini:
-          // Sinkronkan ke lokal agar tabel lokal juga kosong (tidak menyimpan data hantu / zombie data)
-          memoryTableCache[table] = [];
-          try {
-            localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify([]));
-          } catch (e) {}
+          // Proteksi Anti-Hilang: Jika memori/localStorage lokal memiliki data valid,
+          // JANGAN hapus data lokal! Sebaliknya, unggah data lokal tersebut ke Supabase Cloud.
+          const existingLocal = getTableData<any>(table, []);
+          if (existingLocal && existingLocal.length > 0) {
+            tablesWithData++;
+            // Background push data lokal ke cloud agar Supabase terisi
+            syncToSupabaseTable(table, existingLocal).catch(() => {});
+          } else {
+            memoryTableCache[table] = [];
+            try {
+              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify([]));
+            } catch (e) {}
+          }
         }
       } catch (e) {
         console.warn(`[SyncAll] Error fetching ${table}:`, e);

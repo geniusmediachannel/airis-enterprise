@@ -4,7 +4,7 @@
  * serta menyinkronkan item produk ke Distribusi_Item dan Jurnal Keuangan.
  */
 
-import { getTableData, setTableData } from './dbAdapter';
+import { getTableData, setTableData, getSupabaseConfig, syncTableToSupabaseExplicit } from './dbAdapter';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
   CustomerItem, EmployeeItem, DraftJournalItem, ReceivablePayableItem 
@@ -383,34 +383,70 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           itemMap.set(anyDist.ID_Distribusi, distItems);
         }
       } else {
-        // Jika distItems SUDAH ADA, tapi item Galon belum masuk sedangkan di record dist ada galon:
-        if (galonQtyInDist > 0) {
-          const hasGalonItem = distItems.some(it => 
-            it.ID_Produk === 'ASH-GLN19L' || 
-            String(it.ID_Produk || '').toLowerCase() === 'g19' || 
-            String(it.Nama_Produk || '').toLowerCase().includes('galon')
-          );
-          if (!hasGalonItem) {
-            const galonDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
-            const detailItem: DistributionProductDetail = {
-              ID_Detail: `${anyDist.ID_Distribusi}-D5`,
-              ID_Distribusi: anyDist.ID_Distribusi,
-              Nama_Pelanggan: custName,
-              Tanggal: anyDist.Tanggal,
-              Level_Pelanggan: anyDist.Level_Pelanggan,
-              ID_Produk: galonDef.id,
-              Nama_Produk: galonDef.name,
-              Qty: galonQtyInDist,
-              Harga_Satuan: galonDef.price,
-              Subtotal: galonQtyInDist * galonDef.price,
-              Satuan: 'Galon'
-            };
-            distItems.push(detailItem);
-            repairedItemsList.push(detailItem);
-            syncedItemsCount++;
+        // Bi-Directional Sync:
+        // A. Jika distItems SUDAH ADA item Galon, pastikan field anyDist.G19 juga sinkron terisi!
+        const existingGalonInItems = distItems.find(it => 
+          it.ID_Produk === 'ASH-GLN19L' || 
+          String(it.ID_Produk || '').toLowerCase() === 'g19' || 
+          String(it.Nama_Produk || '').toLowerCase().includes('galon')
+        );
+
+        if (existingGalonInItems && Number(existingGalonInItems.Qty) > 0) {
+          const gq = Number(existingGalonInItems.Qty);
+          if (Number(anyDist.G19 || 0) !== gq) {
+            anyDist.G19 = gq;
+            anyDist.Galon = gq;
+            anyDist.GLN19 = gq;
+            anyDist['ASH-GLN19L'] = gq;
+            isModified = true;
+          }
+        } else if (galonQtyInDist > 0) {
+          // B. Jika record dist memiliki data galon tapi belum masuk ke distItems
+          const galonDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
+          const detailItem: DistributionProductDetail = {
+            ID_Detail: `${anyDist.ID_Distribusi}-D5`,
+            ID_Distribusi: anyDist.ID_Distribusi,
+            Nama_Pelanggan: custName,
+            Tanggal: anyDist.Tanggal,
+            Level_Pelanggan: anyDist.Level_Pelanggan,
+            ID_Produk: galonDef.id,
+            Nama_Produk: galonDef.name,
+            Qty: galonQtyInDist,
+            Harga_Satuan: galonDef.price,
+            Subtotal: galonQtyInDist * galonDef.price,
+            Satuan: 'Galon'
+          };
+          distItems.push(detailItem);
+          repairedItemsList.push(detailItem);
+          syncedItemsCount++;
+          isModified = true;
+        }
+
+        // C. Perbaiki anomali jika B600 terisi angka galon akibat import versi lama
+        // (misal pelanggan MTS/MI/Pesantren atau tagihan kelipatan galon yang salah masuk ke B600)
+        const b600Val = Number(anyDist.B600 || 0);
+        if (b600Val > 0 && Number(anyDist.G19 || 0) === 0) {
+          const b600Item = distItems.find(it => it.ID_Produk === 'ASH-BTL600');
+          // Jika tidak ada item riil botol 600ml atau item sebenarnya adalah galon:
+          if (existingGalonInItems && Number(existingGalonInItems.Qty) === b600Val) {
+            anyDist.G19 = b600Val;
+            anyDist.Galon = b600Val;
+            anyDist.B600 = 0;
             isModified = true;
           }
         }
+
+        // D. Pastikan produk-produk lain juga tersinkron dari distItems ke properti direct anyDist
+        DEFAULT_PRODUCT_DEFS.forEach(pDef => {
+          if (pDef.code !== 'G19') {
+            const itm = distItems.find(i => i.ID_Produk === pDef.id || String(i.Nama_Produk || '').toLowerCase().includes(pDef.code.toLowerCase()));
+            if (itm && Number(itm.Qty) > 0 && !anyDist[pDef.code]) {
+              anyDist[pDef.code] = Number(itm.Qty);
+              anyDist[pDef.id] = Number(itm.Qty);
+              isModified = true;
+            }
+          }
+        });
       }
 
       distItems.forEach(it => {
@@ -727,6 +763,9 @@ export async function importDistributionExcelFile(file: File): Promise<{
           newDetailsList.push({
             ID_Detail: `${rawId}-D${pIdx + 1}`,
             ID_Distribusi: rawId,
+            Nama_Pelanggan: custName,
+            Tanggal: tgl,
+            Level_Pelanggan: level,
             ID_Produk: pDef.id,
             Nama_Produk: pDef.name,
             Qty: qty,
@@ -820,6 +859,20 @@ export async function importDistributionExcelFile(file: File): Promise<{
     setTableData('Distribusi_Item', combinedDetails);
     if (newCustomersToSave.length > 0) {
       setTableData('MD_Pelanggan', [...masterCustomers, ...newCustomersToSave]);
+    }
+
+    // Sinkronisasi langsung ke Supabase Cloud jika terhubung agar data Distribusi & Distribusi_Item tidak tertinggal
+    try {
+      const cfg = getSupabaseConfig();
+      if (cfg.isConnected && cfg.url && cfg.anonKey) {
+        await syncTableToSupabaseExplicit('Distribusi', combinedDist);
+        await syncTableToSupabaseExplicit('Distribusi_Item', combinedDetails);
+        if (newCustomersToSave.length > 0) {
+          await syncTableToSupabaseExplicit('MD_Pelanggan');
+        }
+      }
+    } catch (cloudErr) {
+      console.warn('Supabase sync in importDistributionExcelFile:', cloudErr);
     }
 
     // Auto-sinkronisasi seluruh modul ke Keuangan (jurnal & piutang otomatis)
