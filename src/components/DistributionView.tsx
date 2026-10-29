@@ -535,15 +535,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Form State for Direct Distribution
   const [formData, setFormData] = useState({
     Tanggal: new Date().toISOString().slice(0, 10),
-    ID_Pelanggan: customers[0]?.ID_Pelanggan || '',
-    Nama_Pelanggan: customers[0]?.Nama_Pelanggan || '',
-    Level_Pelanggan: customers[0]?.Level_Pelanggan || 'Distributor',
+    ID_Pelanggan: '',
+    Nama_Pelanggan: '',
+    Level_Pelanggan: 'Distributor',
     Pengirim: '',
     Penerima: '',
     Tujuan: '',
-    Metode_Kirim: 'Diantar Armada' as 'Diantar Armada' | 'Kirim Armada' | 'Ambil Sendiri' | string,
-    No_Surat_Jalan: `224/X/26`,
-    No_Invoice: formatInvoiceNumber('', new Date().toISOString().slice(0, 10)),
+    Metode_Kirim: 'Kirim Armada' as 'Diantar Armada' | 'Kirim Armada' | 'Ambil Sendiri' | string,
+    No_Surat_Jalan: '',
+    No_Invoice: '',
     Keterangan: ''
   });
 
@@ -574,21 +574,21 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const initialInv = formatInvoiceNumber('', today);
     setFormData({
       Tanggal: today,
-      ID_Pelanggan: customers[0]?.ID_Pelanggan || '',
-      Nama_Pelanggan: customers[0]?.Nama_Pelanggan || '',
-      Level_Pelanggan: customers[0]?.Level_Pelanggan || 'Distributor',
+      ID_Pelanggan: '',
+      Nama_Pelanggan: '',
+      Level_Pelanggan: 'Distributor',
       Pengirim: '',
       Penerima: '',
-      Tujuan: customers[0]?.Alamat || '',
+      Tujuan: '',
       Metode_Kirim: 'Kirim Armada',
       No_Surat_Jalan: initialSj,
       No_Invoice: initialInv,
       Keterangan: ''
     });
-    setCustomerSearchQuery(customers[0]?.Nama_Pelanggan || '');
+    setCustomerSearchQuery('');
     setIsCustomerDropdownOpen(false);
     setFormItems([
-      { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: products[0] ? getProductPriceForCustomer(products[0].ID_Produk, customers[0]?.ID_Pelanggan || '') : '' as any }
+      { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: products[0] ? (products[0].Harga_Distributor || 0) : '' as any }
     ]);
     setShowAddDistModal(true);
   };
@@ -755,6 +755,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
   // Save Distribution
   const handleSaveDistribution = () => {
+    if (!formData.Nama_Pelanggan.trim() && !formData.ID_Pelanggan) {
+      showToast('Pilih Pelanggan', 'Harap cari dan pilih pelanggan terlebih dahulu.', 'warning');
+      return;
+    }
+
     const cust = customers.find(c => c.ID_Pelanggan === formData.ID_Pelanggan);
     const finalCustName = cust?.Nama_Pelanggan || formData.Nama_Pelanggan || editingDist?.Nama_Pelanggan || 'Pelanggan';
     const finalCustLevel = cust?.Level_Pelanggan || formData.Level_Pelanggan || editingDist?.Level_Pelanggan || 'Distributor';
