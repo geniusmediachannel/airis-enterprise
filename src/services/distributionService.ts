@@ -140,109 +140,9 @@ export interface DistributionRepairResult {
   details: string[];
 }
 
-export interface InferredProductItem {
-  code: string;
-  id: string;
-  name: string;
-  qty: number;
-  price: number;
-  subtotal: number;
-  satuan: string;
-}
-
 /**
- * Rekonstruksi & inferensi cerdas kuantitas produk berdasarkan Total Tagihan & Level Pelanggan
- * Menggunakan pencocokan harga master As-Shofaa (C120, C220, B330, B600, G19)
- */
-export function inferProductsFromTotalTagihan(
-  total: number, 
-  level?: string, 
-  metode?: string,
-  namaPelanggan?: string
-): InferredProductItem[] {
-  if (!total || total <= 0) return [];
-
-  const isDist = String(level || '').toLowerCase().includes('dist');
-  const isAmbilSendiri = String(metode || '').toLowerCase().includes('ambil');
-
-  // 1. Single exact price candidates
-  const singleCandidates = [
-    { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 17250, satuan: 'Dus' },
-    { code: 'C120', id: 'ASH-CUP120', name: 'As-Shofaa Cup 120ml', price: 12000, satuan: 'Dus' },
-    { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 18000, satuan: 'Dus' },
-    { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 19000, satuan: 'Dus' },
-    { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 14500, satuan: 'Dus' },
-    { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 15500, satuan: 'Dus' },
-    { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 9000, satuan: 'Galon' },
-    { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 10000, satuan: 'Galon' },
-    { code: 'B330', id: 'ASH-BTL330', name: 'As-Shofaa Botol 330ml', price: 24000, satuan: 'Dus' },
-    { code: 'B600', id: 'ASH-BTL600', name: 'As-Shofaa Botol 600ml', price: 28000, satuan: 'Dus' },
-  ];
-
-  for (const c of singleCandidates) {
-    if (total % c.price === 0) {
-      const q = total / c.price;
-      if (q >= 1 && q <= 3000) {
-        return [{ ...c, qty: q, subtotal: total }];
-      }
-    }
-  }
-
-  // 2. Pair combinations (terutama C220 + Galon / C220 + C120)
-  const pairCandidates = [
-    { 
-      p1: { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 14500, satuan: 'Dus' }, 
-      p2: { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 9000, satuan: 'Galon' } 
-    },
-    { 
-      p1: { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 17250, satuan: 'Dus' }, 
-      p2: { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 10000, satuan: 'Galon' } 
-    },
-    { 
-      p1: { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 17250, satuan: 'Dus' }, 
-      p2: { code: 'C120', id: 'ASH-CUP120', name: 'As-Shofaa Cup 120ml', price: 12000, satuan: 'Dus' } 
-    },
-    { 
-      p1: { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 15500, satuan: 'Dus' }, 
-      p2: { code: 'G19', id: 'ASH-GLN19L', name: 'As-Shofaa Galon 19L', price: 9000, satuan: 'Galon' } 
-    },
-    { 
-      p1: { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', price: 14500, satuan: 'Dus' }, 
-      p2: { code: 'C120', id: 'ASH-CUP120', name: 'As-Shofaa Cup 120ml', price: 12000, satuan: 'Dus' } 
-    },
-  ];
-
-  for (const pair of pairCandidates) {
-    const maxQ1 = Math.floor(total / pair.p1.price);
-    for (let q1 = maxQ1; q1 >= 1; q1--) {
-      const rem = total - (q1 * pair.p1.price);
-      if (rem > 0 && rem % pair.p2.price === 0) {
-        const q2 = rem / pair.p2.price;
-        return [
-          { ...pair.p1, qty: q1, subtotal: q1 * pair.p1.price },
-          { ...pair.p2, qty: q2, subtotal: q2 * pair.p2.price }
-        ];
-      }
-    }
-  }
-
-  // 3. Fallback: Estimasi C220 (produk volume terbesar)
-  const defaultPrice = isDist ? 14500 : 17250;
-  const approxQty = Math.max(1, Math.round(total / defaultPrice));
-  return [{ 
-    code: 'C220', 
-    id: 'ASH-CUP220', 
-    name: 'As-Shofaa Cup 220ml', 
-    price: defaultPrice, 
-    qty: approxQty, 
-    subtotal: total,
-    satuan: 'Dus'
-  }];
-}
-
-/**
- * Memindai seluruh database distribusi dan secara otomatis melengkapi
- * seluruh field yang kosong atau tidak valid (Surat Jalan, Pengirim, Penerima, Tujuan, Invoice, Item).
+ * Memindai seluruh database distribusi dan secara otomatis merapikan
+ * format data standar tanpa mengubah atau mengarang kuantitas produk.
  */
 export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResult {
   try {
@@ -479,43 +379,6 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           }
         });
 
-        // RECOVERY KRITIS: Jika semua kolom produk 0 tapi Total_Tagihan > 0
-        if (distItems.length === 0 && Number(anyDist.Total_Tagihan) > 0) {
-          const inferred = inferProductsFromTotalTagihan(
-            Number(anyDist.Total_Tagihan),
-            anyDist.Level_Pelanggan,
-            anyDist.Metode_Kirim,
-            custName
-          );
-          inferred.forEach((inf, infIdx) => {
-            anyDist[inf.code] = inf.qty;
-            anyDist[inf.id] = inf.qty;
-            if (inf.code === 'G19') {
-              anyDist.Galon = inf.qty;
-              anyDist.galon = inf.qty;
-              anyDist.GLN19 = inf.qty;
-              anyDist['ASH-GLN19L'] = inf.qty;
-            }
-            const detailItem: DistributionProductDetail = {
-              ID_Detail: `${anyDist.ID_Distribusi}-D${infIdx + 1}`,
-              ID_Distribusi: anyDist.ID_Distribusi,
-              Nama_Pelanggan: custName,
-              Tanggal: anyDist.Tanggal,
-              Level_Pelanggan: anyDist.Level_Pelanggan,
-              ID_Produk: inf.id,
-              Nama_Produk: inf.name,
-              Qty: inf.qty,
-              Harga_Satuan: inf.price,
-              Subtotal: inf.subtotal,
-              Satuan: inf.satuan
-            };
-            distItems.push(detailItem);
-            repairedItemsList.push(detailItem);
-            syncedItemsCount++;
-            isModified = true;
-          });
-        }
-
         if (distItems.length > 0) {
           itemMap.set(anyDist.ID_Distribusi, distItems);
         }
@@ -716,7 +579,12 @@ export async function importDistributionExcelFile(file: File): Promise<{
       if (!r || typeof r !== 'object') return 0;
 
       // 1. Cek langsung dengan key exact
-      const exactKeys = [pDef.code, pDef.code.toLowerCase(), pDef.id, `Qty_${pDef.code}`, `Jumlah_${pDef.code}`];
+      const exactKeys = [
+        pDef.code, pDef.code.toLowerCase(), pDef.id, 
+        `Qty_${pDef.code}`, `Jumlah_${pDef.code}`, `Dus_${pDef.code}`,
+        `${pDef.code} (Cup 120ml)`, `${pDef.code} (Cup 220ml)`, 
+        `${pDef.code} (Botol 330ml)`, `${pDef.code} (Botol 600ml)`, `${pDef.code} (Galon 19L)`
+      ];
       for (const k of exactKeys) {
         if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
           const q = parseQty(r[k]);
@@ -724,16 +592,7 @@ export async function importDistributionExcelFile(file: File): Promise<{
         }
       }
 
-      // 2. Fallback posisi kolom standar template (Kolom 9=C120, 10=C220, 11=B330, 12=B600, 13=G19)
-      const positionalCandidates = [`Kolom_${pIdx + 9}`, `kolom_${pIdx + 9}`, `Kolom_${pIdx + 1}`, `kolom_${pIdx + 1}`];
-      for (const pk of positionalCandidates) {
-        if (r[pk] !== undefined && r[pk] !== null && String(r[pk]).trim() !== '') {
-          const q = parseQty(r[pk]);
-          if (q > 0) return q;
-        }
-      }
-
-      // 3. Scan semua keys di objek row dengan normalisasi
+      // 2. Scan semua keys di objek row dengan normalisasi alias
       const keys = Object.keys(r);
       for (const k of keys) {
         const val = r[k];
@@ -764,6 +623,32 @@ export async function importDistributionExcelFile(file: File): Promise<{
 
         if (isMatched) {
           const q = parseQty(val);
+          if (q > 0) return q;
+        }
+      }
+
+      // 3. Posisi kolom standar template (Template Baru: idx 5..9 | Template Lama: idx 8..12)
+      const positionalCandidates = [
+        `_c_${pIdx + 5}`, `_c_${pIdx + 8}`,
+        `Kolom_${pIdx + 6}`, `Kolom_${pIdx + 9}`,
+        `kolom_${pIdx + 6}`, `kolom_${pIdx + 9}`
+      ];
+      for (const pk of positionalCandidates) {
+        if (r[pk] !== undefined && r[pk] !== null && String(r[pk]).trim() !== '') {
+          const q = parseQty(r[pk]);
+          if (q > 0) return q;
+        }
+      }
+
+      if (Array.isArray(r.__rawArray)) {
+        const newPosVal = r.__rawArray[pIdx + 5];
+        if (newPosVal !== undefined && newPosVal !== null && String(newPosVal).trim() !== '') {
+          const q = parseQty(newPosVal);
+          if (q > 0) return q;
+        }
+        const oldPosVal = r.__rawArray[pIdx + 8];
+        if (oldPosVal !== undefined && oldPosVal !== null && String(oldPosVal).trim() !== '') {
+          const q = parseQty(oldPosVal);
           if (q > 0) return q;
         }
       }
@@ -930,41 +815,6 @@ export async function importDistributionExcelFile(file: File): Promise<{
             Harga_Satuan: price,
             Subtotal: rawQty * price,
             Satuan: finalDef.code === 'G19' ? 'Galon' : 'Dus'
-          });
-        }
-      }
-
-      // Fallback Cerdas 2: Inferensi & Rekonstruksi dari Total Tagihan jika kolom produk kosong/0 di Excel
-      if (!hasColumnProducts && distRecord.Total_Tagihan > 0) {
-        const inferred = inferProductsFromTotalTagihan(
-          distRecord.Total_Tagihan, 
-          distRecord.Level_Pelanggan, 
-          distRecord.Metode_Kirim,
-          distRecord.Nama_Pelanggan
-        );
-        if (inferred.length > 0) {
-          hasColumnProducts = true;
-          inferred.forEach((inf, infIdx) => {
-            distRecord[inf.code] = inf.qty;
-            distRecord[inf.id] = inf.qty;
-            if (inf.code === 'G19') {
-              distRecord['Galon'] = inf.qty;
-              distRecord['galon'] = inf.qty;
-              distRecord['GLN19'] = inf.qty;
-              distRecord['gln19'] = inf.qty;
-              distRecord['GLN'] = inf.qty;
-              distRecord['ASH-GLN19L'] = inf.qty;
-            }
-            newDetailsList.push({
-              ID_Detail: `${rawId}-D${infIdx + 1}`,
-              ID_Distribusi: rawId,
-              ID_Produk: inf.id,
-              Nama_Produk: inf.name,
-              Qty: inf.qty,
-              Harga_Satuan: inf.price,
-              Subtotal: inf.subtotal,
-              Satuan: inf.satuan
-            });
           });
         }
       }

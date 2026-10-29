@@ -12,14 +12,14 @@ import {
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
 import { getTableData, setTableData } from '../services/dbAdapter';
-import { exportDataToExcel } from '../services/excelService';
+import { exportDataToExcel, downloadExcelTemplate } from '../services/excelService';
 import { 
   generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
 } from '../services/pdfService';
 import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
-import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase, inferProductsFromTotalTagihan } from '../services/distributionService';
+import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -208,31 +208,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         localStorage.removeItem('airis_last_imported_dist_month');
       }
 
-      // Deteksi jika ada record distribusi yang membutuhkan perbaikan:
-      // (1) Tagihan > 0 tapi seluruh produk 0 dan tidak ada di distItems
-      // (2) Galon tercatat tapi belum ada di detail item
-      const needsRepair = distributions.some(d => {
+      // Deteksi jika ada record distribusi yang memiliki data galon tapi belum masuk ke detail item
+      const hasUnsyncedGalon = distributions.some(d => {
         const anyDist = d as any;
-        const totalTagihan = Number(anyDist.Total_Tagihan || 0);
         const gQty = Number(anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || anyDist.Galon || anyDist.galon || anyDist.GLN || anyDist['GLN 19 L'] || anyDist['Galon 19L'] || 0);
-        const totalUnits = Number(anyDist.C120 || 0) + Number(anyDist.C220 || 0) + Number(anyDist.B330 || 0) + Number(anyDist.B600 || 0) + gQty;
-        const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
-        
-        if (totalTagihan > 0 && totalUnits === 0 && items.length === 0) return true;
         if (gQty > 0) {
+          const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
           const hasItem = items.some(it => 
             String(it.ID_Produk || '').toLowerCase() === 'g19' || 
             String(it.ID_Produk || '').toLowerCase().includes('gln') || 
             String(it.Nama_Produk || '').toLowerCase().includes('galon')
           );
-          if (!hasItem) return true;
+          return !hasItem;
         }
         return false;
       });
 
-      if (needsRepair) {
+      if (hasUnsyncedGalon) {
         const rep = sanitizeAndRepairDistributionDatabase();
-        if (rep.syncedItemsCount > 0 || rep.fixedRecordsCount > 0) {
+        if (rep.syncedItemsCount > 0) {
           onRefresh();
         }
       }
@@ -1089,18 +1083,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       if (foundGalonItem) return foundGalonItem.Qty;
     }
 
-    // 3. Fallback on-the-fly inferensi cerdas jika kuantitas produk kosong tetapi Total_Tagihan > 0
-    if (Number(dist.Total_Tagihan) > 0) {
-      const inferred = inferProductsFromTotalTagihan(
-        Number(dist.Total_Tagihan), 
-        dist.Level_Pelanggan, 
-        dist.Metode_Kirim, 
-        dist.Nama_Pelanggan
-      );
-      const matchedInf = inferred.find(inf => inf.code === code || inf.id === prod.ID_Produk);
-      if (matchedInf) return matchedInf.qty;
-    }
-
     return 0;
   };
 
@@ -1590,8 +1572,21 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             </button>
           </div>
 
-          {/* Tombol Import Excel Langsung (1-Klik) & Modal Lanjutan */}
-          <div className="flex items-center gap-1">
+          {/* Tombol Unduh Template Resmi & Import Excel */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                downloadExcelTemplate('distribusi');
+                showToast('Template Berhasil Diunduh', 'File Template_AIRIS_Distribusi.xlsx siap diisi dengan data pengiriman Anda.', 'success');
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Unduh file template resmi Excel distribusi AMDK (.xlsx) untuk diisi lalu diimpor"
+            >
+              <Download size={14} className="text-slate-500" />
+              <span>Template Excel</span>
+            </button>
+
             <label
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
                 isDirectImporting

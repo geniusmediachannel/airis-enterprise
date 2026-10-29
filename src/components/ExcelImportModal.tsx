@@ -355,7 +355,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         };
 
         // Extractor for product column values by codes and keyword aliases
-        const getProductQtyFromRow = (r: any, pDef: typeof prodDefs[0]): number => {
+        const getProductQtyFromRow = (r: any, pDef: typeof prodDefs[0], pIdx: number): number => {
           // 1. Direct exact or lowercase match
           if (r[pDef.code] !== undefined && r[pDef.code] !== null && String(r[pDef.code]).trim() !== '') {
             const q = parseCleanQty(r[pDef.code]);
@@ -375,15 +375,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           // 2. Scan all columns for keyword alias match
           const keys = Object.keys(r);
           for (const k of keys) {
-            const norm = k.toLowerCase().replace(/[\s_\-./]+/g, '');
+            const norm = k.toLowerCase().replace(/[\s_\-./()]+/g, '');
             // Avoid false positives from metadata and financial columns
             if (norm.includes('pelanggan') || norm.includes('pengirim') || norm.includes('penerima') || norm.includes('tujuan') || norm.includes('keterangan') || norm.includes('suratjalan') || norm.includes('invoice') || norm.includes('tagihan') || norm.includes('total') || norm === 'no') {
               continue;
             }
 
             const matched = pDef.keywords.some(kw => {
-              const normKw = kw.toLowerCase().replace(/[\s_\-./]+/g, '');
-              return norm === normKw || norm === `qty${normKw}` || norm === `jumlah${normKw}` || (normKw.length >= 4 && norm.includes(normKw));
+              const normKw = kw.toLowerCase().replace(/[\s_\-./()]+/g, '');
+              return norm === normKw || norm === `qty${normKw}` || norm === `jumlah${normKw}` || norm === `dus${normKw}` || (normKw.length >= 4 && norm.includes(normKw));
             });
 
             if (matched) {
@@ -391,6 +391,33 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               if (q > 0) return q;
             }
           }
+
+          // 3. Posisi kolom standar template (Template Baru: idx 5..9 | Template Lama: idx 8..12)
+          const posCandidates = [
+            `_c_${pIdx + 5}`, `_c_${pIdx + 8}`,
+            `Kolom_${pIdx + 6}`, `Kolom_${pIdx + 9}`,
+            `kolom_${pIdx + 6}`, `kolom_${pIdx + 9}`
+          ];
+          for (const pk of posCandidates) {
+            if (r[pk] !== undefined && r[pk] !== null && String(r[pk]).trim() !== '') {
+              const q = parseCleanQty(r[pk]);
+              if (q > 0) return q;
+            }
+          }
+
+          if (Array.isArray(r.__rawArray)) {
+            const newPosVal = r.__rawArray[pIdx + 5];
+            if (newPosVal !== undefined && newPosVal !== null && String(newPosVal).trim() !== '') {
+              const q = parseCleanQty(newPosVal);
+              if (q > 0) return q;
+            }
+            const oldPosVal = r.__rawArray[pIdx + 8];
+            if (oldPosVal !== undefined && oldPosVal !== null && String(oldPosVal).trim() !== '') {
+              const q = parseCleanQty(oldPosVal);
+              if (q > 0) return q;
+            }
+          }
+
           return 0;
         };
 
@@ -598,7 +625,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           const thisRowDetails: any[] = [];
 
           prodDefs.forEach((pDef, pIdx) => {
-            const qty = getProductQtyFromRow(row, pDef);
+            const qty = getProductQtyFromRow(row, pDef, pIdx);
             thisRowQuantities[pDef.code] = qty;
             if (qty > 0) {
               hasColumnProducts = true;

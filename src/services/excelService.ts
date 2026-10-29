@@ -130,22 +130,25 @@ export const EXCEL_TEMPLATES: Record<ExcelTemplateType, TemplateDefinition> = {
     title: 'Pengiriman Distribusi Armada (Format Standar AMDK)',
     filename: 'Template_AIRIS_Distribusi.xlsx',
     headers: [
-      'NAMA PELANGGAN', 'LEVEL', 'TANGGAL KIRIM', 'NO SURAT JALAN', 'METODE KIRIM', 
-      'PENGIRIM', 'PENERIMA', 'TUJUAN', 'C120', 'C220', 'B330', 'B600', 'G19', 
-      'TOTAL TAGIHAN', 'KETERANGAN'
+      'NAMA PELANGGAN', 'LEVEL', 'TANGGAL KIRIM', 'NO SURAT JALAN', 'TUJUAN', 
+      'C120', 'C220', 'B330', 'B600', 'G19', 
+      'METODE KIRIM', 'TOTAL TAGIHAN', 'PENGIRIM', 'PENERIMA', 'KETERANGAN'
     ],
     sampleRows: [
-      ['D. MWC NU KARANGNONGKO', 'Distributor', '01-Okt-2026', '646/X/26', 'Ambil Sendiri', 'AGUS', '-', 'KARANGNONGKO', 20, 0, 10, 45, 50, 2725000, ''],
-      ['D. PC JQH NU', 'Distributor', '02-Okt-2026', '647/X/26', 'Diantar Armada', 'RADITYA', 'DILLAH', 'KLATEN UTARA', 15, 30, 30, 25, 20, 2917500, ''],
-      ['D. MWC NU TULUNG', 'Distributor', '02-Okt-2026', '648/X/26', 'Diantar Armada', 'RADITYA', '-', 'TULUNG', 0, 70, 0, 15, 35, 2290000, ''],
-      ['RADITYA', 'Agen', '02-Okt-2026', '649/X/26', 'Diantar Armada', '-', '-', 'KALIKOTES', 2, 0, 0, 0, 10, 127000, ''],
-      ['D. MWC NU CEPER', 'Distributor', '03-Okt-2026', '650/X/26', 'Diantar Armada', 'RADITYA', '-', 'CEPER KLATEN', 0, 200, 50, 50, 0, 7525000, ''],
-      ['D. MWC NU TRUCUK', 'Distributor', '03-Okt-2026', '651/X/26', 'Diantar Armada', 'RADITYA', '-', 'TRUCUK', 0, 40, 0, 10, 0, 1180000, ''],
-      ['CANDRA DITIA TRI A', 'Agen', '03-Okt-2026', '652/X/26', 'Diantar Armada', 'RADITYA', '-', 'NGAWEN', 0, 2, 0, 0, 0, 45000, ''],
-      ['PARJOKO', 'Agen', '03-Okt-2026', '652/X/26', 'Diantar Armada', '-', '-', 'KLATEN UTARA', 0, 0, 0, 3, 0, 114000, ''],
-      ['D. PR NU JIWAN', 'Distributor', '05-Okt-2026', '653/X/26', 'Kirim Armada', 'AGUS', '-', 'JIWAN KARANGNONGKO', 0, 100, 0, 0, 0, 2050000, '(Total Qty Potongan: - Rp 100.000)'],
-      ['AGEN SUPRAPTO', 'Agen', '05-Okt-2026', '654/X/26', 'Kirim Armada', 'RADIT', '-', 'KARANGANOM', 0, 40, 0, 49, 0, 2762000, ''],
-      ['D. MWC NU KLATEN UTARA', 'Distributor', '05-Okt-2026', '655/X/26', 'Ambil Sendiri', 'RENGGA', 'RENGGA', 'KLATEN UTARA', 0, 50, 20, 30, 0, 2655000, '(Total Qty Potongan: - Rp 100.000)']
+      ['MARKO DWI NUGROHO', 'Agen', '21-Okt-2026', '689/X/26', 'KLATEN', 0, 2, 0, 0, 0, 'Ambil Sendiri', 34500, 'Tri Wahyudi', '-', ''],
+      ['AGEN AHMAD ZAMRONI', 'Agen', '22-Okt-2026', '690/X/26', 'KLATEN', 0, 10, 0, 0, 0, 'Ambil Sendiri', 172500, 'Tri Wahyudi', '-', ''],
+      ['ONA SETYO PURNOMO', 'Agen', '22-Okt-2026', '691/X/26', 'KLATEN', 0, 4, 0, 0, 0, 'Ambil Sendiri', 69000, 'Tri Wahyudi', '-', ''],
+      ['D. PR GP ANSOR DRONO', 'Distributor', '22-Okt-2026', '692/X/26', 'DRONO', 0, 100, 0, 0, 60, 'Ambil Sendiri', 1990000, 'Agus Setiawan', '-', ''],
+      ['AGEN PAC FATAYAT JATINOM', 'Agen', '22-Okt-2026', '693/X/26', 'JATINOM', 20, 150, 0, 0, 30, 'Ambil Sendiri', 3265000, 'Tri Wahyudi', '-', ''],
+      ['MTS AL-QURANI KARANGNONGKO', 'Agen', '22-Okt-2026', '694/X/26', 'KARANGNONGKO', 5, 0, 0, 0, 0, 'Ambil Sendiri', 60000, 'Tri Wahyudi', '-', ''],
+      ['AGEN MI DARUSSALAM', 'Agen', '22-Okt-2026', '695/X/26', 'KLATEN', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
+      ['MTS TQ AL-HUSNA', 'Agen', '22-Okt-2026', '696/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
+      ['SMK BATUR JAYA 2', 'Agen', '22-Okt-2026', '697/X/26', 'CEPER', 10, 0, 0, 0, 0, 'Ambil Sendiri', 120000, 'Tri Wahyudi', '-', ''],
+      ['MI ROUDOTUZZAHIDIN', 'Agen', '22-Okt-2026', '698/X/26', 'KLATEN', 15, 0, 0, 0, 0, 'Ambil Sendiri', 180000, 'Tri Wahyudi', '-', ''],
+      ['D. PR NU JIWAN', 'Distributor', '23-Okt-2026', '699/X/26', 'JIWAN', 0, 200, 0, 0, 0, 'Ambil Sendiri', 3600000, 'Agus Setiawan', '-', ''],
+      ['AGEN SUPRAPTO', 'Agen', '23-Okt-2026', '700/X/26', 'KARANGANOM', 0, 100, 0, 0, 0, 'Ambil Sendiri', 1900000, 'Tri Wahyudi', '-', ''],
+      ['AGEN AL-AMIN', 'Agen', '23-Okt-2026', '701/X/26', 'KLATEN', 30, 0, 0, 0, 0, 'Ambil Sendiri', 360000, 'Tri Wahyudi', '-', ''],
+      ['D. MWC NU KARANGNONGKO', 'Distributor', '23-Okt-2026', '702/X/26', 'KARANGNONGKO', 20, 50, 10, 15, 30, 'Diantar Armada', 2725000, 'Tri Wahyudi', 'Bpk Rohmad', '']
     ]
   },
   pembelian_bahan: {
@@ -479,7 +482,9 @@ export function smartParseWorksheet(worksheet: XLSX.WorkSheet): any[] {
     const rowObj: Record<string, any> = {};
     cleanHeaders.forEach((h, colIdx) => {
       rowObj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
+      rowObj[`_c_${colIdx}`] = row[colIdx];
     });
+    rowObj.__rawArray = row;
     result.push(rowObj);
   }
 
