@@ -532,6 +532,43 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     );
   }, [customers, customerSearchQuery]);
 
+  // List of frequently used driver / pengirim names sorted by usage frequency
+  const [isDriverDropdownOpen, setIsDriverDropdownOpen] = useState(false);
+  const frequentDrivers = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    // 1. Count from distributions history
+    (distributions || []).forEach(d => {
+      const name = String(d?.Pengirim || '').trim();
+      if (name && name !== '-' && name.toLowerCase() !== 'null' && name.toLowerCase() !== 'undefined') {
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+    });
+
+    // 2. Count from master employees if department is Distribusi / Driver
+    try {
+      const masterEmployees = getTableData<any>('MD_Karyawan', []);
+      (masterEmployees || []).forEach((e: any) => {
+        const name = String(e?.Nama_Karyawan || '').trim();
+        const dept = String(e?.Departemen || '').toLowerCase();
+        const jab = String(e?.Jabatan || '').toLowerCase();
+        if (name && (dept === 'distribusi' || jab.includes('driver') || jab.includes('sopir'))) {
+          counts.set(name, (counts.get(name) || 0) + 2); // boost master driver
+        }
+      });
+    } catch {}
+
+    // Default fallback drivers if list is empty
+    const defaultDrivers = ['Tri Wahyudi', 'Agus Santoso', 'Sunardi', 'Bambang'];
+    defaultDrivers.forEach(d => {
+      if (!counts.has(d)) counts.set(d, 1);
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(entry => ({ name: entry[0], count: entry[1] }));
+  }, [distributions]);
+
   // Form State for Direct Distribution
   const [formData, setFormData] = useState({
     Tanggal: new Date().toISOString().slice(0, 10),
@@ -3173,15 +3210,93 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </>
                   )}
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Sopir / Pengirim</label>
-                  <input
-                    type="text"
-                    placeholder="Nama sopir/pengirim..."
-                    value={formData.Pengirim}
-                    onChange={e => setFormData({ ...formData, Pengirim: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none"
-                  />
+                <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700">Sopir / Pengirim</label>
+                    {frequentDrivers.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsDriverDropdownOpen(prev => !prev)}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                      >
+                        {isDriverDropdownOpen ? 'Tutup Pilihan' : 'Pilih Sopir Rutin ▼'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      list="drivers-list-datalist"
+                      placeholder="Ketik atau pilih nama sopir..."
+                      value={formData.Pengirim}
+                      onFocus={() => setIsDriverDropdownOpen(true)}
+                      onChange={e => {
+                        setFormData({ ...formData, Pengirim: e.target.value });
+                      }}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    <datalist id="drivers-list-datalist">
+                      {frequentDrivers.map(d => (
+                        <option key={d.name} value={d.name}>{d.name} ({d.count}x)</option>
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* Dropdown Menu Sopir Sering Digunakan */}
+                  {isDriverDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-20" 
+                        onClick={() => setIsDriverDropdownOpen(false)}
+                      />
+                      <div className="absolute z-30 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xl divide-y divide-slate-100 text-xs">
+                        <div className="p-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                          <span>Sopir yang Sering Digunakan</span>
+                          <span className="text-[9.5px] font-normal text-slate-400">Paling Sering</span>
+                        </div>
+                        {frequentDrivers.map(d => (
+                          <div
+                            key={d.name}
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, Pengirim: d.name }));
+                              setIsDriverDropdownOpen(false);
+                            }}
+                            className={`p-2.5 cursor-pointer transition flex items-center justify-between hover:bg-blue-50/80 ${
+                              formData.Pengirim === d.name ? 'bg-blue-50 font-bold text-blue-700' : 'text-slate-800'
+                            }`}
+                          >
+                            <span className="font-semibold">{d.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                              {d.count}x pengiriman
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Quick-pick pills (sering digunakan) */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400 font-medium">Sering:</span>
+                    {frequentDrivers.slice(0, 4).map(d => (
+                      <button
+                        key={d.name}
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, Pengirim: d.name }));
+                          setIsDriverDropdownOpen(false);
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded-md font-semibold transition cursor-pointer border ${
+                          formData.Pengirim === d.name
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                            : 'bg-slate-100 hover:bg-blue-50 text-slate-700 border-slate-200 hover:border-blue-200'
+                        }`}
+                        title={`Pilih ${d.name} (${d.count}x pengiriman)`}
+                      >
+                        {d.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -3422,11 +3537,34 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">Sopir / Pengirim</label>
                 <input
                   type="text"
+                  list="plan-drivers-list-datalist"
                   placeholder="Nama sopir/pengirim..."
                   value={planForm.Sopir}
                   onChange={e => setPlanForm({ ...planForm, Sopir: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800 text-xs"
                 />
+                <datalist id="plan-drivers-list-datalist">
+                  {frequentDrivers.map(d => (
+                    <option key={d.name} value={d.name}>{d.name} ({d.count}x)</option>
+                  ))}
+                </datalist>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-[10px] text-slate-400 font-medium">Sering:</span>
+                  {frequentDrivers.slice(0, 4).map(d => (
+                    <button
+                      key={d.name}
+                      type="button"
+                      onClick={() => setPlanForm(prev => ({ ...prev, Sopir: d.name }))}
+                      className={`text-[10px] px-2 py-0.5 rounded-md font-semibold transition cursor-pointer border ${
+                        planForm.Sopir === d.name
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-slate-100 hover:bg-blue-50 text-slate-700 border-slate-200 hover:border-blue-200'
+                      }`}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
