@@ -19,7 +19,7 @@ import {
 import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
-import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
+import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase, inferProductsFromTotalTagihan } from '../services/distributionService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -198,7 +198,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return map;
   }, [distributionItems]);
 
-  // Auto-sync & auto-repair galon serta auto-switch filterMonth jika ada data baru diimpor dari Excel
+  // Auto-sync & auto-repair jika ada data yang belum memiliki item produk atau galon belum sinkron
   useEffect(() => {
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
@@ -208,25 +208,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         localStorage.removeItem('airis_last_imported_dist_month');
       }
 
-      // Deteksi jika ada record distribusi yang memiliki data galon tapi belum masuk ke detail item
-      const hasUnsyncedGalon = distributions.some(d => {
+      // Deteksi jika ada record distribusi yang membutuhkan perbaikan:
+      // (1) Tagihan > 0 tapi seluruh produk 0 dan tidak ada di distItems
+      // (2) Galon tercatat tapi belum ada di detail item
+      const needsRepair = distributions.some(d => {
         const anyDist = d as any;
+        const totalTagihan = Number(anyDist.Total_Tagihan || 0);
         const gQty = Number(anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || anyDist.Galon || anyDist.galon || anyDist.GLN || anyDist['GLN 19 L'] || anyDist['Galon 19L'] || 0);
+        const totalUnits = Number(anyDist.C120 || 0) + Number(anyDist.C220 || 0) + Number(anyDist.B330 || 0) + Number(anyDist.B600 || 0) + gQty;
+        const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+        
+        if (totalTagihan > 0 && totalUnits === 0 && items.length === 0) return true;
         if (gQty > 0) {
-          const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
           const hasItem = items.some(it => 
             String(it.ID_Produk || '').toLowerCase() === 'g19' || 
             String(it.ID_Produk || '').toLowerCase().includes('gln') || 
             String(it.Nama_Produk || '').toLowerCase().includes('galon')
           );
-          return !hasItem;
+          if (!hasItem) return true;
         }
         return false;
       });
 
-      if (hasUnsyncedGalon) {
+      if (needsRepair) {
         const rep = sanitizeAndRepairDistributionDatabase();
-        if (rep.syncedItemsCount > 0) {
+        if (rep.syncedItemsCount > 0 || rep.fixedRecordsCount > 0) {
           onRefresh();
         }
       }
@@ -1056,11 +1062,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     } else {
       if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
         const direct = Number(anyDist[code]);
-        if (!isNaN(direct)) return direct;
+        if (!isNaN(direct) && direct > 0) return direct;
       }
       if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
         const direct = Number(anyDist[prod.ID_Produk]);
-        if (!isNaN(direct)) return direct;
+        if (!isNaN(direct) && direct > 0) return direct;
       }
     }
 
@@ -1081,6 +1087,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         String(i.Nama_Produk || '').toLowerCase().includes('galon')
       );
       if (foundGalonItem) return foundGalonItem.Qty;
+    }
+
+    // 3. Fallback on-the-fly inferensi cerdas jika kuantitas produk kosong tetapi Total_Tagihan > 0
+    if (Number(dist.Total_Tagihan) > 0) {
+      const inferred = inferProductsFromTotalTagihan(
+        Number(dist.Total_Tagihan), 
+        dist.Level_Pelanggan, 
+        dist.Metode_Kirim, 
+        dist.Nama_Pelanggan
+      );
+      const matchedInf = inferred.find(inf => inf.code === code || inf.id === prod.ID_Produk);
+      if (matchedInf) return matchedInf.qty;
     }
 
     return 0;
