@@ -23,7 +23,6 @@ interface StockViewProps {
   purchases: RawMaterialPurchase[];
   mutations: RawMaterialMutation[];
   onRefresh: () => void;
-  onOpenImport?: (module: 'bahan' | 'pembelian_bahan' | 'mutasi_bahan') => void;
 }
 
 // ==============================================================
@@ -179,8 +178,7 @@ export const StockView: React.FC<StockViewProps> = ({
   rawMaterials,
   purchases,
   mutations,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'laporan_stok' | 'bahan_penolong' | 'pembelian' | 'pemakaian'>('laporan_stok');
   const now = new Date();
@@ -684,16 +682,6 @@ export const StockView: React.FC<StockViewProps> = ({
             onChange={e => setFilterMonth(e.target.value)}
             className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
           />
-
-          {onOpenImport && (
-            <button
-              onClick={() => onOpenImport('bahan')}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 transition-colors"
-            >
-              <Upload size={14} />
-              <span>Import Excel</span>
-            </button>
-          )}
 
           <button
             onClick={handleOpenAddPurchase}

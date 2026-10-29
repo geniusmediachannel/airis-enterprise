@@ -21,7 +21,6 @@ interface HRDViewProps {
   kasbons: KasbonRecord[];
   payrollHistory: PayrollHistoryItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: ExcelTemplateType) => void;
 }
 
 const DEFAULT_PAYROLL_SETTINGS: PayrollRuleSettings = {
@@ -49,8 +48,7 @@ export const HRDView: React.FC<HRDViewProps> = ({
   overtimes,
   kasbons,
   payrollHistory,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'presensi' | 'lembur' | 'gaji' | 'kasbon' | 'histori'>('presensi');
   const now = new Date();
@@ -750,16 +748,6 @@ export const HRDView: React.FC<HRDViewProps> = ({
               <Settings size={14} className="text-slate-600" />
               <span className="hidden sm:inline">Ketentuan Gaji &amp; Slip</span>
             </button>
-
-            {onOpenImport && (
-              <button
-                onClick={() => onOpenImport('karyawan')}
-                className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-              >
-                <FileSpreadsheet size={14} />
-                <span>Import Karyawan</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -836,18 +824,6 @@ export const HRDView: React.FC<HRDViewProps> = ({
                   <CheckCheck size={14} />
                   <span>Isi Semua Hadir</span>
                 </button>
-
-                {onOpenImport && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenImport('presensi')}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Import data presensi dari file Excel"
-                  >
-                    <FileSpreadsheet size={14} />
-                    <span>Import Excel Presensi</span>
-                  </button>
-                )}
 
                 <button
                   type="button"
@@ -1087,18 +1063,6 @@ export const HRDView: React.FC<HRDViewProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {onOpenImport && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenImport('lembur')}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Import data lembur dari file Excel"
-                  >
-                    <FileSpreadsheet size={14} />
-                    <span>Import Excel Lembur</span>
-                  </button>
-                )}
-
                 <button
                   type="button"
                   onClick={() => exportDataToExcel(overtimeRows, 'Lembur', `AIRIS_Lembur_${filterMonth}`)}
@@ -1286,17 +1250,6 @@ export const HRDView: React.FC<HRDViewProps> = ({
                 <p className="text-xs text-slate-500">Seluruh data pinjaman kasbon dapat diedit atau dihapus secara langsung.</p>
               </div>
               <div className="flex items-center gap-2">
-                {onOpenImport && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenImport('kasbon')}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Import data pinjaman kasbon dari file Excel"
-                  >
-                    <FileSpreadsheet size={14} />
-                    <span>Import Excel Kasbon</span>
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={handleOpenAddKasbon}
@@ -1380,18 +1333,6 @@ export const HRDView: React.FC<HRDViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {onOpenImport && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenImport('histori_penggajian')}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Import data riwayat penggajian dari file Excel"
-                  >
-                    <FileSpreadsheet size={14} />
-                    <span>Import Excel Histori</span>
-                  </button>
-                )}
-
                 <button
                   type="button"
                   onClick={() => exportDataToExcel(payrollHistory, 'Histori_Gaji', 'AIRIS_Histori_Penggajian')}

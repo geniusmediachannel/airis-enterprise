@@ -27,7 +27,6 @@ interface ProductionViewProps {
   boms: BOMItem[];
   rawMaterials: RawMaterialItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: 'spk' | 'produksi') => void;
 }
 
 export const ProductionView: React.FC<ProductionViewProps> = ({
@@ -36,8 +35,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   products,
   boms,
   rawMaterials,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -659,16 +657,6 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
             onChange={e => setFilterMonth(e.target.value)}
             className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
           />
-
-          {onOpenImport && (
-            <button
-              onClick={() => onOpenImport('spk')}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 transition-colors"
-            >
-              <Upload size={14} />
-              <span>Import SPK</span>
-            </button>
-          )}
 
           <button
             onClick={() => handleOpenDirectProd()}

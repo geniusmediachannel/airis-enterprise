@@ -31,7 +31,6 @@ interface MasterDataViewProps {
   users: UserAccount[];
   specialPrices: SpecialPriceItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: ExcelTemplateType) => void;
 }
 
 export const MasterDataView: React.FC<MasterDataViewProps> = ({
@@ -43,8 +42,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   employees,
   users,
   specialPrices,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'produk' | 'pelanggan' | 'supplier' | 'bahan' | 'bom' | 'karyawan' | 'harga_khusus' | 'user' | 'histori_harga'>('produk');
   const [searchQuery, setSearchQuery] = useState('');
@@ -698,16 +696,6 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     });
   };
 
-  const getTemplateForTab = (): ExcelTemplateType => {
-    if (activeTab === 'produk') return 'produk';
-    if (activeTab === 'pelanggan') return 'pelanggan';
-    if (activeTab === 'supplier') return 'supplier';
-    if (activeTab === 'bahan') return 'bahan';
-    if (activeTab === 'bom') return 'bom';
-    if (activeTab === 'karyawan') return 'karyawan';
-    return 'produk';
-  };
-
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -743,17 +731,6 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
           >
             <FileDown size={16} />
           </button>
-
-          {onOpenImport && (
-            <button
-              onClick={() => onOpenImport(getTemplateForTab())}
-              className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-              title={`Import Excel ${activeTab}`}
-            >
-              <FileSpreadsheet size={14} />
-              <span className="hidden sm:inline">Import</span>
-            </button>
-          )}
 
           <button
             onClick={handleExportExcel}

@@ -32,7 +32,6 @@ interface FinanceViewProps {
   customers?: CustomerItem[];
   purchases?: RawMaterialPurchase[];
   onRefresh: () => void;
-  onOpenImport?: (module: ExcelTemplateType) => void;
 }
 
 export const FinanceView: React.FC<FinanceViewProps> = ({
@@ -45,8 +44,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   distributionItems = [],
   customers = [],
   purchases = [],
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'neraca' | 'labarugi' | 'drafts' | 'jurnal' | 'coa' | 'aset' | 'piutang'>('neraca');
 
@@ -1404,13 +1402,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     });
   };
 
-  const getFinanceImportModule = (): ExcelTemplateType => {
-    if (activeTab === 'jurnal') return 'jurnal';
-    if (activeTab === 'coa') return 'coa_saldo';
-    if (activeTab === 'aset') return 'aset';
-    return 'jurnal';
-  };
-
   return (
     <div className="space-y-5 w-full max-w-full min-w-0 overflow-x-hidden">
       {/* Toast Notification */}
@@ -1471,17 +1462,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             >
               <FileDown size={16} />
             </button>
-
-            {onOpenImport && (
-              <button
-                onClick={() => onOpenImport(getFinanceImportModule())}
-                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-                title="Import Data Excel untuk Keuangan"
-              >
-                <FileSpreadsheet size={14} />
-                <span>Import Excel</span>
-              </button>
-            )}
 
             {/* Tombol Sinkronisasi Otomatis Semua Modul ke Keuangan */}
             <button

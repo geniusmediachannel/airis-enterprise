@@ -17,7 +17,6 @@ interface QCViewProps {
   products: ProductItem[];
   productions: ProductionItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: ExcelTemplateType) => void;
 }
 
 export const QCView: React.FC<QCViewProps> = ({
@@ -25,8 +24,7 @@ export const QCView: React.FC<QCViewProps> = ({
   qcDetails,
   products,
   productions,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -537,17 +535,6 @@ export const QCView: React.FC<QCViewProps> = ({
             onChange={e => setFilterMonth(e.target.value)}
             className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
           />
-
-          {onOpenImport && (
-            <button
-              onClick={() => onOpenImport('qc')}
-              className="px-3 py-1.5 text-xs font-semibold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-              title="Import Data QC"
-            >
-              <FileSpreadsheet size={14} />
-              <span>Import Excel</span>
-            </button>
-          )}
 
           <button
             onClick={handleOpenAddQC}

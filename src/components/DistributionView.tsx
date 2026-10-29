@@ -12,14 +12,14 @@ import {
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
 import { getTableData, setTableData } from '../services/dbAdapter';
-import { exportDataToExcel, downloadExcelTemplate } from '../services/excelService';
+import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
 } from '../services/pdfService';
 import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
-import { importDistributionExcelFile, sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
+import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -28,7 +28,6 @@ interface DistributionViewProps {
   customers: CustomerItem[];
   specialPrices: SpecialPriceItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: 'distribusi') => void;
 }
 
 // Month matcher supporting ISO (2026-10-01), 2-digit years (01-Okt-26, 01/10/26), and "all" filter
@@ -148,8 +147,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   products,
   customers,
   specialPrices,
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -399,38 +397,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     const numStr = String(seqNumber).padStart(3, '0');
     return `${numStr}-INV-${romanMonth}-${year2Digits}`;
-  };
-
-  // Direct 1-Click Excel Import Handler (Tanpa Pop-up & Langsung Masuk ke Sistem)
-  const [isDirectImporting, setIsDirectImporting] = useState(false);
-  const handleDirectExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsDirectImporting(true);
-    showToast('Membaca Excel Distribusi', `Sedang membaca & memproses file ${file.name}...`, 'info');
-
-    try {
-      const res = await importDistributionExcelFile(file);
-      setIsDirectImporting(false);
-      e.target.value = '';
-
-      if (res.success) {
-        setFilterMonth('all');
-        onRefresh();
-        showToast(
-          'Import Distribusi Sukses!', 
-          `Berhasil memasukkan ${res.totalRows} data pengiriman ke database sistem. Seluruh data kini tampil di tabel.`, 
-          'success'
-        );
-      } else {
-        showToast('Gagal Import Excel', res.error || 'Terjadi kesalahan format data.', 'error');
-      }
-    } catch (err: any) {
-      setIsDirectImporting(false);
-      e.target.value = '';
-      showToast('Error Import', err?.message || 'Gagal memproses file Excel.', 'error');
-    }
   };
 
   // Form State for Direct Distribution
@@ -1572,51 +1538,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             </button>
           </div>
 
-          {/* Tombol Unduh Template Resmi & Import Excel */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                downloadExcelTemplate('distribusi');
-                showToast('Template Berhasil Diunduh', 'File Template_AIRIS_Distribusi.xlsx siap diisi dengan data pengiriman Anda.', 'success');
-              }}
-              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-              title="Unduh file template resmi Excel distribusi AMDK (.xlsx) untuk diisi lalu diimpor"
-            >
-              <Download size={14} className="text-slate-500" />
-              <span>Template Excel</span>
-            </button>
-
-            <label
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs ${
-                isDirectImporting
-                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                  : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
-              }`}
-              title="Pilih file Excel distribusi (.xlsx) untuk langsung diimpor ke sistem tanpa pop-up"
-            >
-              <Upload size={14} className={isDirectImporting ? "animate-bounce" : ""} />
-              <span>{isDirectImporting ? 'Mengimpor Data...' : 'Import Excel'}</span>
-              <input
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                disabled={isDirectImporting}
-                onChange={handleDirectExcelUpload}
-                className="hidden"
-              />
-            </label>
-            {onOpenImport && (
-              <button
-                type="button"
-                onClick={() => onOpenImport('distribusi')}
-                className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-300 rounded-lg transition cursor-pointer"
-                title="Buka Pusat Import Excel Lanjutan (Multi-Sheet / Pratinjau Kolom)"
-              >
-                ⚙️
-              </button>
-            )}
-          </div>
-
           <button
             onClick={handleOpenAddDist}
             className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -1842,7 +1763,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <tr>
                   <td colSpan={7 + products.length} className="p-8 text-center text-slate-400">
                     {filterMonth === 'all' ? (
-                      'Belum ada data pengiriman distribusi di database. Silakan klik tombol "Import Excel" di atas untuk memasukkan data.'
+                      'Belum ada data pengiriman distribusi di database. Anda dapat mengimpor data melalui Pengaturan Sistem > Pusat Import & Migrasi Data Excel.'
                     ) : distributions.length > 0 ? (
                       <div className="space-y-2">
                         <p>Belum ada data pengiriman distribusi untuk bulan {formatMonthName(filterMonth)} ({distributions.length} data tersimpan di periode lain).</p>

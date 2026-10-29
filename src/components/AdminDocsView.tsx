@@ -26,7 +26,6 @@ interface AdminDocsViewProps {
   distributionItems?: DistributionProductDetail[];
   products?: ProductItem[];
   onRefresh: () => void;
-  onOpenImport?: (module: ExcelTemplateType) => void;
 }
 
 export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
@@ -36,8 +35,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   distributions = [],
   distributionItems = [],
   products = [],
-  onRefresh,
-  onOpenImport
+  onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'surat' | 'po' | 'invoice_custom'>('surat');
 

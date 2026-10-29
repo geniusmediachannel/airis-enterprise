@@ -486,19 +486,6 @@ export default function App() {
     showToast('Sampai Jumpa', 'Anda telah berhasil keluar dari sistem.', 'info');
   };
 
-  const handleOpenImportForModule = (moduleKey: ExcelTemplateType) => {
-    if (!isWritable) {
-      showToast(
-        'Mode Lihat Saja',
-        `Hak akses ${currentUser?.Role} hanya diizinkan melihat data pada menu ini. Import data dikhususkan untuk ${getAuthorizedRolesForModule(currentView)}.`,
-        'warning'
-      );
-      return;
-    }
-    setExcelImportDefaultModule(moduleKey);
-    setShowExcelModal(true);
-  };
-
   // Interceptor klik cerdas: Mencegah aksi modifikasi data jika user hanya memiliki hak lihat saja
   const handleReadOnlyClickCapture = (e: React.MouseEvent) => {
     if (isWritable || currentView === 'dashboard') return;
@@ -720,7 +707,6 @@ export default function App() {
                 users={users}
                 specialPrices={specialPrices}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -734,7 +720,6 @@ export default function App() {
                 boms={boms}
                 rawMaterials={rawMaterials}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -748,7 +733,6 @@ export default function App() {
                 customers={customers}
                 specialPrices={specialPrices}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -764,7 +748,6 @@ export default function App() {
                 purchases={purchases}
                 mutations={mutations}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -777,7 +760,6 @@ export default function App() {
                 products={products}
                 productions={productions}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -795,7 +777,6 @@ export default function App() {
                 customers={customers}
                 purchases={purchases}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -809,7 +790,6 @@ export default function App() {
                 kasbons={kasbons}
                 payrollHistory={payrollHistory}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}
@@ -824,7 +804,6 @@ export default function App() {
                 distributionItems={distributionItems}
                 products={products}
                 onRefresh={reloadData}
-                onOpenImport={handleOpenImportForModule}
               />
             </ErrorBoundary>
           )}

@@ -1198,26 +1198,43 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
                 {/* Unduh Template Cepat */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                  <span className="font-bold text-slate-800 block text-xs">
-                    Unduh Contoh Template Excel Standar:
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 block text-xs">
+                      Unduh Contoh Template Excel Standar Seluruh Modul:
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      20 Modul Tersedia (.xlsx)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
                       { id: 'produk', label: 'Master Produk' },
                       { id: 'pelanggan', label: 'Master Pelanggan' },
                       { id: 'supplier', label: 'Master Supplier' },
+                      { id: 'bahan', label: 'Master Bahan Baku' },
+                      { id: 'bom', label: 'Master Resep BOM' },
+                      { id: 'karyawan', label: 'Master Karyawan' },
                       { id: 'spk', label: 'Rencana SPK' },
                       { id: 'produksi', label: 'Realisasi Produksi' },
                       { id: 'distribusi', label: 'Distribusi / Kirim' },
+                      { id: 'qc', label: 'Uji Mutu Laboratorium' },
+                      { id: 'pembelian_bahan', label: 'Pembelian Bahan' },
+                      { id: 'mutasi_bahan', label: 'Mutasi Stok Bahan' },
                       { id: 'presensi', label: 'Presensi Karyawan' },
+                      { id: 'lembur', label: 'Lembur Karyawan' },
                       { id: 'kasbon', label: 'Pinjaman Kasbon' },
-                      { id: 'coa', label: 'Bagan Akun (COA)' },
+                      { id: 'histori_penggajian', label: 'Histori Gaji' },
+                      { id: 'coa_saldo', label: 'Bagan Akun (COA)' },
+                      { id: 'jurnal', label: 'Jurnal Umum' },
+                      { id: 'aset', label: 'Aset Tetap Pabrik' },
+                      { id: 'po', label: 'Purchase Order (PO)' },
                     ].map(tpl => (
                       <button
                         key={tpl.id}
                         type="button"
                         onClick={() => downloadExcelTemplate(tpl.id as ExcelTemplateType)}
                         className="p-2 bg-white hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200 rounded-lg text-left text-[11px] font-semibold text-slate-700 hover:text-emerald-800 transition flex items-center justify-between cursor-pointer"
+                        title={`Download template Excel untuk ${tpl.label}`}
                       >
                         <span className="truncate">{tpl.label}</span>
                         <Download size={12} className="text-slate-400 shrink-0 ml-1" />
