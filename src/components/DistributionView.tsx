@@ -4,7 +4,8 @@ import {
   MapPin, User, Calendar, Check, X, Eye, FileCheck,
   Edit2, Trash2, Upload, FileDown, CheckCircle2,
   Clock, ArrowRight, BarChart2, PackageCheck, Send, FolderOpen,
-  Settings, Image, RotateCcw, TrendingUp, Sparkles, Search
+  Settings, Image, RotateCcw, TrendingUp, Sparkles, Search,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
@@ -141,6 +142,63 @@ const parseDateYearAndMonth = (dateStr?: string | number): { year: string; month
   return null;
 };
 
+// Robust timestamp extractor for sorting dates in diverse formats (ISO, DD/MM/YYYY, DD-MMM-YY, etc)
+const toComparableDate = (dateStr?: string | number): number => {
+  if (!dateStr && dateStr !== 0) return 0;
+  // Handle Excel numeric date serials (e.g. 45590)
+  if (typeof dateStr === 'number' || (!isNaN(Number(dateStr)) && Number(dateStr) > 30000 && Number(dateStr) < 60000)) {
+    const serial = Number(dateStr);
+    return (serial - 25569) * 86400 * 1000;
+  }
+  const str = String(dateStr).trim();
+  if (!str) return 0;
+
+  // 1. Pattern: YYYY-MM-DD or YYYY/MM/DD
+  const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymd) {
+    return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10)).getTime();
+  }
+  // 2. Pattern: DD/MM/YYYY or DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmy) {
+    return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10)).getTime();
+  }
+  // 3. Pattern: DD/MM/YY or DD-MM-YY (2-digit year)
+  const dmyShort = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (dmyShort) {
+    const yr = 2000 + parseInt(dmyShort[3], 10);
+    return new Date(yr, parseInt(dmyShort[2], 10) - 1, parseInt(dmyShort[1], 10)).getTime();
+  }
+  // 4. Pattern: YY-MM-DD
+  const ymdShort = str.match(/^(\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdShort) {
+    const yr = 2000 + parseInt(ymdShort[1], 10);
+    return new Date(yr, parseInt(ymdShort[2], 10) - 1, parseInt(ymdShort[3], 10)).getTime();
+  }
+  // 5. Pattern with month names (Jan-Des / Jan-Dec)
+  const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
+  const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const lower = str.toLowerCase();
+  for (let i = 0; i < 12; i++) {
+    if (lower.includes(months[i]) || lower.includes(monthsEn[i])) {
+      const yrMatch = str.match(/(20\d{2})/);
+      const dayMatch = str.match(/^(\d{1,2})/);
+      const yr = yrMatch ? parseInt(yrMatch[1], 10) : 2026;
+      const day = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+      return new Date(yr, i, day).getTime();
+    }
+  }
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+};
+
+// Robust helper to extract numeric sequence from Surat Jalan (e.g. "001/X/26" -> 1, "224/X/26" -> 224)
+const extractSjNumber = (sjStr?: string): number => {
+  if (!sjStr) return 0;
+  const match = String(sjStr).match(/^(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+};
+
 export const DistributionView: React.FC<DistributionViewProps> = ({
   distributions,
   distributionItems,
@@ -165,6 +223,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   });
 
   const [searchQueryDist, setSearchQueryDist] = useState<string>('');
+
+  // Sort order filter: 'asc' (Terlama: Tanggal 1 s.d. 31) vs 'desc' (Terbaru: Tanggal 31 s.d. 1)
+  const [dateSortOrder, setDateSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Helper konversi nama bulan (misal "2026-10" -> "Oktober 2026")
   const formatMonthName = (mStr: string): string => {
@@ -196,7 +257,26 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return map;
   }, [distributionItems]);
 
-  // Auto-sync & auto-repair jika ada data yang belum memiliki item produk atau galon belum sinkron
+  // Pre-index distributionItems by No Surat Jalan (O(1) hash lookup anti-lag)
+  const distItemsBySjMap = useMemo(() => {
+    const map = new Map<string, DistributionProductDetail[]>();
+    (distributionItems || []).forEach(it => {
+      if (!it || !it.ID_Detail) return;
+      const parts = String(it.ID_Detail).split('-');
+      if (parts.length >= 3) {
+        const sjKey = parts[2].trim().toLowerCase();
+        let arr = map.get(sjKey);
+        if (!arr) {
+          arr = [];
+          map.set(sjKey, arr);
+        }
+        arr.push(it);
+      }
+    });
+    return map;
+  }, [distributionItems]);
+
+  // Restore filter month from last imported batch
   useEffect(() => {
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
@@ -204,44 +284,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         if (lastImported === 'all') {
           setFilterMonth('all');
         } else {
-          const hasData = distributions.some(d => isMatchMonth(d.Tanggal, lastImported));
+          const hasData = (distributions || []).some(d => isMatchMonth(d.Tanggal, lastImported));
           setFilterMonth(hasData ? lastImported : 'all');
         }
         localStorage.removeItem('airis_last_imported_dist_month');
       }
-
-      // Deteksi dua arah:
-      // 1. Record punya galon tapi detail item belum punya
-      // 2. Detail item punya galon tapi properti direct G19 kosong (karena baru ditarik dari Supabase)
-      // 3. Kasus bocor lama: B600 terisi angka galon padahal di item adalah galon
-      const hasUnsyncedGalon = distributions.some(d => {
-        const anyDist = d as any;
-        const gQty = Number(anyDist.G19 || anyDist.g19 || anyDist.GLN19 || anyDist.gln19 || anyDist.Galon || anyDist.galon || anyDist.GLN || anyDist['GLN 19 L'] || anyDist['Galon 19L'] || 0);
-        const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
-        const hasGalonInItems = items.some(it => 
-          String(it.ID_Produk || '').toLowerCase() === 'g19' || 
-          String(it.ID_Produk || '').toLowerCase().includes('gln') || 
-          String(it.Nama_Produk || '').toLowerCase().includes('galon')
-        );
-        if (gQty > 0 && !hasGalonInItems) return true;
-        if (hasGalonInItems && gQty === 0) return true;
-        if (hasGalonInItems && Number(anyDist.B600 || 0) > 0 && gQty === 0) return true;
-        return false;
-      });
-
-      if (hasUnsyncedGalon) {
-        const rep = sanitizeAndRepairDistributionDatabase();
-        if (rep.syncedItemsCount > 0 || rep.fixedRecordsCount > 0) {
-          onRefresh();
-        }
-      }
     } catch {
       // ignore
     }
-  }, [distributions, distItemsMap, onRefresh]);
+  }, [distributions]);
 
-  // Delivery Plans (Rencana Distribusi / List Pesanan)
-  const deliveryPlans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+  // Delivery Plans (Rencana Distribusi / List Pesanan) - Memoized anti-lag
+  const deliveryPlans = useMemo(() => getTableData<DeliveryPlanItem>('Rencana_Distribusi', []), [distributions]);
 
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
@@ -287,10 +341,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     bankRekening: 'BSI 1607134444 (BMT Syech Hasyim Asyari)'
   };
 
-  const storedDocSettings = getTableData<DocumentTemplateSettings>('Pengaturan_Dokumen', [defaultDocSettings])[0] || defaultDocSettings;
-  const [docSettings, setDocSettings] = useState<DocumentTemplateSettings>(storedDocSettings);
+  const [docSettings, setDocSettings] = useState<DocumentTemplateSettings>(() => {
+    return getTableData<DocumentTemplateSettings>('Pengaturan_Dokumen', [defaultDocSettings])[0] || defaultDocSettings;
+  });
   const [showDocSettingsModal, setShowDocSettingsModal] = useState(false);
-  const [tempDocSettings, setTempDocSettings] = useState<DocumentTemplateSettings>(storedDocSettings);
+  const [tempDocSettings, setTempDocSettings] = useState<DocumentTemplateSettings>(() => {
+    return getTableData<DocumentTemplateSettings>('Pengaturan_Dokumen', [defaultDocSettings])[0] || defaultDocSettings;
+  });
 
   const handleOpenDocSettings = () => {
     setTempDocSettings({ ...docSettings });
@@ -1059,25 +1116,29 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     }
 
-    // 3. Fallback ke detail item langsung dari localStorage
-    const globalDetails = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-    const directDetail = globalDetails.find(d => 
-      (d.ID_Distribusi === dist.ID_Distribusi || (dist.No_Surat_Jalan && dist.No_Surat_Jalan !== '-' && d.ID_Detail?.includes(dist.No_Surat_Jalan))) && (
-        isGalon ? (
-          d.ID_Produk === prod.ID_Produk ||
-          String(d.ID_Produk || '').toUpperCase() === 'ASH-GLN19L' ||
-          String(d.ID_Produk || '').toLowerCase() === 'g19' || 
-          String(d.ID_Produk || '').toLowerCase().includes('gln') || 
-          String(d.Nama_Produk || '').toLowerCase().includes('galon')
-        ) : (
-          d.ID_Produk === prod.ID_Produk ||
-          String(d.ID_Produk || '').toLowerCase() === code.toLowerCase() ||
-          (d.Nama_Produk && prod.Nama_Produk && d.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
-        )
-      )
-    );
-    if (directDetail && Number(directDetail.Qty) > 0) {
-      return Number(directDetail.Qty);
+    // 3. Fallback ke relasi surat jalan dari Map (O(1) memory lookup tanpa parsing localStorage)
+    if (dist.No_Surat_Jalan && dist.No_Surat_Jalan !== '-') {
+      const sjKey = String(dist.No_Surat_Jalan).trim().toLowerCase();
+      const sjItems = distItemsBySjMap.get(sjKey) || [];
+      if (sjItems.length > 0) {
+        if (isGalon) {
+          const found = sjItems.find(i => 
+            i.ID_Produk === prod.ID_Produk ||
+            String(i.ID_Produk || '').toUpperCase() === 'ASH-GLN19L' ||
+            String(i.ID_Produk || '').toLowerCase() === 'g19' || 
+            String(i.ID_Produk || '').toLowerCase().includes('gln') || 
+            String(i.Nama_Produk || '').toLowerCase().includes('galon')
+          );
+          if (found && Number(found.Qty) > 0) return Number(found.Qty);
+        } else {
+          const found = sjItems.find(i => 
+            i.ID_Produk === prod.ID_Produk ||
+            String(i.ID_Produk || '').toLowerCase() === code.toLowerCase() ||
+            (i.Nama_Produk && prod.Nama_Produk && i.Nama_Produk.toLowerCase().includes(prod.Nama_Produk.toLowerCase()))
+          );
+          if (found && Number(found.Qty) > 0) return Number(found.Qty);
+        }
+      }
     }
 
     return 0;
@@ -1197,9 +1258,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return 0;
   };
 
-  // Filtered Distributions using month matcher and search query (memoized)
+  // Filtered Distributions using month matcher, search query, and deterministic sorting
   const filteredDistributions = useMemo(() => {
-    let list = distributions.filter(d => isMatchMonth(d.Tanggal, filterMonth));
+    let list = (distributions || []).filter(d => isMatchMonth(d.Tanggal, filterMonth));
     if (searchQueryDist.trim()) {
       const q = searchQueryDist.toLowerCase();
       list = list.filter(d => 
@@ -1213,8 +1274,36 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         (d.Keterangan && d.Keterangan.toLowerCase().includes(q))
       );
     }
-    return list;
-  }, [distributions, filterMonth, searchQueryDist]);
+
+    // Stable, deterministic sorting according to Tanggal, No_Surat_Jalan, and ID (anti-geser)
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      // 1. Primary: Tanggal
+      const timeA = toComparableDate(a.Tanggal);
+      const timeB = toComparableDate(b.Tanggal);
+      if (timeA !== timeB) {
+        return dateSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      }
+
+      // 2. Secondary: No_Surat_Jalan
+      const sjNumA = extractSjNumber(a.No_Surat_Jalan);
+      const sjNumB = extractSjNumber(b.No_Surat_Jalan);
+      if (sjNumA !== sjNumB && sjNumA > 0 && sjNumB > 0) {
+        return dateSortOrder === 'desc' ? sjNumB - sjNumA : sjNumA - sjNumB;
+      }
+      const sjStrA = String(a.No_Surat_Jalan || '');
+      const sjStrB = String(b.No_Surat_Jalan || '');
+      const sjComp = sjStrA.localeCompare(sjStrB, undefined, { numeric: true, sensitivity: 'base' });
+      if (sjComp !== 0) {
+        return dateSortOrder === 'desc' ? -sjComp : sjComp;
+      }
+
+      // 3. Fallback tie-breaker: ID_Distribusi (100% stabil, mencegah baris bergeser sendiri)
+      return String(a.ID_Distribusi || '').localeCompare(String(b.ID_Distribusi || ''));
+    });
+
+    return sorted;
+  }, [distributions, filterMonth, searchQueryDist, dateSortOrder]);
 
   // Pre-calculate grand totals for footer in a single O(N) pass
   const tableTotals = useMemo(() => {
@@ -1746,7 +1835,38 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sort Toggle Buttons */}
+            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 px-1 hidden sm:inline">Urut Tanggal:</span>
+              <button
+                type="button"
+                onClick={() => setDateSortOrder('asc')}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  dateSortOrder === 'asc'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Urutkan dari tanggal & surat jalan terlama ke terbaru (1 s.d. 31)"
+              >
+                <ArrowUp size={12} />
+                <span>Terlama</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateSortOrder('desc')}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  dateSortOrder === 'desc'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Urutkan dari tanggal & surat jalan terbaru ke terlama (31 s.d. 1)"
+              >
+                <ArrowDown size={12} />
+                <span>Terbaru</span>
+              </button>
+            </div>
+
             {searchQueryDist && (
               <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
                 Menemukan {filteredDistributions.length} dari {distributions.length} transaksi
@@ -1771,7 +1891,22 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               <tr className="border-b border-slate-200 text-slate-800 font-bold bg-white">
                 <th rowSpan={2} className="p-3 text-center w-12 border-r border-slate-200">No</th>
                 <th rowSpan={2} className="p-3 min-w-[190px] border-r border-slate-200">Nama & Tipe</th>
-                <th rowSpan={2} className="p-3 text-center min-w-[105px] border-r border-slate-200">Tanggal</th>
+                <th 
+                  rowSpan={2} 
+                  onClick={() => setDateSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="p-3 text-center min-w-[115px] border-r border-slate-200 cursor-pointer hover:bg-blue-50/80 transition-colors select-none group"
+                  title="Klik untuk mengubah urutan tanggal & surat jalan (Terlama / Terbaru)"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Tanggal</span>
+                    <span className="p-0.5 rounded bg-slate-100 group-hover:bg-blue-200 text-blue-700 transition">
+                      {dateSortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-normal text-slate-500 block mt-0.5">
+                    {dateSortOrder === 'asc' ? 'Terlama ➔ Baru' : 'Terbaru ➔ Lama'}
+                  </span>
+                </th>
                 <th rowSpan={2} className="p-3 text-center min-w-[90px] border-r border-slate-200">No S.J.</th>
                 <th rowSpan={2} className="p-3 min-w-[130px] border-r border-slate-200">Tujuan</th>
                 {/* Group Header for PRODUK / QTY - Dynamic columns according to Master Produk */}

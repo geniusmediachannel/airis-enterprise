@@ -1181,35 +1181,6 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                   </button>
                 </div>
 
-                {/* Card Pintasan Khusus: Perbaiki & Sinkronkan Data Galon ke Supabase */}
-                <div className="p-4 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-cyan-50/90 border border-blue-200 rounded-xl space-y-2.5 shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <Sparkles size={16} className="text-blue-600" />
-                        <span className="font-extrabold text-xs text-blue-950">
-                          Perbaiki &amp; Sinkronkan Data Galon ke Supabase Cloud
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                          Solusi 1-Klik Galon
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 max-w-xl leading-relaxed">
-                        Jika data galon yang diimpor dari Excel belum tampil di kolom G19 atau belum tersimpan di Supabase Cloud, klik tombol ini untuk otomatis menata kuantitas galon, membersihkan anomali kolom B600, dan mengunggahnya ke Cloud Supabase.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isRepairingDist}
-                      onClick={handleRepairDistributionData}
-                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold text-xs flex items-center gap-2 shrink-0 shadow-sm cursor-pointer transition disabled:opacity-50"
-                    >
-                      <Sparkles size={14} className={isRepairingDist ? "animate-spin" : ""} />
-                      <span>{isRepairingDist ? 'Sedang Memproses...' : 'Sinkronkan & Bersihkan Data Galon'}</span>
-                    </button>
-                  </div>
-                </div>
-
                 {/* Cadangan Lengkap Seluruh Database Excel Multi-Tab */}
                 <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
                   <div className="flex items-center justify-between">
