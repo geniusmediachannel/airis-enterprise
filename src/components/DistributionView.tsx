@@ -291,61 +291,84 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         localStorage.removeItem('airis_last_imported_dist_month');
       }
 
-      // Auto-reconcile: Pulihkan item galon jika ada transaksi pesanan galon murni (semua dus = 0 & tagihan > 0)
+      // Pembersihan otomatis: Hapus data Galon palsu yang sempat dibuat oleh tebakan formula tagihan lama
       const allDists = getTableData<DistributionItem>('Distribusi', []);
       const allItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-      const existingItemParentIds = new Set(allItems.map(it => String(it.ID_Distribusi).trim()));
-      const itemsToAdd: DistributionProductDetail[] = [];
-      let hasHealedDist = false;
 
-      const updatedDists = allDists.map(d => {
+      const itemsByDistId = new Map<string, DistributionProductDetail[]>();
+      allItems.forEach(it => {
+        if (!it || !it.ID_Distribusi) return;
+        const pid = String(it.ID_Distribusi).trim();
+        let arr = itemsByDistId.get(pid);
+        if (!arr) { arr = []; itemsByDistId.set(pid, arr); }
+        arr.push(it);
+      });
+
+      let distModified = false;
+      const cleanedDists = allDists.map(d => {
         const anyD = d as any;
+        const distId = String(d.ID_Distribusi || '').trim();
+        const relItems = itemsByDistId.get(distId) || [];
+        const dusCountFromItems = relItems.filter(it => {
+          const pId = String(it.ID_Produk || '').toUpperCase();
+          const pName = String(it.Nama_Produk || '').toLowerCase();
+          return !pId.includes('GLN') && !pId.includes('G19') && !pName.includes('galon') && Number(it.Qty) > 0;
+        }).length;
         const totalDus = (Number(anyD.C120) || 0) + (Number(anyD.C220) || 0) + (Number(anyD.B330) || 0) + (Number(anyD.B600) || 0);
         const currentGalon = Number(anyD.G19 || anyD.g19 || anyD.Galon || anyD.galon || anyD.GLN19 || anyD['ASH-GLN19L'] || 0);
         const tagihan = Number(d.Total_Tagihan || anyD.Tagihan || 0);
 
-        if (totalDus === 0 && currentGalon === 0 && tagihan > 0) {
-          let derived = 0;
-          if (tagihan % 12000 === 0) derived = Math.round(tagihan / 12000);
-          else if (tagihan % 9000 === 0) derived = Math.round(tagihan / 9000);
-          else if (tagihan % 10000 === 0) derived = Math.round(tagihan / 10000);
-          else if (tagihan % 15000 === 0) derived = Math.round(tagihan / 15000);
-          else if (tagihan >= 9000) derived = Math.round(tagihan / 12000);
-
-          if (derived > 0) {
-            hasHealedDist = true;
-            anyD.G19 = derived;
-            anyD.g19 = derived;
-            anyD.Galon = derived;
-            anyD.galon = derived;
-            anyD.GLN19 = derived;
-            anyD['ASH-GLN19L'] = derived;
-
-            if (!existingItemParentIds.has(String(d.ID_Distribusi).trim())) {
-              itemsToAdd.push({
-                ID_Detail: `${d.ID_Distribusi}-G19`,
-                ID_Distribusi: d.ID_Distribusi,
-                Nama_Pelanggan: d.Nama_Pelanggan,
-                Tanggal: d.Tanggal,
-                Level_Pelanggan: d.Level_Pelanggan || 'Distributor',
-                ID_Produk: 'ASH-GLN19L',
-                Nama_Produk: 'As-Shofaa Galon 19L',
-                Qty: derived,
-                Harga_Satuan: Math.round(tagihan / derived),
-                Subtotal: tagihan,
-                Satuan: 'Galon'
-              });
-            }
+        if (currentGalon > 0 && (totalDus > 0 || dusCountFromItems > 0)) {
+          if (
+            currentGalon === Math.round(tagihan / 12000) ||
+            currentGalon === Math.round(tagihan / 10000) ||
+            currentGalon === Math.round(tagihan / 9000) ||
+            currentGalon === Math.round(tagihan / 15000) ||
+            currentGalon === Math.floor(tagihan / 12000) ||
+            currentGalon === Math.ceil(tagihan / 12000)
+          ) {
+            anyD.G19 = 0;
+            anyD.g19 = 0;
+            anyD.Galon = 0;
+            anyD.galon = 0;
+            anyD.GLN19 = 0;
+            anyD['ASH-GLN19L'] = 0;
+            distModified = true;
           }
         }
         return d;
       });
 
-      if (hasHealedDist) {
-        setTableData('Distribusi', updatedDists);
-        if (itemsToAdd.length > 0) {
-          setTableData('Distribusi_Item', [...allItems, ...itemsToAdd]);
+      const cleanedItems = allItems.filter(it => {
+        if (!it) return false;
+        const pId = String(it.ID_Produk || '').toUpperCase();
+        const pName = String(it.Nama_Produk || '').toLowerCase();
+        const isGalon = pId === 'ASH-GLN19L' || pId.includes('G19') || pId.includes('GLN') || pName.includes('galon');
+        if (!isGalon) return true;
+
+        const parent = cleanedDists.find(d => String(d.ID_Distribusi).trim() === String(it.ID_Distribusi).trim());
+        if (parent) {
+          const anyP = parent as any;
+          const totalDus = (Number(anyP.C120) || 0) + (Number(anyP.C220) || 0) + (Number(anyP.B330) || 0) + (Number(anyP.B600) || 0);
+          const g = Number(anyP.G19 || anyP.Galon || 0);
+          const tagihan = Number(parent.Total_Tagihan || anyP.Tagihan || 0);
+          const itQty = Number(it.Qty || 0);
+          if (totalDus > 0 && g === 0) return false;
+          if (totalDus > 0 && (
+            itQty === Math.round(tagihan / 12000) ||
+            itQty === Math.round(tagihan / 10000) ||
+            itQty === Math.round(tagihan / 9000) ||
+            itQty === Math.round(tagihan / 15000)
+          )) return false;
         }
+        return true;
+      });
+
+      if (distModified) {
+        setTableData('Distribusi', cleanedDists, { skipCloudSync: true });
+      }
+      if (cleanedItems.length !== allItems.length) {
+        setTableData('Distribusi_Item', cleanedItems, { skipCloudSync: true });
       }
     } catch {
       // ignore
@@ -1306,17 +1329,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       for (const cand of galonCandidates) {
         if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
           const direct = Number(anyDist[cand]);
-          if (!isNaN(direct) && direct > 0) return direct;
+          if (!isNaN(direct) && direct >= 0) return direct;
         }
       }
     } else {
       if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
         const direct = Number(anyDist[code]);
-        if (!isNaN(direct) && direct > 0) return direct;
+        if (!isNaN(direct) && direct >= 0) return direct;
       }
       if (anyDist[prod.ID_Produk] !== undefined && anyDist[prod.ID_Produk] !== null && anyDist[prod.ID_Produk] !== '') {
         const direct = Number(anyDist[prod.ID_Produk]);
-        if (!isNaN(direct) && direct > 0) return direct;
+        if (!isNaN(direct) && direct >= 0) return direct;
       }
     }
 
@@ -1367,24 +1390,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     }
 
-    // 4. Ultra-resilient Galon Fallback: Jika transaksi memiliki Total_Tagihan positif tetapi seluruh produk dus (C120, C220, B330, B600) bernilai 0:
-    if (isGalon) {
-      const c120 = Number(anyDist.C120 || 0);
-      const c220 = Number(anyDist.C220 || 0);
-      const b330 = Number(anyDist.B330 || 0);
-      const b600 = Number(anyDist.B600 || 0);
-      if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0) {
-        const tagihan = Number(dist.Total_Tagihan || anyDist.Tagihan || 0);
-        if (tagihan > 0) {
-          if (tagihan % 12000 === 0) return Math.round(tagihan / 12000);
-          if (tagihan % 9000 === 0) return Math.round(tagihan / 9000);
-          if (tagihan % 10000 === 0) return Math.round(tagihan / 10000);
-          if (tagihan % 15000 === 0) return Math.round(tagihan / 15000);
-          if (tagihan >= 9000) return Math.round(tagihan / 12000);
-        }
-      }
-    }
-
     return 0;
   };
 
@@ -1394,25 +1399,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     if (prod) return getDistProductQty(dist, prod);
     const anyDist = dist as any;
     if (key === 'G19') {
-      const gq = Number(anyDist.G19 || anyDist.g19 || anyDist.Galon || anyDist.galon || anyDist.GLN19 || anyDist.gln19 || anyDist['ASH-GLN19L'] || 0);
-      if (gq > 0) return gq;
-      const c120 = Number(anyDist.C120 || 0);
-      const c220 = Number(anyDist.C220 || 0);
-      const b330 = Number(anyDist.B330 || 0);
-      const b600 = Number(anyDist.B600 || 0);
-      if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0) {
-        const tagihan = Number(dist.Total_Tagihan || anyDist.Tagihan || 0);
-        if (tagihan > 0) {
-          if (tagihan % 12000 === 0) return Math.round(tagihan / 12000);
-          if (tagihan % 9000 === 0) return Math.round(tagihan / 9000);
-          if (tagihan % 10000 === 0) return Math.round(tagihan / 10000);
-          if (tagihan % 15000 === 0) return Math.round(tagihan / 15000);
-          if (tagihan >= 9000) return Math.round(tagihan / 12000);
-        }
-      }
+      const gq = Number(anyDist.G19 ?? anyDist.g19 ?? anyDist.Galon ?? anyDist.galon ?? anyDist.GLN19 ?? anyDist['ASH-GLN19L']);
+      if (!isNaN(gq) && gq >= 0) return gq;
     }
     const direct = anyDist[key];
-    return direct ? Number(direct) : 0;
+    return (direct !== undefined && direct !== null && !isNaN(Number(direct))) ? Math.max(0, Number(direct)) : 0;
   };
 
   // Download Invoice PDF with exact naming format: NO invoice (nama pelanggan).pdf

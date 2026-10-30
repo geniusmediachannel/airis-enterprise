@@ -1346,18 +1346,6 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
             }
           });
 
-          // Fallback cerdas galon jika semua dus bernilai 0 dan tagihan > 0
-          if (g19Qty === 0 && c120Qty === 0 && c220Qty === 0 && b330Qty === 0 && b600Qty === 0) {
-            const tagihan = Number(r.Total_Tagihan || 0);
-            if (tagihan > 0) {
-              if (tagihan % 12000 === 0) g19Qty = Math.round(tagihan / 12000);
-              else if (tagihan % 9000 === 0) g19Qty = Math.round(tagihan / 9000);
-              else if (tagihan % 10000 === 0) g19Qty = Math.round(tagihan / 10000);
-              else if (tagihan % 15000 === 0) g19Qty = Math.round(tagihan / 15000);
-              else if (tagihan >= 9000) g19Qty = Math.round(tagihan / 12000);
-            }
-          }
-
           const finalC120 = (Number(r.C120) > 0) ? Number(r.C120) : c120Qty;
           const finalC220 = (Number(r.C220) > 0) ? Number(r.C220) : c220Qty;
           const finalB330 = (Number(r.B330) > 0) ? Number(r.B330) : b330Qty;
@@ -1481,23 +1469,28 @@ export function ensureAllDistributionItemsPopulated(): number {
       const b600 = Number(anyD.B600 || 0);
       const tagihan = Number(dist.Total_Tagihan || anyD.Tagihan || 0);
 
-      // Pemulihan galon jika seluruh produk dus 0 dan tagihan > 0
-      if (gQty === 0 && c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0 && tagihan > 0) {
-        if (tagihan % 12000 === 0) gQty = Math.round(tagihan / 12000);
-        else if (tagihan % 9000 === 0) gQty = Math.round(tagihan / 9000);
-        else if (tagihan % 10000 === 0) gQty = Math.round(tagihan / 10000);
-        else if (tagihan % 15000 === 0) gQty = Math.round(tagihan / 15000);
-        else if (tagihan >= 9000) gQty = Math.round(tagihan / 12000);
-
-        if (gQty > 0) {
-          anyD.G19 = gQty;
-          anyD.Galon = gQty;
-          anyD['ASH-GLN19L'] = gQty;
+      // Bersihkan data G19 palsu jika ada record yang kuantitas galonnya merupakan hasil tebakan Math.round(tagihan / ...)
+      if (gQty > 0 && (c120 > 0 || c220 > 0 || b330 > 0 || b600 > 0)) {
+        if (
+          gQty === Math.round(tagihan / 12000) || 
+          gQty === Math.round(tagihan / 10000) || 
+          gQty === Math.round(tagihan / 9000) || 
+          gQty === Math.round(tagihan / 15000) ||
+          gQty === Math.floor(tagihan / 12000) ||
+          gQty === Math.ceil(tagihan / 12000)
+        ) {
+          gQty = 0;
+          anyD.G19 = 0;
+          anyD.g19 = 0;
+          anyD.Galon = 0;
+          anyD.galon = 0;
+          anyD.GLN19 = 0;
+          anyD['ASH-GLN19L'] = 0;
           distModified = true;
         }
       }
 
-      // 1. Pastikan item Galon 19L tercatat di Distribusi_Item
+      // 1. Pastikan item Galon 19L tercatat di Distribusi_Item HANYA jika kuantitas galon riil > 0
       if (gQty > 0) {
         const galonKey = `${distId}___ASH-GLN19L`;
         if (!existingKeys.has(galonKey)) {
@@ -1556,8 +1549,24 @@ export function ensureAllDistributionItemsPopulated(): number {
       setTableData('Distribusi', updatedDist, { skipCloudSync: true });
     }
 
-    if (itemsToAdd.length > 0) {
-      const combined = [...(currentItems || []), ...itemsToAdd];
+    const cleanedExistingItems = (currentItems || []).filter(it => {
+      if (!it) return false;
+      const pid = String(it.ID_Produk || '').toUpperCase();
+      const pname = String(it.Nama_Produk || '').toLowerCase();
+      const isGalon = pid === 'ASH-GLN19L' || pid.includes('G19') || pid.includes('GLN') || pname.includes('galon');
+      if (!isGalon) return true;
+      const parent = updatedDist.find(d => String(d.ID_Distribusi).trim() === String(it.ID_Distribusi).trim());
+      if (parent) {
+        const anyP = parent as any;
+        const totalDus = (Number(anyP.C120) || 0) + (Number(anyP.C220) || 0) + (Number(anyP.B330) || 0) + (Number(anyP.B600) || 0);
+        const g = Number(anyP.G19 || anyP.Galon || 0);
+        if (totalDus > 0 && g === 0) return false;
+      }
+      return true;
+    });
+
+    if (itemsToAdd.length > 0 || cleanedExistingItems.length !== (currentItems || []).length) {
+      const combined = [...cleanedExistingItems, ...itemsToAdd];
       setTableData('Distribusi_Item', combined, { skipCloudSync: true });
       return itemsToAdd.length;
     }
@@ -1704,41 +1713,27 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
             });
           }
 
-          // Cek transaksi pesanan galon murni yang itemnya belum ter-generate
+          // Bersihkan data galon palsu jika record memiliki produk dus dan galon merupakan hasil tebakan tagihan
           const totalDus = (Number(updated.C120) || 0) + (Number(updated.C220) || 0) + (Number(updated.B330) || 0) + (Number(updated.B600) || 0);
           const currentG = Number(updated.G19 || updated.Galon || 0);
           const tagihan = Number(updated.Total_Tagihan || 0);
 
-          if (totalDus === 0 && currentG === 0 && tagihan > 0) {
-            let derived = 0;
-            if (tagihan % 12000 === 0) derived = Math.round(tagihan / 12000);
-            else if (tagihan % 9000 === 0) derived = Math.round(tagihan / 9000);
-            else if (tagihan % 10000 === 0) derived = Math.round(tagihan / 10000);
-            else if (tagihan % 15000 === 0) derived = Math.round(tagihan / 15000);
-            else if (tagihan >= 9000) derived = Math.round(tagihan / 12000);
-
-            if (derived > 0) {
-              updated.G19 = derived;
-              updated.Galon = derived;
-              updated['ASH-GLN19L'] = derived;
+          if (currentG > 0 && totalDus > 0) {
+            if (
+              currentG === Math.round(tagihan / 12000) ||
+              currentG === Math.round(tagihan / 10000) ||
+              currentG === Math.round(tagihan / 9000) ||
+              currentG === Math.round(tagihan / 15000) ||
+              currentG === Math.floor(tagihan / 12000) ||
+              currentG === Math.ceil(tagihan / 12000)
+            ) {
+              updated.G19 = 0;
+              updated.g19 = 0;
+              updated.Galon = 0;
+              updated.galon = 0;
+              updated.GLN19 = 0;
+              updated['ASH-GLN19L'] = 0;
               mod = true;
-
-              const detId = `${updated.ID_Distribusi}-G19`;
-              if (!existingItemDetailIds.has(detId)) {
-                newItemsToAdd.push({
-                  ID_Detail: detId,
-                  ID_Distribusi: updated.ID_Distribusi,
-                  Nama_Pelanggan: updated.Nama_Pelanggan,
-                  Tanggal: updated.Tanggal,
-                  Level_Pelanggan: updated.Level_Pelanggan || 'Distributor',
-                  ID_Produk: 'ASH-GLN19L',
-                  Nama_Produk: 'As-Shofaa Galon 19L',
-                  Qty: derived,
-                  Harga_Satuan: Math.round(tagihan / derived),
-                  Subtotal: tagihan
-                });
-                existingItemDetailIds.add(detId);
-              }
             }
           }
 
