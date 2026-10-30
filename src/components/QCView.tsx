@@ -564,7 +564,7 @@ export const QCView: React.FC<QCViewProps> = ({
                     setFormHeader({
                       Tanggal: p.Tanggal,
                       Produk: prodName,
-                      Petugas_QC: 'Nurul Hidayati',
+                      Petugas_QC: '',
                       ID_Produksi: p.ID_Produksi
                     });
                     setEditingQcHeader(null);
@@ -1019,11 +1019,17 @@ export const QCView: React.FC<QCViewProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">Petugas Analis QC</label>
                   <input
                     type="text"
-                    placeholder="Nama petugas analis QC..."
+                    list="qc-analis-suggestions"
+                    placeholder="Kosongkan atau ketik nama analis QC..."
                     value={formHeader.Petugas_QC}
                     onChange={e => setFormHeader({ ...formHeader, Petugas_QC: e.target.value })}
                     className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg outline-none font-semibold text-slate-900"
                   />
+                  <datalist id="qc-analis-suggestions">
+                    {Array.from(new Set(qcHeaders.map(h => (h.Petugas_QC || '').trim()).filter(Boolean))).map(name => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 

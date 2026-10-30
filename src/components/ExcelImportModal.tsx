@@ -348,7 +348,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           const rawDate = row['Tanggal'] || row['Tgl Uji'] || row['Tgl_Uji'] || row['Tanggal_Uji'];
           const tgl = parseQcDate(rawDate);
           const produk = row['Produk'] || row['Nama_Produk'] || 'As-Shofaa Botol 600 ml';
-          const petugas = row['Petugas_QC'] || row['Petugas'] || 'Nurul Hidayati';
+          const petugas = row['Petugas_QC'] || row['Petugas'] || '';
           const idProd = row['ID_Produksi'] || row['ID Produksi'] || '';
 
           // Determine or generate ID_QC

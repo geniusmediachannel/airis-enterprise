@@ -141,6 +141,31 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   const productionEmployees = employees.filter(e => e.Departemen === 'Produksi' && e.Status === 'Aktif');
   const otherActiveEmployees = employees.filter(e => e.Departemen !== 'Produksi' && e.Status === 'Aktif');
 
+  // Frekuensi kemunculan PIC Operator di riwayat Produksi
+  const picFrequencyMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (productions || []).forEach(p => {
+      const name = (p.PIC_Produksi || '').trim();
+      if (name) {
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [productions]);
+
+  // Daftar nama PIC diurutkan dari yang paling sering muncul
+  const sortedFrequentPics = useMemo(() => {
+    return Object.keys(picFrequencyMap).sort((a, b) => picFrequencyMap[b] - picFrequencyMap[a]);
+  }, [picFrequencyMap]);
+
+  // Nama PIC utama yang paling sering muncul
+  const mostFrequentPic = useMemo(() => {
+    if (sortedFrequentPics.length > 0) return sortedFrequentPics[0];
+    return productionEmployees[0]?.Nama_Karyawan || otherActiveEmployees[0]?.Nama_Karyawan || 'Agus Setiawan';
+  }, [sortedFrequentPics, productionEmployees, otherActiveEmployees]);
+
+  const [isCustomDirectPic, setIsCustomDirectPic] = useState(false);
+
   // Direct Production Modal & Form
   const [showDirectProdModal, setShowDirectProdModal] = useState(false);
   const [directProdForm, setDirectProdForm] = useState({
@@ -155,7 +180,8 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
 
   // Open Direct Production Modal
   const handleOpenDirectProd = (preselectedSpk?: SPKItem) => {
-    const defaultPic = productionEmployees[0]?.Nama_Karyawan || otherActiveEmployees[0]?.Nama_Karyawan || 'Agus Setiawan';
+    const defaultPic = mostFrequentPic;
+    setIsCustomDirectPic(false);
     setDirectProdForm({
       Tanggal: preselectedSpk?.Tanggal || new Date().toISOString().slice(0, 10),
       Shift: preselectedSpk?.Shift || 'Shift 1 (Pagi)',
@@ -207,7 +233,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
       Shift: directProdForm.Shift,
       ID_Produk: directProdForm.ID_Produk,
       Jumlah: Number(directProdForm.Jumlah),
-      PIC_Produksi: directProdForm.PIC_Produksi || 'Agus Setiawan',
+      PIC_Produksi: directProdForm.PIC_Produksi || mostFrequentPic,
       Keterangan: directProdForm.ID_SPK
         ? `Realisasi SPK: ${directProdForm.ID_SPK} ${directProdForm.Keterangan && !directProdForm.Keterangan.includes('Realisasi SPK') ? '- ' + directProdForm.Keterangan : ''}`
         : (directProdForm.Keterangan || 'Input Produksi Langsung')
@@ -1935,38 +1961,82 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">PIC Operator / Kepala Regu</label>
-                  <select
-                    value={directProdForm.PIC_Produksi}
-                    onChange={e => setDirectProdForm({ ...directProdForm, PIC_Produksi: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-medium bg-white"
-                  >
-                    <option value="">-- Pilih PIC Operator dari Master Karyawan --</option>
-                    {directProdForm.PIC_Produksi && !employees.some(e => e.Nama_Karyawan === directProdForm.PIC_Produksi) && (
-                      <option value={directProdForm.PIC_Produksi}>{directProdForm.PIC_Produksi}</option>
-                    )}
-                    {productionEmployees.length > 0 && (
-                      <optgroup label="Divisi Produksi">
-                        {productionEmployees.map(e => (
-                          <option key={e.ID_Karyawan} value={e.Nama_Karyawan}>
-                            {e.Nama_Karyawan} ({e.Jabatan})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {otherActiveEmployees.length > 0 && (
-                      <optgroup label="Divisi Lainnya">
-                        {otherActiveEmployees.map(e => (
-                          <option key={e.ID_Karyawan} value={e.Nama_Karyawan}>
-                            {e.Nama_Karyawan} ({e.Departemen} - {e.Jabatan})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {employees.length === 0 && (
-                      <option value="Agus Setiawan">Agus Setiawan (Operator Produksi)</option>
-                    )}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-slate-700">PIC Operator / Kepala Regu</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomDirectPic(!isCustomDirectPic)}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                    >
+                      {isCustomDirectPic ? '← Pilih dari Daftar' : '+ Ketik Manual'}
+                    </button>
+                  </div>
+                  {isCustomDirectPic ? (
+                    <input
+                      type="text"
+                      list="pic-direct-suggestions"
+                      placeholder="Ketik nama PIC operator / kepala regu..."
+                      value={directProdForm.PIC_Produksi}
+                      onChange={e => setDirectProdForm({ ...directProdForm, PIC_Produksi: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-medium bg-white"
+                    />
+                  ) : (
+                    <select
+                      value={directProdForm.PIC_Produksi}
+                      onChange={e => {
+                        if (e.target.value === '__CUSTOM__') {
+                          setIsCustomDirectPic(true);
+                          setDirectProdForm({ ...directProdForm, PIC_Produksi: '' });
+                        } else {
+                          setDirectProdForm({ ...directProdForm, PIC_Produksi: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-medium bg-white"
+                    >
+                      <option value="">-- Pilih PIC Operator --</option>
+                      {sortedFrequentPics.length > 0 && (
+                        <optgroup label="⭐ Sering Digunakan (Rekomendasi)">
+                          {sortedFrequentPics.slice(0, 5).map(name => (
+                            <option key={`freq-${name}`} value={name}>
+                              {name} {name === mostFrequentPic ? '(Utama / Terbanyak)' : ''} ({picFrequencyMap[name]}x produksi)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {productionEmployees.length > 0 && (
+                        <optgroup label="Divisi Produksi">
+                          {productionEmployees.map(e => (
+                            <option key={e.ID_Karyawan} value={e.Nama_Karyawan}>
+                              {e.Nama_Karyawan} ({e.Jabatan})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {otherActiveEmployees.length > 0 && (
+                        <optgroup label="Divisi Lainnya">
+                          {otherActiveEmployees.map(e => (
+                            <option key={e.ID_Karyawan} value={e.Nama_Karyawan}>
+                              {e.Nama_Karyawan} ({e.Departemen} - {e.Jabatan})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {directProdForm.PIC_Produksi && 
+                       !sortedFrequentPics.includes(directProdForm.PIC_Produksi) && 
+                       !employees.some(e => e.Nama_Karyawan === directProdForm.PIC_Produksi) && (
+                        <option value={directProdForm.PIC_Produksi}>{directProdForm.PIC_Produksi}</option>
+                      )}
+                      <option value="__CUSTOM__">+ Ketik Nama Operator Lain Manual...</option>
+                    </select>
+                  )}
+                  <datalist id="pic-direct-suggestions">
+                    {sortedFrequentPics.map(name => (
+                      <option key={`dl-freq-${name}`} value={name} />
+                    ))}
+                    {employees.map(e => (
+                      <option key={`dl-emp-${e.ID_Karyawan}`} value={e.Nama_Karyawan} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div>
