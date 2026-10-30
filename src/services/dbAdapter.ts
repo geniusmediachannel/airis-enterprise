@@ -1346,18 +1346,36 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
             }
           });
 
+          // Fallback cerdas galon jika semua dus bernilai 0 dan tagihan > 0
+          if (g19Qty === 0 && c120Qty === 0 && c220Qty === 0 && b330Qty === 0 && b600Qty === 0) {
+            const tagihan = Number(r.Total_Tagihan || 0);
+            if (tagihan > 0) {
+              if (tagihan % 12000 === 0) g19Qty = Math.round(tagihan / 12000);
+              else if (tagihan % 9000 === 0) g19Qty = Math.round(tagihan / 9000);
+              else if (tagihan % 10000 === 0) g19Qty = Math.round(tagihan / 10000);
+              else if (tagihan % 15000 === 0) g19Qty = Math.round(tagihan / 15000);
+              else if (tagihan >= 9000) g19Qty = Math.round(tagihan / 12000);
+            }
+          }
+
+          const finalC120 = (Number(r.C120) > 0) ? Number(r.C120) : c120Qty;
+          const finalC220 = (Number(r.C220) > 0) ? Number(r.C220) : c220Qty;
+          const finalB330 = (Number(r.B330) > 0) ? Number(r.B330) : b330Qty;
+          const finalB600 = (Number(r.B600) > 0) ? Number(r.B600) : b600Qty;
+          const finalG19 = (Number(r.G19) > 0) ? Number(r.G19) : g19Qty;
+
           return {
             ...r,
-            C120: r.C120 !== undefined ? r.C120 : c120Qty,
-            C220: r.C220 !== undefined ? r.C220 : c220Qty,
-            B330: r.B330 !== undefined ? r.B330 : b330Qty,
-            B600: r.B600 !== undefined ? r.B600 : b600Qty,
-            G19: r.G19 !== undefined ? r.G19 : g19Qty,
-            g19: r.g19 !== undefined ? r.g19 : g19Qty,
-            Galon: r.Galon !== undefined ? r.Galon : g19Qty,
-            galon: r.galon !== undefined ? r.galon : g19Qty,
-            GLN19: r.GLN19 !== undefined ? r.GLN19 : g19Qty,
-            'ASH-GLN19L': r['ASH-GLN19L'] !== undefined ? r['ASH-GLN19L'] : g19Qty
+            C120: finalC120,
+            C220: finalC220,
+            B330: finalB330,
+            B600: finalB600,
+            G19: finalG19,
+            g19: finalG19,
+            Galon: finalG19,
+            galon: finalG19,
+            GLN19: finalG19,
+            'ASH-GLN19L': finalG19
           };
         });
 
@@ -1527,7 +1545,7 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
     try {
       const currentDist = getTableData<any>('Distribusi', []);
       const currentItems = getTableData<any>('Distribusi_Item', []);
-      if (currentDist.length > 0 && currentItems.length > 0) {
+      if (currentDist.length > 0) {
         const itemMap = new Map<string, any[]>();
         currentItems.forEach(it => {
           if (!it || !it.ID_Distribusi) return;
@@ -1541,11 +1559,15 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
         });
 
         let anyEnriched = false;
+        const newItemsToAdd: any[] = [];
+        const existingItemDetailIds = new Set(currentItems.map(it => String(it.ID_Detail || '').trim()));
+
         const fullyEnrichedDist = currentDist.map(dist => {
           const items = itemMap.get(String(dist.ID_Distribusi).trim()) || [];
+          let mod = false;
+          const updated = { ...dist };
+
           if (items.length > 0) {
-            let mod = false;
-            const updated = { ...dist };
             items.forEach(it => {
               const pId = String(it.ID_Produk || '').toUpperCase();
               const pName = String(it.Nama_Produk || '').toLowerCase();
@@ -1567,10 +1589,48 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
                 if (updated.C120 !== q) { updated.C120 = q; mod = true; }
               }
             });
-            if (mod) anyEnriched = true;
-            return updated;
           }
-          return dist;
+
+          // Cek transaksi pesanan galon murni yang itemnya belum ter-generate
+          const totalDus = (Number(updated.C120) || 0) + (Number(updated.C220) || 0) + (Number(updated.B330) || 0) + (Number(updated.B600) || 0);
+          const currentG = Number(updated.G19 || updated.Galon || 0);
+          const tagihan = Number(updated.Total_Tagihan || 0);
+
+          if (totalDus === 0 && currentG === 0 && tagihan > 0) {
+            let derived = 0;
+            if (tagihan % 12000 === 0) derived = Math.round(tagihan / 12000);
+            else if (tagihan % 9000 === 0) derived = Math.round(tagihan / 9000);
+            else if (tagihan % 10000 === 0) derived = Math.round(tagihan / 10000);
+            else if (tagihan % 15000 === 0) derived = Math.round(tagihan / 15000);
+            else if (tagihan >= 9000) derived = Math.round(tagihan / 12000);
+
+            if (derived > 0) {
+              updated.G19 = derived;
+              updated.Galon = derived;
+              updated['ASH-GLN19L'] = derived;
+              mod = true;
+
+              const detId = `${updated.ID_Distribusi}-G19`;
+              if (!existingItemDetailIds.has(detId)) {
+                newItemsToAdd.push({
+                  ID_Detail: detId,
+                  ID_Distribusi: updated.ID_Distribusi,
+                  Nama_Pelanggan: updated.Nama_Pelanggan,
+                  Tanggal: updated.Tanggal,
+                  Level_Pelanggan: updated.Level_Pelanggan || 'Distributor',
+                  ID_Produk: 'ASH-GLN19L',
+                  Nama_Produk: 'As-Shofaa Galon 19L',
+                  Qty: derived,
+                  Harga_Satuan: Math.round(tagihan / derived),
+                  Subtotal: tagihan
+                });
+                existingItemDetailIds.add(detId);
+              }
+            }
+          }
+
+          if (mod) anyEnriched = true;
+          return updated;
         });
 
         if (anyEnriched) {
@@ -1578,6 +1638,15 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
           try {
             localStorage.setItem(STORAGE_KEY_PREFIX + 'Distribusi', JSON.stringify(fullyEnrichedDist));
           } catch (e) {}
+        }
+
+        if (newItemsToAdd.length > 0) {
+          const combinedItems = [...currentItems, ...newItemsToAdd];
+          memoryTableCache['Distribusi_Item'] = combinedItems;
+          try {
+            localStorage.setItem(STORAGE_KEY_PREFIX + 'Distribusi_Item', JSON.stringify(combinedItems));
+          } catch (e) {}
+          syncToSupabaseTable('Distribusi_Item', combinedItems).catch(() => {});
         }
       }
     } catch (enrichEx) {}

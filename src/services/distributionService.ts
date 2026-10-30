@@ -793,6 +793,45 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
         }
       });
 
+      // Ultra-resilient Galon Fallback: Jika seluruh produk dus (C120, C220, B330, B600) bernilai 0,
+      // tetapi rawTagihan > 0 dan distRecord.G19 masih 0 (seperti pesanan Galon murni ke sekolah/mitra):
+      const totalDus = (Number(distRecord.C120) || 0) + (Number(distRecord.C220) || 0) + (Number(distRecord.B330) || 0) + (Number(distRecord.B600) || 0);
+      if (totalDus === 0 && (!distRecord.G19 || distRecord.G19 === 0) && rawTagihan > 0) {
+        let derivedGalon = 0;
+        if (rawTagihan % 12000 === 0) derivedGalon = Math.round(rawTagihan / 12000);
+        else if (rawTagihan % 9000 === 0) derivedGalon = Math.round(rawTagihan / 9000);
+        else if (rawTagihan % 10000 === 0) derivedGalon = Math.round(rawTagihan / 10000);
+        else if (rawTagihan % 15000 === 0) derivedGalon = Math.round(rawTagihan / 15000);
+        else if (rawTagihan >= 9000) derivedGalon = Math.round(rawTagihan / 12000);
+
+        if (derivedGalon > 0) {
+          distRecord['G19'] = derivedGalon;
+          distRecord['ASH-GLN19L'] = derivedGalon;
+          distRecord['Galon'] = derivedGalon;
+          distRecord['galon'] = derivedGalon;
+          distRecord['GLN19'] = derivedGalon;
+          distRecord['gln19'] = derivedGalon;
+          distRecord['GLN'] = derivedGalon;
+
+          const gDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
+          const itemPrice = Math.round(rawTagihan / derivedGalon);
+          hasColumnProducts = true;
+          newDetailsList.push({
+            ID_Detail: `${rawId}-G19`,
+            ID_Distribusi: rawId,
+            Nama_Pelanggan: custName,
+            Tanggal: tgl,
+            Level_Pelanggan: level,
+            ID_Produk: gDef.id,
+            Nama_Produk: gDef.name,
+            Qty: derivedGalon,
+            Harga_Satuan: itemPrice,
+            Subtotal: rawTagihan,
+            Satuan: 'Galon'
+          });
+        }
+      }
+
       // Fallback Cerdas 1: Format Single Item per Row jika Excel mencatat 1 baris per produk
       if (!hasColumnProducts) {
         const rawProd = String(getVal(row, ['ID_Produk', 'Nama_Produk', 'Nama Produk', 'Produk', 'Item', 'Barang', 'Kategori']) || '').trim();

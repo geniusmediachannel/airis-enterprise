@@ -212,6 +212,24 @@ const getDistProductQty = (
     }
   }
 
+  // 3. Fallback Cerdas untuk Galon: Jika transaksi memiliki Total_Tagihan positif tetapi seluruh produk dus (C120, C220, B330, B600) bernilai 0:
+  if (isGalon && sumItems === 0) {
+    const c120 = Number(anyDist.C120 || 0);
+    const c220 = Number(anyDist.C220 || 0);
+    const b330 = Number(anyDist.B330 || 0);
+    const b600 = Number(anyDist.B600 || 0);
+    if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0) {
+      const tagihan = Number(dist.Total_Tagihan || anyDist.Tagihan || 0);
+      if (tagihan > 0) {
+        if (tagihan % 12000 === 0) return Math.round(tagihan / 12000);
+        if (tagihan % 9000 === 0) return Math.round(tagihan / 9000);
+        if (tagihan % 10000 === 0) return Math.round(tagihan / 10000);
+        if (tagihan % 15000 === 0) return Math.round(tagihan / 15000);
+        if (tagihan >= 9000) return Math.round(tagihan / 12000);
+      }
+    }
+  }
+
   return sumItems;
 };
 
