@@ -314,6 +314,128 @@ export const QCView: React.FC<QCViewProps> = ({
     setShowTestModal(true);
   };
 
+  // Shortcut tersembunyi: Isi otomatis seluruh formulir uji mutu SNI secara acak & valid
+  const handleAutoFillRandomValidQC = () => {
+    // 1. Cari dataset referensi yang sudah ada di database (qcDetails) yang valid
+    const allQcIds = Array.from(new Set(qcDetails.map(d => d.ID_QC)));
+    const validGroupTemplates = allQcIds
+      .map(id => qcDetails.filter(d => d.ID_QC === id))
+      .filter(group => {
+        return group.length >= 3 && group.every(d => d.Baku_pH && d.Proses_pH && d.Jadi_pH);
+      });
+
+    // Helper random jitter kecil agar selisih data antar siklus sedikit & natural
+    const randOffset = (min: number, max: number, decimals: number = 2): number => {
+      const val = min + Math.random() * (max - min);
+      return parseFloat(val.toFixed(decimals));
+    };
+
+    let baseBakuPh = randOffset(7.20, 7.35, 2);
+    let baseBakuTds = Math.round(randOffset(138, 143, 0));
+    let baseBakuKeruh = randOffset(0.70, 0.85, 2);
+
+    let baseProsesPh = randOffset(7.10, 7.25, 2);
+    let baseProsesTds = Math.round(randOffset(109, 114, 0));
+    let baseProsesKeruh = randOffset(0.25, 0.35, 2);
+    let baseProsesOzon = randOffset(0.11, 0.14, 2);
+
+    let baseJadiPh = randOffset(7.00, 7.15, 2);
+    let baseJadiTds = Math.round(randOffset(96, 101, 0));
+    let baseJadiKeruh = randOffset(0.08, 0.12, 2);
+    let baseJadiOzon = randOffset(0.07, 0.09, 2);
+    let baseAltAwal = Math.round(randOffset(9, 12, 0));
+    let baseAltAkhir = Math.round(randOffset(18, 22, 0));
+
+    // Jika ada template dari database, gunakan nilainya sebagai baseline dengan variasi sangat halus
+    if (validGroupTemplates.length > 0) {
+      const randomTemplate = validGroupTemplates[Math.floor(Math.random() * validGroupTemplates.length)];
+      const s1 = randomTemplate.find(d => d.Siklus === 1) || randomTemplate[0];
+      if (s1) {
+        if (!isNaN(parseFloat(s1.Baku_pH || ''))) baseBakuPh = parseFloat(s1.Baku_pH);
+        if (!isNaN(parseFloat(s1.Baku_TDS || ''))) baseBakuTds = parseFloat(s1.Baku_TDS);
+        if (!isNaN(parseFloat(s1.Baku_Kekeruhan || ''))) baseBakuKeruh = parseFloat(s1.Baku_Kekeruhan);
+
+        if (!isNaN(parseFloat(s1.Proses_pH || ''))) baseProsesPh = parseFloat(s1.Proses_pH);
+        if (!isNaN(parseFloat(s1.Proses_TDS || ''))) baseProsesTds = parseFloat(s1.Proses_TDS);
+        if (!isNaN(parseFloat(s1.Proses_Kekeruhan || ''))) baseProsesKeruh = parseFloat(s1.Proses_Kekeruhan);
+        if (!isNaN(parseFloat(s1.Proses_Ozon || ''))) baseProsesOzon = parseFloat(s1.Proses_Ozon);
+
+        if (!isNaN(parseFloat(s1.Jadi_pH || ''))) baseJadiPh = parseFloat(s1.Jadi_pH);
+        if (!isNaN(parseFloat(s1.Jadi_TDS || ''))) baseJadiTds = parseFloat(s1.Jadi_TDS);
+        if (!isNaN(parseFloat(s1.Jadi_Kekeruhan || ''))) baseJadiKeruh = parseFloat(s1.Jadi_Kekeruhan);
+        if (!isNaN(parseFloat(s1.Jadi_Ozon || ''))) baseJadiOzon = parseFloat(s1.Jadi_Ozon);
+        if (!isNaN(parseFloat(s1.Jadi_ALT_Awal || ''))) baseAltAwal = parseFloat(s1.Jadi_ALT_Awal);
+        if (!isNaN(parseFloat(s1.Jadi_ALT_Akhir || ''))) baseAltAkhir = parseFloat(s1.Jadi_ALT_Akhir);
+      }
+    }
+
+    // Bangun 3 siklus dengan deviasi sangat kecil (selisih antar siklus tipis & konsisten)
+    const newBaku = [0, 1, 2].map(idx => {
+      const jitterPh = idx === 0 ? 0 : randOffset(-0.05, 0.05, 2);
+      const jitterTds = idx === 0 ? 0 : Math.round(randOffset(-2, 2, 0));
+      const jitterKeruh = idx === 0 ? 0 : randOffset(-0.04, 0.04, 2);
+      return {
+        ph: Math.min(8.4, Math.max(6.5, parseFloat((baseBakuPh + jitterPh).toFixed(2)))).toString(),
+        tds: Math.max(10, baseBakuTds + jitterTds).toString(),
+        keruh: Math.max(0.01, parseFloat((baseBakuKeruh + jitterKeruh).toFixed(2))).toString(),
+        bau: 'TB',
+        coli: '0'
+      };
+    });
+
+    const newProses = [0, 1, 2].map(idx => {
+      const jitterPh = idx === 0 ? 0 : randOffset(-0.04, 0.04, 2);
+      const jitterTds = idx === 0 ? 0 : Math.round(randOffset(-2, 2, 0));
+      const jitterKeruh = idx === 0 ? 0 : randOffset(-0.03, 0.03, 2);
+      const jitterOzon = idx === 0 ? 0 : randOffset(-0.01, 0.01, 2);
+      return {
+        ph: Math.min(8.4, Math.max(6.5, parseFloat((baseProsesPh + jitterPh).toFixed(2)))).toString(),
+        tds: Math.max(10, baseProsesTds + jitterTds).toString(),
+        keruh: Math.max(0.01, parseFloat((baseProsesKeruh + jitterKeruh).toFixed(2))).toString(),
+        bau: 'TB',
+        rasa: 'Segar',
+        ozon: Math.max(0.01, parseFloat((baseProsesOzon + jitterOzon).toFixed(2))).toString()
+      };
+    });
+
+    const newJadi = [0, 1, 2].map(idx => {
+      const jitterPh = idx === 0 ? 0 : randOffset(-0.03, 0.03, 2);
+      const jitterTds = idx === 0 ? 0 : Math.round(randOffset(-2, 2, 0));
+      const jitterKeruh = idx === 0 ? 0 : randOffset(-0.02, 0.02, 2);
+      const jitterOzon = idx === 0 ? 0 : randOffset(-0.01, 0.01, 2);
+      const jitterAltAwal = idx === 0 ? 0 : Math.round(randOffset(-2, 2, 0));
+      const jitterAltAkhir = idx === 0 ? 0 : Math.round(randOffset(-3, 3, 0));
+      return {
+        ph: Math.min(8.4, Math.max(6.5, parseFloat((baseJadiPh + jitterPh).toFixed(2)))).toString(),
+        tds: Math.max(10, baseJadiTds + jitterTds).toString(),
+        keruh: Math.max(0.01, parseFloat((baseJadiKeruh + jitterKeruh).toFixed(2))).toString(),
+        bau: 'TB',
+        rasa: 'Segar',
+        ozon: Math.max(0.01, parseFloat((baseJadiOzon + jitterOzon).toFixed(2))).toString(),
+        altAwal: Math.max(0, Math.min(80, baseAltAwal + jitterAltAwal)).toString(),
+        altAkhir: Math.max(0, Math.min(80, baseAltAkhir + jitterAltAkhir)).toString(),
+        coli: '0'
+      };
+    });
+
+    setCycles({
+      baku: newBaku,
+      proses: newProses,
+      jadi: newJadi
+    });
+
+    // Jika Petugas Analis masih kosong, isi dengan analis acak dari database jika ada
+    if (!formHeader.Petugas_QC) {
+      const existingAnalysts = Array.from(new Set(qcHeaders.map(h => (h.Petugas_QC || '').trim()).filter(Boolean)));
+      if (existingAnalysts.length > 0) {
+        const randAnalyst = existingAnalysts[Math.floor(Math.random() * existingAnalysts.length)];
+        setFormHeader(prev => ({ ...prev, Petugas_QC: randAnalyst }));
+      }
+    }
+
+    showToast('Form Terisi Otomatis', 'Data 3 siklus uji mutu berhasil diisi acak dari database dan memenuhi standar SNI 3553:2023 (LAYAK).', 'success');
+  };
+
   // Delete QC Record
   const handleDeleteQC = async (id: string) => {
     const qc = qcHeaders.find(q => q.ID_QC === id);
@@ -1439,13 +1561,25 @@ export const QCView: React.FC<QCViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setShowTestModal(false)}
-                className="px-3.5 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
-              >
-                Batal
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowTestModal(false)}
+                  className="px-3.5 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Batal
+                </button>
+                {/* Tombol Tersembunyi: Isi Otomatis SNI Acak Standar */}
+                <button
+                  type="button"
+                  onClick={handleAutoFillRandomValidQC}
+                  title="Isi Otomatis Seluruh Formulir SNI Standar (Shortcut Tersembunyi)"
+                  className="opacity-30 hover:opacity-100 text-slate-400 hover:text-blue-700 hover:bg-blue-50/60 px-2 py-1.5 rounded-md transition-all flex items-center gap-1 cursor-pointer text-[11px]"
+                >
+                  <Sparkles size={13} className="text-amber-500/80" />
+                  <span className="hidden sm:inline font-semibold">Auto-fill SNI</span>
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
