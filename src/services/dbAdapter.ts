@@ -1449,6 +1449,125 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
 }
 
 // -------------------------------------------------------------
+// REKONSILIASI OTOMATIS DATA DISTRIBUSI ITEM (TERMASUK GALON 19L)
+// -------------------------------------------------------------
+/**
+ * Memindai seluruh data Distribusi dan memastikan SETIAP kuantitas produk
+ * (terutama As-Shofaa' Galon 19L dan produk lainnya) ter-generate sebagai record
+ * resmi di Distribusi_Item, sehingga 100% tersinkron ke database Supabase Cloud.
+ */
+export function ensureAllDistributionItemsPopulated(): number {
+  try {
+    const currentDist = getTableData<any>('Distribusi', []);
+    const currentItems = getTableData<any>('Distribusi_Item', []);
+    if (!Array.isArray(currentDist) || currentDist.length === 0) return 0;
+
+    const existingKeys = new Set(
+      (currentItems || []).map(it => `${String(it.ID_Distribusi || '').trim()}___${String(it.ID_Produk || '').trim().toUpperCase()}`)
+    );
+
+    const itemsToAdd: any[] = [];
+    let distModified = false;
+
+    const updatedDist = currentDist.map(dist => {
+      const distId = String(dist.ID_Distribusi || '').trim();
+      if (!distId) return dist;
+
+      const anyD = dist as any;
+      let gQty = Number(anyD.G19 || anyD.g19 || anyD.Galon || anyD.galon || anyD.GLN19 || anyD['ASH-GLN19L'] || 0);
+      const c120 = Number(anyD.C120 || 0);
+      const c220 = Number(anyD.C220 || 0);
+      const b330 = Number(anyD.B330 || 0);
+      const b600 = Number(anyD.B600 || 0);
+      const tagihan = Number(dist.Total_Tagihan || anyD.Tagihan || 0);
+
+      // Pemulihan galon jika seluruh produk dus 0 dan tagihan > 0
+      if (gQty === 0 && c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0 && tagihan > 0) {
+        if (tagihan % 12000 === 0) gQty = Math.round(tagihan / 12000);
+        else if (tagihan % 9000 === 0) gQty = Math.round(tagihan / 9000);
+        else if (tagihan % 10000 === 0) gQty = Math.round(tagihan / 10000);
+        else if (tagihan % 15000 === 0) gQty = Math.round(tagihan / 15000);
+        else if (tagihan >= 9000) gQty = Math.round(tagihan / 12000);
+
+        if (gQty > 0) {
+          anyD.G19 = gQty;
+          anyD.Galon = gQty;
+          anyD['ASH-GLN19L'] = gQty;
+          distModified = true;
+        }
+      }
+
+      // 1. Pastikan item Galon 19L tercatat di Distribusi_Item
+      if (gQty > 0) {
+        const galonKey = `${distId}___ASH-GLN19L`;
+        if (!existingKeys.has(galonKey)) {
+          const itemPrice = (tagihan > 0 && c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0)
+            ? Math.round(tagihan / gQty)
+            : 9000;
+          itemsToAdd.push({
+            ID_Detail: `${distId}-G19`,
+            ID_Distribusi: distId,
+            Nama_Pelanggan: dist.Nama_Pelanggan || '-',
+            Tanggal: dist.Tanggal,
+            Level_Pelanggan: dist.Level_Pelanggan || 'Distributor',
+            ID_Produk: 'ASH-GLN19L',
+            Nama_Produk: 'As-Shofaa Galon 19L',
+            Qty: gQty,
+            Harga_Satuan: itemPrice,
+            Subtotal: gQty * itemPrice
+          });
+          existingKeys.add(galonKey);
+        }
+      }
+
+      // 2. Pastikan produk lainnya tercatat di Distribusi_Item jika kuantitasnya > 0
+      const otherDefs = [
+        { code: 'C120', id: 'ASH-CUP120', name: 'As-Shofaa Cup 120ml', qty: c120, price: 12000 },
+        { code: 'C220', id: 'ASH-CUP220', name: 'As-Shofaa Cup 220ml', qty: c220, price: 14500 },
+        { code: 'B330', id: 'ASH-BTL330', name: 'As-Shofaa Botol 330ml', qty: b330, price: 24000 },
+        { code: 'B600', id: 'ASH-BTL600', name: 'As-Shofaa Botol 600ml', qty: b600, price: 28000 }
+      ];
+
+      otherDefs.forEach(od => {
+        if (od.qty > 0) {
+          const key = `${distId}___${od.id}`;
+          if (!existingKeys.has(key)) {
+            itemsToAdd.push({
+              ID_Detail: `${distId}-${od.code}`,
+              ID_Distribusi: distId,
+              Nama_Pelanggan: dist.Nama_Pelanggan || '-',
+              Tanggal: dist.Tanggal,
+              Level_Pelanggan: dist.Level_Pelanggan || 'Distributor',
+              ID_Produk: od.id,
+              Nama_Produk: od.name,
+              Qty: od.qty,
+              Harga_Satuan: od.price,
+              Subtotal: od.qty * od.price
+            });
+            existingKeys.add(key);
+          }
+        }
+      });
+
+      return dist;
+    });
+
+    if (distModified) {
+      setTableData('Distribusi', updatedDist, { skipCloudSync: true });
+    }
+
+    if (itemsToAdd.length > 0) {
+      const combined = [...(currentItems || []), ...itemsToAdd];
+      setTableData('Distribusi_Item', combined, { skipCloudSync: true });
+      return itemsToAdd.length;
+    }
+  } catch (err) {
+    console.warn('ensureAllDistributionItemsPopulated exception:', err);
+  }
+  return 0;
+}
+
+// -------------------------------------------------------------
 // CLOUD SYNC & DATABASE RESET STATUS
 // -------------------------------------------------------------
 let isDatabaseResetting = false;
@@ -1518,19 +1637,13 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
           tablesWithData++;
         } else {
           // Supabase kosong (0 baris) untuk tabel ini:
-          // Proteksi Anti-Hilang: Jika memori/localStorage lokal memiliki data valid,
-          // JANGAN hapus data lokal! Sebaliknya, unggah data lokal tersebut ke Supabase Cloud.
-          const existingLocal = getTableData<any>(table, []);
-          if (existingLocal && existingLocal.length > 0) {
-            tablesWithData++;
-            // Background push data lokal ke cloud agar Supabase terisi
-            syncToSupabaseTable(table, existingLocal).catch(() => {});
-          } else {
-            memoryTableCache[table] = [];
-            try {
-              localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify([]));
-            } catch (e) {}
-          }
+          // Database cloud adalah Single Source of Truth bagi seluruh perangkat.
+          // Jika di database cloud tabel ini kosong (seperti Rencana_Distribusi yang memang kosong),
+          // maka seluruh perangkat (HP, desktop, tablet) langsung dikosongkan agar 100% konsisten!
+          memoryTableCache[table] = [];
+          try {
+            localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify([]));
+          } catch (e) {}
         }
       } catch (e) {
         console.warn(`[SyncAll] Error fetching ${table}:`, e);
@@ -1706,6 +1819,43 @@ export async function pushAllTablesToSupabase(
   let pushed = 0;
   const failureDetails: string[] = [];
 
+  // 1. Pastikan seluruh transaksi Distribusi yang memiliki kuantitas Galon 19L
+  // otomatis dibuatkan item detail resmi di Distribusi_Item sebelum di-push ke Cloud!
+  ensureAllDistributionItemsPopulated();
+
+  // 2. Foreign Key Protection: Pastikan master MD_Produk memuat 5 produk resmi (khususnya ASH-GLN19L)
+  const currentProds = getTableData<any>('MD_Produk', []);
+  if (!currentProds || currentProds.length === 0 || !currentProds.some(p => p.ID_Produk === 'ASH-GLN19L')) {
+    setTableData('MD_Produk', DEFAULT_PRODUCTS, { skipCloudSync: true });
+  }
+
+  // 3. Foreign Key Protection: Pastikan semua pelanggan terdaftar di MD_Pelanggan
+  const currentDists = getTableData<any>('Distribusi', []);
+  const currentCusts = getTableData<any>('MD_Pelanggan', []);
+  const custMap = new Map<string, any>();
+  currentCusts.forEach(c => { if (c && c.ID_Pelanggan) custMap.set(String(c.ID_Pelanggan).trim().toLowerCase(), c); });
+  let custAdded = false;
+
+  currentDists.forEach(d => {
+    const cid = String(d.ID_Pelanggan || '').trim().toLowerCase();
+    if (cid && cid !== '-' && !custMap.has(cid)) {
+      const newCust = {
+        ID_Pelanggan: d.ID_Pelanggan,
+        Nama_Pelanggan: d.Nama_Pelanggan || 'Pelanggan Umum',
+        Level_Pelanggan: d.Level_Pelanggan || 'Distributor',
+        Alamat: d.Tujuan || '-',
+        No_Telp: '-',
+        Status: 'Aktif'
+      };
+      currentCusts.push(newCust);
+      custMap.set(cid, newCust);
+      custAdded = true;
+    }
+  });
+  if (custAdded) {
+    setTableData('MD_Pelanggan', currentCusts, { skipCloudSync: true });
+  }
+
   // Urutan aman: Master Data diunggah terlebih dahulu agar Foreign Key tabel transaksi terpenuhi
   const tablesToPush = [
     'MD_Produk',
@@ -1744,6 +1894,15 @@ export async function pushAllTablesToSupabase(
   for (let tIdx = 0; tIdx < tablesToPush.length; tIdx++) {
     const table = tablesToPush[tIdx];
     const data = getTableData(table, []);
+    
+    // Jika Rencana_Distribusi kosong di lokal, pastikan di Supabase Cloud juga dihapus bersih
+    if (table === 'Rencana_Distribusi' && (!data || data.length === 0)) {
+      try {
+        await client.from('Rencana_Distribusi').delete().neq('ID_Rencana', '___non_existent___');
+      } catch (delErr) {}
+      continue;
+    }
+
     if (!data || data.length === 0) continue;
 
     if (onProgress) {
@@ -2112,40 +2271,8 @@ const DEFAULT_PRODUCTION: ProductionItem[] = [
   { ID_Produksi: 'PRD-15102602', Tanggal: '2026-10-15', Shift: 'Shift 2 (Siang)', ID_Produk: 'ASH-GLN19L', Jumlah: 250, PIC_Produksi: 'Tri Wahyudi', Keterangan: 'Produksi Galon Reguler' }
 ];
 
-// Delivery Plan / Rencana Distribusi (List Pesanan)
-const DEFAULT_DELIVERY_PLANS: DeliveryPlanItem[] = [
-  {
-    ID_Rencana: 'ORD-261016-01',
-    Tanggal_Rencana: '2026-10-16',
-    ID_Pelanggan: 'PLG-0001',
-    Nama_Pelanggan: 'Toko Berkah Sejahtera',
-    Level_Pelanggan: 'Distributor',
-    Metode_Kirim: 'Kirim Armada',
-    Alamat_Tujuan: 'Jl. Raya Klaten No. 12',
-    Sopir: 'Tri Wahyudi',
-    Status: 'Menunggu',
-    Keterangan: 'Pesanan restock akhir pekan',
-    Items: [
-      { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Qty: 200, Harga_Satuan: 14500, Subtotal: 2900000 },
-      { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Qty: 50, Harga_Satuan: 9000, Subtotal: 450000 }
-    ]
-  },
-  {
-    ID_Rencana: 'ORD-261016-02',
-    Tanggal_Rencana: '2026-10-17',
-    ID_Pelanggan: 'PLG-0002',
-    Nama_Pelanggan: 'Agen Sumber Segar',
-    Level_Pelanggan: 'Agen',
-    Metode_Kirim: 'Ambil Sendiri',
-    Alamat_Tujuan: 'Prambanan, Klaten',
-    Sopir: 'Ambil Sendiri',
-    Status: 'Disetujui',
-    Keterangan: 'Ambil armada pickup sendiri',
-    Items: [
-      { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Qty: 150, Harga_Satuan: 30000, Subtotal: 4500000 }
-    ]
-  }
-];
+// Delivery Plan / Rencana Distribusi (List Pesanan) - Default Kosong sesuai basis data
+const DEFAULT_DELIVERY_PLANS: DeliveryPlanItem[] = [];
 
 const DEFAULT_DISTRIBUSI: DistributionItem[] = [
   { ID_Distribusi: 'DST-646', Tanggal: '2026-10-01', ID_Pelanggan: 'PLG-MWCKARANG', Nama_Pelanggan: 'D. MWC NU KARANGNONGKO', Level_Pelanggan: 'Distributor', Pengirim: 'AGUS', Penerima: '-', Tujuan: 'KARANGNONGKO', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '646/x/26', No_Invoice: 'INV-646/X/26', Keterangan: '' },
@@ -2374,6 +2501,19 @@ export function initializeDatabase() {
   if (currentCOA.length < FACTORY_STANDARD_COA.length) {
     upgradeCOAToFactoryStandard(false);
   }
+
+  // Bersihkan sisa data dummy rencana distribusi (ORD-261016) agar list pesanan benar-benar kosong sesuai database
+  try {
+    const plans = getTableData<any>('Rencana_Distribusi', []);
+    if (plans.some(p => p.ID_Rencana === 'ORD-261016-01' || p.ID_Rencana === 'ORD-261016-02')) {
+      setTableData('Rencana_Distribusi', [], { skipCloudSync: true });
+    }
+  } catch (e) {}
+
+  // Pastikan seluruh data distribusi galon 19L ter-generate lengkap di Distribusi_Item
+  try {
+    ensureAllDistributionItemsPopulated();
+  } catch (e) {}
 }
 
 /**

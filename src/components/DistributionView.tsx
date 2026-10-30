@@ -351,8 +351,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     }
   }, [distributions]);
 
-  // Delivery Plans (Rencana Distribusi / List Pesanan) - Memoized anti-lag
-  const deliveryPlans = useMemo(() => getTableData<DeliveryPlanItem>('Rencana_Distribusi', []), [distributions]);
+  // Delivery Plans (Rencana Distribusi / List Pesanan) - Bersihkan data dummy lama (ORD-261016) agar selalu sinkron dengan database
+  const deliveryPlans = useMemo(() => {
+    const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+    const cleanPlans = plans.filter(p => p.ID_Rencana !== 'ORD-261016-01' && p.ID_Rencana !== 'ORD-261016-02');
+    if (cleanPlans.length !== plans.length) {
+      setTableData('Rencana_Distribusi', cleanPlans, { skipCloudSync: true });
+    }
+    return cleanPlans;
+  }, [distributions]);
 
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
