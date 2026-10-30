@@ -39,6 +39,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
   const [anonKey, setAnonKey] = useState(config.anonKey || activeCfg.anonKey || '');
   const [testing, setTesting] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -103,49 +104,71 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
 
   const handlePullCloud = async () => {
     setSyncingCloud(true);
+    setSyncStatusMsg('Menghubungkan & menarik data dari Cloud...');
     setTestResult(null);
 
-    const cleanUrl = normalizeSupabaseUrl(url);
-    const cleanKey = anonKey.trim();
-    let cfgToUse: SupabaseConfig | undefined;
-    if (cleanUrl && cleanKey) {
-      cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
-      saveSupabaseConfig(cfgToUse);
-      saveFn(cfgToUse);
-    }
+    try {
+      const cleanUrl = normalizeSupabaseUrl(url);
+      const cleanKey = anonKey.trim();
+      let cfgToUse: SupabaseConfig | undefined;
+      if (cleanUrl && cleanKey) {
+        cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
+        saveSupabaseConfig(cfgToUse);
+        saveFn(cfgToUse);
+      }
 
-    const res = await syncAllTablesFromSupabase({ customConfig: cfgToUse });
-    setSyncingCloud(false);
-    setTestResult({
-      success: res.success,
-      message: res.message
-    });
-    if (res.success && onSyncDatabase) {
-      onSyncDatabase();
+      const res = await syncAllTablesFromSupabase({ customConfig: cfgToUse });
+      setTestResult({
+        success: res.success,
+        message: res.message
+      });
+      if (res.success && onSyncDatabase) {
+        onSyncDatabase();
+      }
+    } catch (e: any) {
+      setTestResult({
+        success: false,
+        message: `Gagal menarik data: ${e.message || 'Koneksi terputus'}`
+      });
+    } finally {
+      setSyncingCloud(false);
+      setSyncStatusMsg('');
     }
   };
 
   const handlePushCloud = async () => {
     setSyncingCloud(true);
+    setSyncStatusMsg('Menyiapkan data lokal...');
     setTestResult(null);
 
-    const cleanUrl = normalizeSupabaseUrl(url);
-    const cleanKey = anonKey.trim();
-    let cfgToUse: SupabaseConfig | undefined;
-    if (cleanUrl && cleanKey) {
-      cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
-      saveSupabaseConfig(cfgToUse);
-      saveFn(cfgToUse);
-    }
+    try {
+      const cleanUrl = normalizeSupabaseUrl(url);
+      const cleanKey = anonKey.trim();
+      let cfgToUse: SupabaseConfig | undefined;
+      if (cleanUrl && cleanKey) {
+        cfgToUse = { url: cleanUrl, anonKey: cleanKey, isConnected: true, autoSync: true };
+        saveSupabaseConfig(cfgToUse);
+        saveFn(cfgToUse);
+      }
 
-    const res = await pushAllTablesToSupabase(cfgToUse);
-    setSyncingCloud(false);
-    setTestResult({
-      success: res.success,
-      message: res.message
-    });
-    if (res.success && onSyncDatabase) {
-      onSyncDatabase();
+      const res = await pushAllTablesToSupabase(cfgToUse, (msg) => {
+        setSyncStatusMsg(msg);
+      });
+      setTestResult({
+        success: res.success,
+        message: res.message
+      });
+      if (res.success && onSyncDatabase) {
+        onSyncDatabase();
+      }
+    } catch (e: any) {
+      setTestResult({
+        success: false,
+        message: `Gagal mengunggah data: ${e.message || 'Koneksi terputus'}`
+      });
+    } finally {
+      setSyncingCloud(false);
+      setSyncStatusMsg('');
     }
   };
 
@@ -351,6 +374,12 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
                   <span>Tarik (Pull) dari Cloud</span>
                 </button>
               </div>
+              {syncingCloud && syncStatusMsg && (
+                <div className="flex items-center gap-2 pt-1.5 text-xs text-blue-700 font-medium animate-pulse">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  <span>{syncStatusMsg}</span>
+                </div>
+              )}
             </div>
 
             <div>

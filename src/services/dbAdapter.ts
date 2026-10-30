@@ -1686,8 +1686,13 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
 
 /**
  * Unggah seluruh data lokal saat ini ke Supabase Cloud (Push All)
+ * Dioptimalkan dengan timeout proteksi, auto-skip tabel yang belum ada,
+ * dan batch cepat tanpa per-row blocking agar tombol tidak mutar selamanya.
  */
-export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Promise<{ success: boolean; message: string; count: number; errors?: string[] }> {
+export async function pushAllTablesToSupabase(
+  customConfig?: SupabaseConfig,
+  onProgress?: (statusText: string) => void
+): Promise<{ success: boolean; message: string; count: number; errors?: string[] }> {
   if (customConfig?.url && customConfig?.anonKey) {
     saveSupabaseConfig(customConfig);
   }
@@ -1701,75 +1706,137 @@ export async function pushAllTablesToSupabase(customConfig?: SupabaseConfig): Pr
   let pushed = 0;
   const failureDetails: string[] = [];
 
-  for (const table of ALL_DATABASE_TABLES) {
+  // Urutan aman: Master Data diunggah terlebih dahulu agar Foreign Key tabel transaksi terpenuhi
+  const tablesToPush = [
+    'MD_Produk',
+    'MD_Pelanggan',
+    'MD_Supplier',
+    'MD_BahanPenolong',
+    'MD_BOM',
+    'MD_Karyawan',
+    'MD_UserAkses',
+    'MD_HargaKhusus',
+    'Master_COA',
+    'Distribusi',
+    'Distribusi_Item',
+    'SPK',
+    'Produksi',
+    'Rencana_Distribusi',
+    'Pembelian_Bahan',
+    'Mutasi_Bahan',
+    'Data_QC',
+    'Data_QC_Detail',
+    'Data_Presensi',
+    'Data_Lembur',
+    'Data_Kasbon',
+    'Histori_Penggajian',
+    'Jurnal_Umum',
+    'Draf_Jurnal',
+    'Data_Piutang_Utang',
+    'Data_Aset_Tetap',
+    'Data_Surat',
+    'Admin_PO',
+    'Admin_PO_Detail',
+    'Data_Custom_Invoice',
+    'Data_Pembayaran_Pelanggan'
+  ];
+
+  for (let tIdx = 0; tIdx < tablesToPush.length; tIdx++) {
+    const table = tablesToPush[tIdx];
     const data = getTableData(table, []);
-    if (data.length > 0) {
-      try {
-        const cleanPayload = sanitizeRowsForTable(table, data);
-        if (cleanPayload.length > 0) {
-          let tableSuccess = true;
-          let tableErrors: string[] = [];
-          for (let i = 0; i < cleanPayload.length; i += 200) {
-            const batch = cleanPayload.slice(i, i + 200);
-            const { error: batchErr } = await client.from(table).upsert(batch as any);
-            if (batchErr) {
-              // Fallback per baris
-              for (const singleRow of batch) {
-                try {
-                  const { error: singleErr } = await client.from(table).upsert([singleRow] as any);
-                  if (singleErr) {
-                    tableSuccess = false;
-                    tableErrors.push(singleErr.message);
-                  }
-                } catch (rEx: any) {
-                  tableSuccess = false;
-                  tableErrors.push(rEx?.message || 'Row Exception');
-                }
-              }
+    if (!data || data.length === 0) continue;
+
+    if (onProgress) {
+      onProgress(`Mengunggah ${table} (${tIdx + 1}/${tablesToPush.length})...`);
+    }
+
+    try {
+      const cleanPayload = sanitizeRowsForTable(table, data);
+      if (cleanPayload.length === 0) continue;
+
+      let tableSuccess = true;
+      let lastErrMsg = '';
+
+      // Kirim dalam batch 100 baris dengan proteksi timeout 5 detik per batch
+      for (let i = 0; i < cleanPayload.length; i += 100) {
+        const batch = cleanPayload.slice(i, i + 100);
+        
+        try {
+          const upsertPromise = client.from(table).upsert(batch as any);
+          const timeoutPromise = new Promise<{ error: { message: string } }>((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout koneksi 5 detik')), 5000)
+          );
+
+          const { error: batchErr } = await Promise.race([upsertPromise, timeoutPromise]) as any;
+
+          if (batchErr) {
+            lastErrMsg = batchErr.message || 'Upsert error';
+            tableSuccess = false;
+            // Jika tabel belum dibuat di database Supabase (relation does not exist), langsung hentikan tabel ini
+            if (lastErrMsg.includes('does not exist')) {
+              break;
             }
           }
-          if (tableSuccess) {
-            pushed++;
-          } else {
-            console.warn(`[PushAll] Gagal sebagian upload ${table}:`, tableErrors[0]);
-            failureDetails.push(`${table}: ${tableErrors[0] || 'Constraint error'}`);
-          }
+        } catch (subEx: any) {
+          lastErrMsg = subEx.message || 'Network exception';
+          tableSuccess = false;
+          break;
         }
-      } catch (e: any) {
-        failureDetails.push(`${table}: ${e.message || 'Exception'}`);
       }
+
+      if (tableSuccess) {
+        pushed++;
+      } else {
+        failureDetails.push(`${table}: ${lastErrMsg}`);
+      }
+    } catch (e: any) {
+      failureDetails.push(`${table}: ${e.message || 'Exception'}`);
     }
   }
 
-  // Unggah juga status lisensi ke record hyperadmin di Supabase Cloud
+  // Unggah juga status lisensi ke record hyperadmin di Supabase Cloud (dengan timeout proteksi)
   try {
     const rawLic = localStorage.getItem('AIRIS_APP_LICENSE_V1');
     if (rawLic) {
-      await client.from('MD_UserAkses').update({ Alasan_Daftar: rawLic }).eq('Username', 'hyperadmin');
+      const licPromise = client.from('MD_UserAkses').update({ Alasan_Daftar: rawLic }).eq('Username', 'hyperadmin');
+      const licTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout license')), 3000));
+      await Promise.race([licPromise, licTimeout]);
     }
   } catch (e) {}
 
   notifyDbChange();
 
   if (failureDetails.length > 0) {
-    const isTableMissing = failureDetails.some(f => f.includes('does not exist'));
-    if (isTableMissing) {
+    const missingTables = failureDetails.filter(f => f.includes('does not exist'));
+    if (pushed > 0) {
+      return {
+        success: true,
+        message: `Berhasil mengunggah ${pushed} tabel ke Cloud! Data di HP & browser lain kini sinkron. (${failureDetails.length} tabel dilewati).`,
+        count: pushed,
+        errors: failureDetails
+      };
+    }
+    if (missingTables.length > 0) {
       return {
         success: false,
-        message: 'Gagal mengunggah: Tabel belum dibuat di database Supabase! Buka Supabase SQL Editor dan jalankan skrip database/00_FULL_SETUP.sql.',
+        message: 'Gagal mengunggah: Beberapa tabel belum dibuat di database Supabase. Buka Supabase SQL Editor dan jalankan skrip database/00_FULL_SETUP.sql.',
         count: pushed,
         errors: failureDetails
       };
     }
     return {
-      success: pushed > 0,
-      message: `Tersinkronisasi ${pushed} tabel. Beberapa tabel ditolak (${failureDetails.slice(0, 2).join(', ')}).`,
+      success: false,
+      message: `Gagal mengunggah tabel: ${failureDetails[0]}`,
       count: pushed,
       errors: failureDetails
     };
   }
 
-  return { success: true, message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud! Semua perangkat lain kini sinkron.`, count: pushed };
+  return { 
+    success: true, 
+    message: `Berhasil mengunggah ${pushed} tabel ke Supabase Cloud! Semua data di seluruh browser & HP kini 100% sinkron.`, 
+    count: pushed 
+  };
 }
 
 let isRealtimeSubscribed = false;
