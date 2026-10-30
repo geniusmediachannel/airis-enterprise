@@ -3,7 +3,8 @@ import {
   Factory, Plus, Play, CheckCircle2, Printer, 
   Download, Calendar, Clock, User, ChevronRight, X, AlertTriangle,
   Edit2, Trash2, Upload, FileSpreadsheet, BarChart2, FileText,
-  FileDown, Filter, TrendingUp, Boxes, Package, PieChart, Search
+  FileDown, Filter, TrendingUp, Boxes, Package, PieChart, Search,
+  ArrowUp, ArrowDown
 } from 'lucide-react';
 import { 
   SPKItem, ProductionItem, ProductItem, BOMItem, 
@@ -19,6 +20,55 @@ import {
   generateProductionReportPDF, 
   generateAnnualProductionReportPDF 
 } from '../services/pdfService';
+
+// Konversi tanggal fleksibel ke timestamp numerik untuk sorting akurat
+const toComparableDate = (dateStr?: string | number): number => {
+  if (!dateStr && dateStr !== 0) return 0;
+  if (typeof dateStr === 'number' || (!isNaN(Number(dateStr)) && Number(dateStr) > 30000 && Number(dateStr) < 60000)) {
+    const serial = Number(dateStr);
+    return (serial - 25569) * 86400 * 1000;
+  }
+  const str = String(dateStr).trim();
+  if (!str) return 0;
+
+  // 1. Pattern: YYYY-MM-DD or YYYY/MM/DD
+  const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymd) {
+    return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10)).getTime();
+  }
+  // 2. Pattern: DD/MM/YYYY or DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmy) {
+    return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10)).getTime();
+  }
+  // 3. Pattern: DD/MM/YY or DD-MM-YY (2-digit year)
+  const dmyShort = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (dmyShort) {
+    const yr = 2000 + parseInt(dmyShort[3], 10);
+    return new Date(yr, parseInt(dmyShort[2], 10) - 1, parseInt(dmyShort[1], 10)).getTime();
+  }
+  // 4. Pattern: YY-MM-DD
+  const ymdShort = str.match(/^(\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdShort) {
+    const yr = 2000 + parseInt(ymdShort[1], 10);
+    return new Date(yr, parseInt(ymdShort[2], 10) - 1, parseInt(ymdShort[3], 10)).getTime();
+  }
+  // 5. Pattern with month names (Jan-Des / Jan-Dec)
+  const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
+  const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const lower = str.toLowerCase();
+  for (let i = 0; i < 12; i++) {
+    if (lower.includes(months[i]) || lower.includes(monthsEn[i])) {
+      const yrMatch = str.match(/(20\d{2})/);
+      const dayMatch = str.match(/^(\d{1,2})/);
+      const yr = yrMatch ? parseInt(yrMatch[1], 10) : 2026;
+      const day = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+      return new Date(yr, i, day).getTime();
+    }
+  }
+  const fallback = new Date(str);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+};
 
 interface ProductionViewProps {
   spks: SPKItem[];
@@ -44,6 +94,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   const [filterMonth, setFilterMonth] = useState<string>(currentMonth);
   const [searchQueryProd, setSearchQueryProd] = useState<string>('');
   const [selectedProductFilter, setSelectedProductFilter] = useState<string>('ALL');
+  const [dateSortOrder, setDateSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Modals
   const [showSpkModal, setShowSpkModal] = useState(false);
@@ -444,7 +495,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   };
 
   const filteredProductions = useMemo(() => {
-    return productions.filter(p => {
+    const list = productions.filter(p => {
       const qty = Number(p.Jumlah);
       const isPeriodMatch = Boolean(p.Tanggal && typeof p.Tanggal === 'string' && p.Tanggal.startsWith(filterMonth) && !isNaN(qty) && qty > 0);
       if (!isPeriodMatch) return false;
@@ -469,7 +520,35 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
 
       return true;
     });
-  }, [productions, filterMonth, selectedProductFilter, searchQueryProd, products]);
+
+    return list.slice().sort((a, b) => {
+      // 1. Primary: Tanggal
+      const timeA = toComparableDate(a.Tanggal);
+      const timeB = toComparableDate(b.Tanggal);
+      if (timeA !== timeB) {
+        return dateSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      }
+
+      // 2. Secondary: Shift (Shift 1, Shift 2, Shift 3)
+      const shiftVal = (s?: string) => {
+        if (!s) return 0;
+        if (s.includes('1') || s.toLowerCase().includes('pagi')) return 1;
+        if (s.includes('2') || s.toLowerCase().includes('siang')) return 2;
+        if (s.includes('3') || s.toLowerCase().includes('malam')) return 3;
+        return 4;
+      };
+      const shiftA = shiftVal(a.Shift);
+      const shiftB = shiftVal(b.Shift);
+      if (shiftA !== shiftB) {
+        return dateSortOrder === 'desc' ? shiftB - shiftA : shiftA - shiftB;
+      }
+
+      // 3. Tertiary: ID_Produksi
+      return dateSortOrder === 'desc'
+        ? String(b.ID_Produksi || '').localeCompare(String(a.ID_Produksi || ''), undefined, { numeric: true })
+        : String(a.ID_Produksi || '').localeCompare(String(b.ID_Produksi || ''), undefined, { numeric: true });
+    });
+  }, [productions, filterMonth, selectedProductFilter, searchQueryProd, products, dateSortOrder]);
   const activeOngoingProds = productions.filter(p => !p.Jumlah || Number(p.Jumlah) === 0);
   const activeSpks = spks.filter(s => s.Status !== 'Selesai' && s.Status !== 'Diproses');
 
@@ -892,6 +971,37 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                 ))}
               </select>
             </div>
+
+            {/* Filter Sort Urutan Tanggal (Terlama / Terbaru) */}
+            <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 px-1.5 hidden md:inline">Urut:</span>
+              <button
+                type="button"
+                onClick={() => setDateSortOrder('asc')}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  dateSortOrder === 'asc'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Urutkan dari tanggal terlama ke terbaru (1 s.d. 31)"
+              >
+                <ArrowUp size={12} />
+                <span>Terlama</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateSortOrder('desc')}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  dateSortOrder === 'desc'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+                title="Urutkan dari tanggal terbaru ke terlama (31 s.d. 1)"
+              >
+                <ArrowDown size={12} />
+                <span>Terbaru</span>
+              </button>
+            </div>
           </div>
 
           {(searchQueryProd || selectedProductFilter !== 'ALL') && (
@@ -914,7 +1024,21 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
               <tr>
                 <th className="p-3">ID Produksi</th>
-                <th className="p-3">Tanggal</th>
+                <th 
+                  onClick={() => setDateSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="p-3 cursor-pointer hover:bg-blue-50/80 transition-colors select-none group min-w-[125px]"
+                  title="Klik untuk mengubah urutan tanggal (Terlama / Terbaru)"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Tanggal</span>
+                    <span className="p-0.5 rounded bg-slate-100 group-hover:bg-blue-200 text-blue-700 transition">
+                      {dateSortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-normal text-slate-500 block mt-0.5">
+                    {dateSortOrder === 'asc' ? 'Terlama → Terbaru' : 'Terbaru → Terlama'}
+                  </span>
+                </th>
                 <th className="p-3">Shift</th>
                 <th className="p-3">Produk</th>
                 <th className="p-3 text-right">Hasil (Unit)</th>
