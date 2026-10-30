@@ -136,15 +136,56 @@ const parseDateObj = (raw: any): Date | null => {
   return isNaN(fallback.getTime()) ? null : fallback;
 };
 
-// Helper: shortcode label kolom (C120, C220, B330, B600, GLN 19 L, dst)
-const getProductShortCode = (p: { Nama_Produk?: string; ID_Produk: string }): string => {
-  const nm = (p.Nama_Produk || '').toUpperCase();
-  if (nm.includes('120') || nm.includes('CUP 120')) return 'C120';
-  if (nm.includes('220') || nm.includes('CUP 220')) return 'C220';
-  if (nm.includes('330') || nm.includes('BOT 330') || nm.includes('BTL 330')) return 'B330';
-  if (nm.includes('600') || nm.includes('BOT 600') || nm.includes('BTL 600')) return 'B600';
-  if (nm.includes('19') || nm.includes('GALON') || nm.includes('GLN')) return 'GLN 19 L';
-  const parts = (p.Nama_Produk || p.ID_Produk).split(' ');
+// Helper: shortcode label kolom (C120, C220, B330, B600, G19, dst)
+const getProductShortCode = (p: { Nama_Produk?: string; ID_Produk?: string }): string => {
+  const customCode = (p as any)?.Kode_Produk;
+  if (customCode) return String(customCode);
+
+  const id = String(p?.ID_Produk || '').toUpperCase();
+  const nm = String(p?.Nama_Produk || '').toUpperCase();
+  const combined = `${id} ${nm}`;
+
+  // Galon
+  if (
+    id === 'ASH-GLN19L' || id === 'G19' || id.includes('GLN') ||
+    combined.includes('GALON') || combined.includes('GLN') || combined.includes('19 L') || combined.includes('19L') || combined.includes('G19')
+  ) {
+    return 'G19';
+  }
+
+  // Cup 120
+  if (
+    id === 'ASH-CUP120' || id === 'C120' || id.includes('CUP120') ||
+    combined.includes('120') || combined.includes('CUP 120') || combined.includes('C120')
+  ) {
+    return 'C120';
+  }
+
+  // Cup 220
+  if (
+    id === 'ASH-CUP220' || id === 'C220' || id.includes('CUP220') ||
+    combined.includes('220') || combined.includes('CUP 220') || combined.includes('C220')
+  ) {
+    return 'C220';
+  }
+
+  // Botol 330
+  if (
+    id === 'ASH-BTL330' || id === 'B330' || id.includes('BTL330') ||
+    combined.includes('330') || combined.includes('BOT 330') || combined.includes('BTL 330') || combined.includes('B330')
+  ) {
+    return 'B330';
+  }
+
+  // Botol 600
+  if (
+    id === 'ASH-BTL600' || id === 'B600' || id.includes('BTL600') ||
+    combined.includes('600') || combined.includes('BOT 600') || combined.includes('BTL 600') || combined.includes('B600')
+  ) {
+    return 'B600';
+  }
+
+  const parts = (p.Nama_Produk || p.ID_Produk || '').split(' ');
   return parts[parts.length - 1].substring(0, 8);
 };
 
@@ -349,6 +390,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const c = getCode({ ID_Produk: p.ID_Produk, Nama_Produk: (p as any).Nama_Produk });
       if (stockMap[c]) {
         stockMap[c].inQty += (Number(p.Jumlah) || 0);
+      } else {
+        const found = standardProducts.find(sp => sp.ID_Produk === p.ID_Produk);
+        if (found) {
+          const fc = getCode(found);
+          if (stockMap[fc]) {
+            stockMap[fc].inQty += (Number(p.Jumlah) || 0);
+          }
+        }
       }
     });
 
