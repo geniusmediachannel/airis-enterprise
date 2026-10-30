@@ -13,6 +13,7 @@ import { exportDataToExcel } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { confirmAction } from './ConfirmDialog';
 import { showToast } from './ToastContainer';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface StockViewProps {
   products: ProductItem[];
@@ -462,11 +463,9 @@ export const StockView: React.FC<StockViewProps> = ({
     });
   };
 
-  // Helper format tanggal ke format "DD-MMM-YYYY" bahasa Indonesia
+  // Helper format tanggal ke format baku "DD-MM-YYYY"
   const formatTanggalIndo = (dateStr: string): string => {
-    const bulanIndo = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
-    const d = new Date(dateStr + 'T00:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}-${bulanIndo[d.getMonth()]}-${d.getFullYear()}`;
+    return formatDateDDMMYYYY(dateStr);
   };
 
   const formatBulanIndo = (ym: string): string => {
@@ -1142,7 +1141,7 @@ export const StockView: React.FC<StockViewProps> = ({
                   purchases.map(p => (
                     <tr key={p.ID_Pembelian} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-blue-700">{p.ID_Pembelian}</td>
-                      <td className="p-3 text-slate-500">{p.Tanggal}</td>
+                      <td className="p-3 text-slate-500 font-mono">{formatDateDDMMYYYY(p.Tanggal)}</td>
                       <td className="p-3 font-sans font-semibold text-slate-900">{p.Nama_Bahan}</td>
                       <td className="p-3 font-sans text-slate-700">{p.Supplier}</td>
                       <td className="p-3 text-right font-bold text-emerald-700 tabular-nums">+{p.Qty.toLocaleString('id-ID')}</td>
@@ -1213,7 +1212,7 @@ export const StockView: React.FC<StockViewProps> = ({
                   mutations.map(m => (
                     <tr key={m.ID_Mutasi} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-red-700">{m.ID_Mutasi}</td>
-                      <td className="p-3 text-slate-500">{m.Tanggal}</td>
+                      <td className="p-3 text-slate-500 font-mono">{formatDateDDMMYYYY(m.Tanggal)}</td>
                       <td className="p-3 font-sans font-semibold text-slate-900">{m.Nama_Bahan}</td>
                       <td className="p-3 font-sans">
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium">

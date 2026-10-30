@@ -15,6 +15,7 @@ import { generateTableReportPDF } from '../services/pdfService';
 import { confirmAction } from './ConfirmDialog';
 import { showToast } from './ToastContainer';
 import { ROLE_INFO } from '../services/permissionService';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface AccessLogViewProps {
   currentRole?: UserRole;
@@ -143,7 +144,7 @@ export const AccessLogView: React.FC<AccessLogViewProps> = ({ currentRole = 'Sup
   const handleExportExcel = () => {
     const exportData = filteredLogs.map(l => ({
       'ID Log': l.ID_Log,
-      'Waktu': l.Waktu ? new Date(l.Waktu).toLocaleString('id-ID') : `${l.Tanggal} ${l.Jam}`,
+      'Waktu': l.Waktu ? `${formatDateDDMMYYYY(l.Waktu)} ${new Date(l.Waktu).toLocaleTimeString('id-ID')}` : `${formatDateDDMMYYYY(l.Tanggal)} ${l.Jam}`,
       'Username': l.Username,
       'Nama Karyawan': l.Nama_Karyawan || '-',
       'Role Akses': l.Role || '-',
@@ -422,7 +423,7 @@ export const AccessLogView: React.FC<AccessLogViewProps> = ({ currentRole = 'Sup
                       <td className="p-3 whitespace-nowrap align-top">
                         <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                           <Calendar size={13} className="text-blue-600 shrink-0" />
-                          <span>{log.Tanggal || (log.Waktu ? log.Waktu.slice(0, 10) : '-')}</span>
+                          <span>{formatDateDDMMYYYY(log.Tanggal || (log.Waktu ? log.Waktu.slice(0, 10) : ''))}</span>
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
                           <Clock size={11} className="shrink-0" />

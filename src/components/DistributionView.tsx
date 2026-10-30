@@ -21,6 +21,7 @@ import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAss
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
 import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -1478,21 +1479,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // State for Image 1 "Buka" Detail Drawer/Modal
   const [openDetailDist, setOpenDetailDist] = useState<DistributionItem | null>(null);
 
-  // Helper to format date as "01-Okt-2026"
+  // Helper to format date as standard DD-MM-YYYY (e.g. 15-10-2026)
   const formatDisplayDate = (dateStr?: string): string => {
-    if (!dateStr) return '-';
-    if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) return dateStr;
-    const parts = dateStr.slice(0, 10).split('-');
-    if (parts.length === 3) {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-      const y = parts[0];
-      const m = parseInt(parts[1], 10) - 1;
-      const d = parts[2].padStart(2, '0');
-      if (m >= 0 && m < 12) {
-        return `${d}-${months[m]}-${y}`;
-      }
-    }
-    return dateStr;
+    return formatDateDDMMYYYY(dateStr);
   };
 
   // Helper to calculate total billing amount (O(1) fast lookup)
@@ -1578,28 +1567,36 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return { prodSums, grandTotalTagihan };
   }, [filteredDistributions, products, distItemsMap]);
 
-  // Handler for Export Excel with flexible product columns matching Master Produk
+  // Handler for Export Excel dengan format yang 100% identik dengan Template Import Excel Distribusi
   const handleExportDistributionExcel = () => {
     const exportRows = filteredDistributions.map(dist => {
       const rowObj: Record<string, any> = {
-        'NAMA PELANGGAN': dist.Nama_Pelanggan,
+        'ID DISTRIBUSI': dist.ID_Distribusi || '',
+        'NAMA PELANGGAN': dist.Nama_Pelanggan || '',
         'LEVEL': dist.Level_Pelanggan || 'Distributor',
-        'TANGGAL KIRIM': formatDisplayDate(dist.Tanggal),
-        'NO SURAT JALAN': dist.No_Surat_Jalan,
-        'METODE KIRIM': dist.Metode_Kirim,
+        'TANGGAL KIRIM': formatDateDDMMYYYY(dist.Tanggal),
+        'NO SURAT JALAN': dist.No_Surat_Jalan || '-',
+        'TUJUAN': dist.Tujuan || '-',
+        'C120': getProductQtyByCode(dist, 'C120'),
+        'C220': getProductQtyByCode(dist, 'C220'),
+        'B330': getProductQtyByCode(dist, 'B330'),
+        'B600': getProductQtyByCode(dist, 'B600'),
+        'G19': getProductQtyByCode(dist, 'G19'),
+        'METODE KIRIM': dist.Metode_Kirim || 'Diantar Armada',
+        'TOTAL TAGIHAN': calculateTotalTagihan(dist),
         'PENGIRIM': dist.Pengirim || '-',
         'PENERIMA': dist.Penerima || '-',
-        'TUJUAN': dist.Tujuan
+        'KETERANGAN': dist.Keterangan || ''
       };
 
-      // Add dynamic product quantity columns
+      // Tambahkan varian produk tambahan jika ada di luar 5 standar pabrik
       products.forEach(p => {
         const code = getProductShortCode(p);
-        rowObj[code] = getDistProductQty(dist, p);
+        if (!['C120', 'C220', 'B330', 'B600', 'G19'].includes(code) && rowObj[code] === undefined) {
+          rowObj[code] = getDistProductQty(dist, p);
+        }
       });
 
-      rowObj['TOTAL TAGIHAN'] = calculateTotalTagihan(dist);
-      rowObj['KETERANGAN'] = dist.Keterangan || '';
       return rowObj;
     });
 

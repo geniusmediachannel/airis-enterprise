@@ -10,6 +10,7 @@ import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateQCTestPDF } from '../services/pdfService';
 import { confirmAction } from './ConfirmDialog';
 import { showToast } from './ToastContainer';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface QCViewProps {
   qcHeaders: QCHeader[];
@@ -453,18 +454,9 @@ export const QCView: React.FC<QCViewProps> = ({
   const pendingQCProductions = productions.filter(p => p.Jumlah > 0 && p.ID_Produksi && !testedProdIds.has(p.ID_Produksi));
   const filteredQcHeaders = qcHeaders.filter(q => q.Tanggal?.startsWith(filterMonth));
 
-  // Helper format tanggal ke format "DD-MMM-YYYY" bahasa Indonesia (misal: 16-Okt-2026)
+  // Helper format tanggal ke format baku DD-MM-YYYY
   const formatTglIndo = (dateStr: string): string => {
-    if (!dateStr) return '-';
-    const bulanIndo = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
-    const parts = dateStr.slice(0, 10).split('-');
-    if (parts.length === 3) {
-      const y = parts[0];
-      const m = parseInt(parts[1], 10) - 1;
-      const d = parts[2];
-      return `${d}-${bulanIndo[m] || 'Okt'}-${y}`;
-    }
-    return dateStr;
+    return formatDateDDMMYYYY(dateStr);
   };
 
   // Flattened cycle data per pengujian yang cocok dengan filterMonth
@@ -683,7 +675,7 @@ export const QCView: React.FC<QCViewProps> = ({
                   filteredQcHeaders.map(q => (
                     <tr key={q.ID_QC} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-blue-700">{q.ID_QC}</td>
-                      <td className="p-3 font-mono text-slate-500">{q.Tanggal}</td>
+                      <td className="p-3 font-mono text-slate-500">{formatDateDDMMYYYY(q.Tanggal)}</td>
                       <td className="p-3 font-semibold text-slate-900">{q.Produk}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[11px] font-bold inline-flex items-center gap-1 ${
@@ -1529,7 +1521,7 @@ export const QCView: React.FC<QCViewProps> = ({
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 block uppercase font-bold">Tanggal Uji</span>
-                  <span className="font-semibold text-slate-900">{viewDetailModal.Tanggal}</span>
+                  <span className="font-semibold text-slate-900 font-mono">{formatDateDDMMYYYY(viewDetailModal.Tanggal)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 block uppercase font-bold">Produk Diuji</span>

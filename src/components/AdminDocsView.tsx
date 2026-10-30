@@ -17,6 +17,7 @@ import { generateOfficialLetterPDF, generateInvoicePDF, generatePurchaseOrderPDF
 import { KopSuratBanner, OfficialStampWithSignature, OfficialCapStamp, OfficialTtdMarko } from './InvoiceOfficialAssets';
 import { showToast as showToastGlobal } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface AdminDocsViewProps {
   suppliers: SupplierItem[];
@@ -704,21 +705,9 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     return dateStr;
   };
 
-  // Helper to format date as "01-Okt-2026"
+  // Helper to format date as standard DD-MM-YYYY (e.g. 15-10-2026)
   const formatDisplayDate = (dateStr?: string): string => {
-    if (!dateStr) return '-';
-    if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) return dateStr;
-    const parts = dateStr.slice(0, 10).split('-');
-    if (parts.length === 3) {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-      const y = parts[0];
-      const m = parseInt(parts[1], 10) - 1;
-      const d = parts[2].padStart(2, '0');
-      if (m >= 0 && m < 12) {
-        return `${d}-${months[m]}-${y}`;
-      }
-    }
-    return dateStr;
+    return formatDateDDMMYYYY(dateStr);
   };
 
   // Helper to group items by shipment (No_SJ_Referensi / Tanggal_Kirim / Kirim_Ke)

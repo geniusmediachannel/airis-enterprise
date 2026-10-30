@@ -14,6 +14,7 @@ import { getTableData, setTableData } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
+import { formatDateDDMMYYYY } from '../services/formatters';
 import { 
   generateSPKPDF, 
   generateTableReportPDF, 
@@ -783,7 +784,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   <div>
                     <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                       <span className="font-mono font-semibold text-slate-700">{s.ID_SPK}</span>
-                      <span>{s.Tanggal}</span>
+                      <span>{formatDateDDMMYYYY(s.Tanggal)}</span>
                     </div>
                     <h4 className="text-xs font-bold text-slate-900 mt-1 line-clamp-1">{prod?.Nama_Produk || s.ID_Produk}</h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">{s.Shift}</p>
@@ -860,7 +861,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   <div>
                     <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                       <span className="font-mono font-bold text-blue-700">{p.ID_Produksi}</span>
-                      <span>{p.Tanggal}</span>
+                      <span>{formatDateDDMMYYYY(p.Tanggal)}</span>
                     </div>
                     <h4 className="text-xs font-bold text-slate-900 mt-1 line-clamp-1">{prod?.Nama_Produk || p.ID_Produk}</h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">{p.Shift} • PIC: {p.PIC_Produksi}</p>
@@ -1060,7 +1061,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   return (
                     <tr key={p.ID_Produksi} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-blue-700">{p.ID_Produksi}</td>
-                      <td className="p-3 font-mono text-slate-500">{p.Tanggal}</td>
+                      <td className="p-3 font-mono text-slate-500">{formatDateDDMMYYYY(p.Tanggal)}</td>
                       <td className="p-3 text-slate-600">{p.Shift}</td>
                       <td className="p-3 font-semibold text-slate-900">{prod?.Nama_Produk || p.ID_Produk}</td>
                       <td className="p-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
@@ -1324,7 +1325,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                               const pr = products.find(prod => prod.ID_Produk === p.ID_Produk);
                               return (
                                 <tr key={p.ID_Produksi} className="hover:bg-slate-50">
-                                  <td className="p-2.5 text-slate-600">{p.Tanggal}</td>
+                                  <td className="p-2.5 text-slate-600">{formatDateDDMMYYYY(p.Tanggal)}</td>
                                   <td className="p-2.5 font-bold text-blue-700">{p.ID_Produksi}</td>
                                   <td className="p-2.5 font-sans">{p.Shift}</td>
                                   <td className="p-2.5 font-sans font-semibold text-slate-900">{pr?.Nama_Produk || p.ID_Produk}</td>
@@ -2004,7 +2005,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   {products.find(p => p.ID_Produk === activeFinishItem.ID_Produk)?.Nama_Produk}
                 </span>
                 <span className="text-[11px] text-slate-500 block mt-0.5">
-                  Tanggal: {activeFinishItem.Tanggal} • {activeFinishItem.Shift}
+                  Tanggal: {formatDateDDMMYYYY(activeFinishItem.Tanggal)} • {activeFinishItem.Shift}
                 </span>
               </div>
 
@@ -2137,7 +2138,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
             </div>
             <div className="p-5 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3 text-slate-700">
-                <div><span className="text-slate-400 block text-[10px]">Tanggal:</span><span className="font-semibold">{showDetailSpkModal.Tanggal}</span></div>
+                <div><span className="text-slate-400 block text-[10px]">Tanggal:</span><span className="font-semibold">{formatDateDDMMYYYY(showDetailSpkModal.Tanggal)}</span></div>
                 <div><span className="text-slate-400 block text-[10px]">Shift:</span><span className="font-semibold">{showDetailSpkModal.Shift}</span></div>
                 <div><span className="text-slate-400 block text-[10px]">Produk:</span><span className="font-semibold">{products.find(p => p.ID_Produk === showDetailSpkModal.ID_Produk)?.Nama_Produk}</span></div>
                 <div><span className="text-slate-400 block text-[10px]">Target:</span><span className="font-bold text-blue-700 font-mono text-sm">{showDetailSpkModal.Target_Produksi} Unit</span></div>

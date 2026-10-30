@@ -13,6 +13,7 @@ import { getTableData, setTableData } from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { confirmAction } from './ConfirmDialog';
 import { showToast } from './ToastContainer';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface HRDViewProps {
   employees: EmployeeItem[];
@@ -1284,7 +1285,7 @@ export const HRDView: React.FC<HRDViewProps> = ({
                     kasbons.map(k => (
                       <tr key={k.ID_Kasbon} className="hover:bg-slate-50">
                         <td className="p-3 font-bold text-blue-700">{k.ID_Kasbon}</td>
-                        <td className="p-3 text-slate-600">{k.Tanggal}</td>
+                        <td className="p-3 text-slate-600 font-mono">{formatDateDDMMYYYY(k.Tanggal)}</td>
                         <td className="p-3 font-sans font-semibold text-slate-900">{k.Nama_Karyawan}</td>
                         <td className="p-3 text-right font-bold tabular-nums">Rp {k.Nominal.toLocaleString('id-ID')}</td>
                         <td className="p-3 text-center font-sans">{k.Tenor} Bulan</td>
@@ -1371,7 +1372,7 @@ export const HRDView: React.FC<HRDViewProps> = ({
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              Pencairan: {batch.tanggalPencairan || batch.periode} • {batch.items.length} Karyawan
+                              Pencairan: {formatDateDDMMYYYY(batch.tanggalPencairan) || batch.periode} &bull; {batch.items.length} Karyawan
                             </p>
                           </div>
                         </div>

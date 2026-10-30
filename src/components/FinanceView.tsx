@@ -20,6 +20,7 @@ import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { showToast as showToastGlobal } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
+import { formatDateDDMMYYYY } from '../services/formatters';
 
 interface FinanceViewProps {
   journals: GeneralJournalItem[];
@@ -1959,7 +1960,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       const coaKredit = coas.find(c => c.KODE_AKUN === d.Kode_Kredit);
                       return (
                         <tr key={`draft-row-${d.ID_Draf || 'item'}-${dIdx}`} className="hover:bg-slate-50/70">
-                          <td className="p-3 font-mono">{d.Tanggal}</td>
+                          <td className="p-3 font-mono">{formatDateDDMMYYYY(d.Tanggal)}</td>
                           <td className="p-3 font-medium">
                             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px]">
                               {d.Sumber}
@@ -2348,7 +2349,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       const isCredit = Number(j.KREDIT) > 0;
                       return (
                         <tr key={i} className="hover:bg-slate-50/70">
-                          <td className="p-3 text-slate-500">{j.TANGGAL}</td>
+                          <td className="p-3 text-slate-500 font-mono">{formatDateDDMMYYYY(j.TANGGAL)}</td>
                           <td className="p-3 font-semibold text-blue-700">{j.ID_JURNAL}</td>
                           <td className="p-3 text-slate-700">{j.REFERENSI}</td>
                           <td className={`p-3 font-sans ${isCredit ? 'pl-8 text-slate-600' : 'font-medium text-slate-900'}`}>
@@ -2870,7 +2871,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                               ) : (
                                 sel.pembelianList.map(item => (
                                   <tr key={item.id} className="hover:bg-slate-50/70">
-                                    <td className="p-2.5 text-slate-600 font-sans">{item.tanggal}</td>
+                                    <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(item.tanggal)}</td>
                                     <td className="p-2.5 font-bold text-blue-700">
                                       <div>{item.noInvoice}</div>
                                       <div className="text-[10px] text-slate-400 font-normal">SJ: {item.noSuratJalan}</div>
@@ -2943,7 +2944,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                               ) : (
                                 sel.pembayaranList.map(pay => (
                                   <tr key={pay.ID_Pembayaran} className="hover:bg-slate-50/70">
-                                    <td className="p-2.5 text-slate-600 font-sans">{pay.Tanggal}</td>
+                                    <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(pay.Tanggal)}</td>
                                     <td className="p-2.5 font-sans">
                                       <div className="font-semibold text-slate-800">{pay.Metode}</div>
                                       <div className="text-[10px] text-slate-400 font-mono">{pay.No_Referensi || pay.ID_Pembayaran}</div>
@@ -4251,7 +4252,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                         </span>
                                       </div>
                                       <div className="text-[10px] text-slate-500 mt-0.5">
-                                        SJ: {inv.noSuratJalan} · {inv.tanggal}
+                                        SJ: {inv.noSuratJalan} &middot; {formatDateDDMMYYYY(inv.tanggal)}
                                       </div>
                                       {inv.items.length > 0 && (
                                         <div className="mt-1 space-y-0.5">
