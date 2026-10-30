@@ -33,7 +33,8 @@ import { Eye, Lock, ShieldCheck } from 'lucide-react';
 
 import { 
   initializeDatabase, getTableData, saveTableData, getSupabaseConfig, saveSupabaseConfig,
-  syncAllTablesFromSupabase, setupSupabaseRealtimeSync, checkAndApplyUrlHashConfig
+  syncAllTablesFromSupabase, setupSupabaseRealtimeSync, checkAndApplyUrlHashConfig,
+  deduplicateMasterProductsAndFixRelations
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
@@ -186,7 +187,9 @@ export default function App() {
       // Auto-sync operational modules into Keuangan (skip cloud upload & skip notify loop)
       syncAllModulesToFinance({ autoPostToGeneralJournal: true, skipCloudSync: true, skipNotify: true });
 
-      setProducts(getTableData<ProductItem>('MD_Produk', []));
+      // Auto-deduplikasi master produk dan satukan relasi transaksi galon ke ASH-GLN19L
+      const cleanProducts = deduplicateMasterProductsAndFixRelations();
+      setProducts(cleanProducts);
       setCustomers(getTableData<CustomerItem>('MD_Pelanggan', []));
       setSuppliers(getTableData<SupplierItem>('MD_Supplier', []));
       setRawMaterials(getTableData<RawMaterialItem>('MD_BahanPenolong', []));

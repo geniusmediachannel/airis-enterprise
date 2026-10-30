@@ -9,7 +9,8 @@ import {
 } from '../services/excelService';
 import { 
   saveTableData, getTableData, normalizeTableRows, 
-  syncTableToSupabaseExplicit, getSupabaseConfig, TABLE_PRIMARY_KEYS 
+  syncTableToSupabaseExplicit, getSupabaseConfig, TABLE_PRIMARY_KEYS,
+  deduplicateMasterProductsAndFixRelations 
 } from '../services/dbAdapter';
 import { syncAllModulesToFinance } from '../services/financeSyncService';
 import { sanitizeAndRepairDistributionDatabase, importDistributionExcelFile, importDistributionRows } from '../services/distributionService';
@@ -234,8 +235,24 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           return new Date().toISOString().slice(0, 10);
         };
 
-        // Helper: resolve ID_Produk from name or code
+        // Helper: resolve ID_Produk from name or code ke 5 produk standar resmi
         const resolveIDProduk = (rawId: any, rawName: any): string => {
+          const str = (String(rawId || '') + ' ' + String(rawName || '')).toLowerCase();
+          if (str.includes('galon') || str.includes('gln') || str.includes('19') || str.includes('g19')) {
+            return 'ASH-GLN19L';
+          }
+          if (str.includes('120') || str.includes('c120')) {
+            return 'ASH-CUP120';
+          }
+          if (str.includes('220') || str.includes('c220')) {
+            return 'ASH-CUP220';
+          }
+          if (str.includes('330') || str.includes('b330')) {
+            return 'ASH-BTL330';
+          }
+          if (str.includes('600') || str.includes('b600')) {
+            return 'ASH-BTL600';
+          }
           if (rawId) {
             const found = masterProducts.find((p: any) =>
               p.ID_Produk === String(rawId).trim()
@@ -250,7 +267,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             );
             if (found) return found.ID_Produk;
           }
-          // Return as-is if we can't resolve — at least keep a string
           return String(rawId || rawName || 'UNKNOWN').trim();
         };
 
@@ -570,6 +586,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         const combined = Array.from(map.values());
         await saveTableData(tableName, combined);
+      }
+
+      // Pastikan Master Produk selalu ter-deduplikasi bersih & relasi transaksi menyatu di ASH-GLN19L
+      if (tableName === 'MD_Produk' || tableName === 'Produksi' || tableName === 'SPK' || tableName === 'MD_BOM') {
+        try {
+          deduplicateMasterProductsAndFixRelations();
+        } catch (e) {}
       }
 
       // Auto-sync operasional langsung ke database Cloud Supabase jika terhubung

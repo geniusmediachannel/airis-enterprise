@@ -272,8 +272,44 @@ export const StockView: React.FC<StockViewProps> = ({
   // DAILY MATRIX: PRODUKSI | DISTRIBUSI | STOCK PRODUK
   // ==============================================================
 
-  // Daftar produk aktif yang terlibat produksi/distribusi (atau semua produk aktif)
-  const activeProducts = useMemo(() => products.filter(p => p.Status === 'Aktif'), [products]);
+  // Daftar produk aktif yang terlibat produksi/distribusi (5 Varian Resmi AMDK Tanpa Duplikasi)
+  const activeProducts = useMemo(() => {
+    const orderMap: Record<string, number> = { 'C120': 1, 'C220': 2, 'B330': 3, 'B600': 4, 'G19': 5, 'GLN 19 L': 5 };
+    const seen = new Set<string>();
+    const list: ProductItem[] = [];
+
+    const getCode = (p: any): string => {
+      const code = getProductShortCode(p);
+      return (code === 'GLN 19 L' || code.includes('GLN') || code.includes('G19')) ? 'G19' : code;
+    };
+
+    (products || []).filter(p => p.Status === 'Aktif').forEach(p => {
+      const c = getCode(p);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(p);
+      }
+    });
+
+    const fallbackDefaults: ProductItem[] = [
+      { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
+    ];
+
+    fallbackDefaults.forEach(dp => {
+      const c = getCode(dp);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(dp);
+      }
+    });
+
+    list.sort((a, b) => (orderMap[getCode(a)] || 99) - (orderMap[getCode(b)] || 99));
+    return list;
+  }, [products]);
 
   // Pre-index distribution items map for O(1) hash lookup
   const distItemsMap = useMemo(() => {

@@ -1819,6 +1819,11 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
       // ignore
     }
 
+    // Otomatis bersihkan & gabungkan duplikasi master produk galon ke ASH-GLN19L
+    try {
+      deduplicateMasterProductsAndFixRelations();
+    } catch (dedupErr) {}
+
     notifyDbChange();
     window.dispatchEvent(new CustomEvent('airis_cloud_synced', { detail: { timestamp: Date.now() } }));
 
@@ -1858,11 +1863,8 @@ export async function pushAllTablesToSupabase(
   // otomatis dibuatkan item detail resmi di Distribusi_Item sebelum di-push ke Cloud!
   ensureAllDistributionItemsPopulated();
 
-  // 2. Foreign Key Protection: Pastikan master MD_Produk memuat 5 produk resmi (khususnya ASH-GLN19L)
-  const currentProds = getTableData<any>('MD_Produk', []);
-  if (!currentProds || currentProds.length === 0 || !currentProds.some(p => p.ID_Produk === 'ASH-GLN19L')) {
-    setTableData('MD_Produk', DEFAULT_PRODUCTS, { skipCloudSync: true });
-  }
+  // 2. Foreign Key Protection & Deduplikasi: Pastikan master MD_Produk memuat tepat 5 produk resmi tanpa duplikasi
+  deduplicateMasterProductsAndFixRelations();
 
   // 3. Foreign Key Protection: Pastikan semua pelanggan terdaftar di MD_Pelanggan
   const currentDists = getTableData<any>('Distribusi', []);
@@ -2087,13 +2089,192 @@ export function setupSupabaseRealtimeSync(onUpdated?: (tableName: string) => voi
 // -------------------------------------------------------------
 // DEFAULT AMDK DATA (PT. Anugerah Illahi Rabbi)
 // -------------------------------------------------------------
-const DEFAULT_PRODUCTS: ProductItem[] = [
+export const DEFAULT_PRODUCTS: ProductItem[] = [
   { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
   { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
   { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
   { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
   { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
 ];
+
+/**
+ * Deduplikasi Master Produk MD_Produk dan Migrasi Relasi Transaksi (Produksi, SPK, Distribusi_Item, MD_BOM)
+ * Menjamin HANYA ada tepat 5 varian produk resmi AMDK:
+ * 1. ASH-CUP120 (As-Shofaa Cup 120ml)
+ * 2. ASH-CUP220 (As-Shofaa Cup 220ml)
+ * 3. ASH-BTL330 (As-Shofaa Botol 330ml)
+ * 4. ASH-BTL600 (As-Shofaa Botol 600ml)
+ * 5. ASH-GLN19L (As-Shofaa Galon 19L)
+ *
+ * Menghilangkan produk galon duplikat (misal "As-Shofaa' Galon 19 l") dan menyatukan
+ * seluruh transaksi (+220 produksi masuk dan -209 distribusi keluar) ke ASH-GLN19L.
+ */
+export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
+  try {
+    const rawProds = getTableData<ProductItem>('MD_Produk', []);
+    const standardProducts = [...DEFAULT_PRODUCTS];
+
+    const duplicateIdsToMigrate = new Map<string, string>(); // duplicateId -> officialId
+    const duplicateIdsToDelete = new Set<string>();
+
+    const getStandardTargetId = (p: ProductItem): string | null => {
+      const idUpper = String(p.ID_Produk || '').trim().toUpperCase();
+      const nameLower = String(p.Nama_Produk || '').trim().toLowerCase();
+      const katLower = String(p.Kategori || '').trim().toLowerCase();
+      const satLower = String(p.Satuan || '').trim().toLowerCase();
+
+      // Galon 19L
+      if (
+        idUpper === 'ASH-GLN19L' || idUpper === 'G19' || idUpper.includes('GLN') ||
+        nameLower.includes('galon') || nameLower.includes('gln') || nameLower.includes('19') ||
+        katLower.includes('galon') || satLower === 'galon'
+      ) {
+        return 'ASH-GLN19L';
+      }
+
+      // Cup 120
+      if (idUpper === 'ASH-CUP120' || idUpper === 'C120' || idUpper.includes('CUP120') || nameLower.includes('120')) {
+        return 'ASH-CUP120';
+      }
+
+      // Cup 220
+      if (idUpper === 'ASH-CUP220' || idUpper === 'C220' || idUpper.includes('CUP220') || nameLower.includes('220')) {
+        return 'ASH-CUP220';
+      }
+
+      // Botol 330
+      if (idUpper === 'ASH-BTL330' || idUpper === 'B330' || idUpper.includes('BTL330') || nameLower.includes('330')) {
+        return 'ASH-BTL330';
+      }
+
+      // Botol 600
+      if (idUpper === 'ASH-BTL600' || idUpper === 'B600' || idUpper.includes('BTL600') || nameLower.includes('600')) {
+        return 'ASH-BTL600';
+      }
+
+      return null;
+    };
+
+    if (Array.isArray(rawProds) && rawProds.length > 0) {
+      rawProds.forEach(p => {
+        if (!p || !p.ID_Produk) return;
+        const targetOfficialId = getStandardTargetId(p);
+        if (targetOfficialId && p.ID_Produk !== targetOfficialId) {
+          duplicateIdsToMigrate.set(p.ID_Produk, targetOfficialId);
+          duplicateIdsToDelete.add(p.ID_Produk);
+        }
+      });
+    }
+
+    // Jika ditemukan record duplikat, migrasikan seluruh relasi transaksi
+    if (duplicateIdsToMigrate.size > 0) {
+      // 1. Remap Produksi
+      const prods = getTableData<any>('Produksi', []);
+      let prodMod = false;
+      const fixedProds = prods.map(pr => {
+        if (!pr || !pr.ID_Produk) return pr;
+        const targetId = duplicateIdsToMigrate.get(pr.ID_Produk);
+        if (targetId) {
+          prodMod = true;
+          return { ...pr, ID_Produk: targetId };
+        }
+        return pr;
+      });
+      if (prodMod) {
+        setTableData('Produksi', fixedProds, { skipCloudSync: true });
+        syncToSupabaseTable('Produksi', fixedProds).catch(() => {});
+      }
+
+      // 2. Remap SPK
+      const spks = getTableData<any>('SPK', []);
+      let spkMod = false;
+      const fixedSpks = spks.map(s => {
+        if (!s || !s.ID_Produk) return s;
+        const targetId = duplicateIdsToMigrate.get(s.ID_Produk);
+        if (targetId) {
+          spkMod = true;
+          return { ...s, ID_Produk: targetId };
+        }
+        return s;
+      });
+      if (spkMod) {
+        setTableData('SPK', fixedSpks, { skipCloudSync: true });
+        syncToSupabaseTable('SPK', fixedSpks).catch(() => {});
+      }
+
+      // 3. Remap Distribusi_Item
+      const distItems = getTableData<any>('Distribusi_Item', []);
+      let itemMod = false;
+      const fixedItems = distItems.map(it => {
+        if (!it || !it.ID_Produk) return it;
+        const targetId = duplicateIdsToMigrate.get(it.ID_Produk);
+        if (targetId) {
+          itemMod = true;
+          const targetProd = standardProducts.find(sp => sp.ID_Produk === targetId);
+          return {
+            ...it,
+            ID_Produk: targetId,
+            Nama_Produk: targetProd?.Nama_Produk || it.Nama_Produk
+          };
+        }
+        return it;
+      });
+      if (itemMod) {
+        setTableData('Distribusi_Item', fixedItems, { skipCloudSync: true });
+        syncToSupabaseTable('Distribusi_Item', fixedItems).catch(() => {});
+      }
+
+      // 4. Remap MD_BOM
+      const boms = getTableData<any>('MD_BOM', []);
+      let bomMod = false;
+      const fixedBoms = boms.map(b => {
+        if (!b || !b.ID_Produk) return b;
+        const targetId = duplicateIdsToMigrate.get(b.ID_Produk);
+        if (targetId) {
+          bomMod = true;
+          return { ...b, ID_Produk: targetId };
+        }
+        return b;
+      });
+      if (bomMod) {
+        setTableData('MD_BOM', fixedBoms, { skipCloudSync: true });
+        syncToSupabaseTable('MD_BOM', fixedBoms).catch(() => {});
+      }
+
+      // 5. Hapus record duplikat dari Supabase Cloud
+      try {
+        const client = getSupabaseClient();
+        if (client) {
+          duplicateIdsToDelete.forEach(dupId => {
+            client.from('MD_Produk').delete().eq('ID_Produk', dupId).catch(() => {});
+          });
+        }
+      } catch (e) {}
+    }
+
+    // Bangun daftar final produk ter-deduplikasi yang pasti tepat 5 varian resmi
+    const cleanedList: ProductItem[] = [];
+    standardProducts.forEach(sp => {
+      const existing = (rawProds || []).find(rp => rp && rp.ID_Produk === sp.ID_Produk);
+      cleanedList.push(existing ? { ...sp, ...existing } : sp);
+    });
+
+    setTableData('MD_Produk', cleanedList, { skipCloudSync: true });
+
+    // Sinkronkan master produk bersih ke cloud jika client aktif
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        client.from('MD_Produk').upsert(cleanedList as any).catch(() => {});
+      }
+    } catch (e) {}
+
+    return cleanedList;
+  } catch (err) {
+    console.warn('[DeduplicateMasterProducts] Error:', err);
+    return DEFAULT_PRODUCTS;
+  }
+}
 
 const DEFAULT_CUSTOMERS: CustomerItem[] = [
   { ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', No_Telp: '081234567890', Alamat: 'Jl. Raya Klaten No. 12', Level_Pelanggan: 'Distributor', Status: 'Aktif' },
@@ -2558,6 +2739,11 @@ export function initializeDatabase() {
   // Pastikan seluruh data distribusi galon 19L ter-generate lengkap di Distribusi_Item
   try {
     ensureAllDistributionItemsPopulated();
+  } catch (e) {}
+
+  // Pastikan Master Produk ter-deduplikasi bersih dan relasi transaksi menyatu di ASH-GLN19L
+  try {
+    deduplicateMasterProductsAndFixRelations();
   } catch (e) {}
 }
 

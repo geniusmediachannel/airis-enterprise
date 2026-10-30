@@ -291,24 +291,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return map;
   }, [distributionItems]);
 
-  // 2. Real-Time Stock per Product (Produksi Masuk - Distribusi Keluar) - memoized
+  // 2. Standard Products (5 Varian Utama AMDK Tanpa Duplikasi)
+  const standardProducts = useMemo(() => {
+    const orderMap: Record<string, number> = { 'C120': 1, 'C220': 2, 'B330': 3, 'B600': 4, 'G19': 5 };
+    const seen = new Set<string>();
+    const list: ProductItem[] = [];
+
+    const getCode = (p: any): string => {
+      const code = getProductShortCode(p);
+      return (code === 'GLN 19 L' || code.includes('GLN') || code.includes('G19')) ? 'G19' : code;
+    };
+
+    (products || []).forEach(p => {
+      if (!p) return;
+      const c = getCode(p);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(p);
+      }
+    });
+
+    // Pastikan 5 varian standar selalu ada
+    const fallbackDefaults: ProductItem[] = [
+      { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
+    ];
+
+    fallbackDefaults.forEach(dp => {
+      const c = getCode(dp);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(dp);
+      }
+    });
+
+    list.sort((a, b) => (orderMap[getCode(a)] || 99) - (orderMap[getCode(b)] || 99));
+    return list;
+  }, [products]);
+
+  // 3. Real-Time Stock per Product (Produksi Masuk - Distribusi Keluar) - memoized
   const productStockMap = useMemo(() => {
     const stockMap: Record<string, { product: ProductItem; inQty: number; outQty: number; stock: number }> = {};
-    products.forEach(p => {
-      stockMap[p.ID_Produk] = { product: p, inQty: 0, outQty: 0, stock: 0 };
+    const getCode = (p: any): string => {
+      const code = getProductShortCode(p);
+      return (code === 'GLN 19 L' || code.includes('GLN') || code.includes('G19')) ? 'G19' : code;
+    };
+
+    standardProducts.forEach(p => {
+      const c = getCode(p);
+      stockMap[c] = { product: p, inQty: 0, outQty: 0, stock: 0 };
     });
 
     productions.forEach(p => {
-      if (stockMap[p.ID_Produk]) {
-        stockMap[p.ID_Produk].inQty += (Number(p.Jumlah) || 0);
+      const c = getCode({ ID_Produk: p.ID_Produk, Nama_Produk: (p as any).Nama_Produk });
+      if (stockMap[c]) {
+        stockMap[c].inQty += (Number(p.Jumlah) || 0);
       }
     });
 
     distributions.forEach(dist => {
-      products.forEach(p => {
+      standardProducts.forEach(p => {
+        const c = getCode(p);
         const q = getDistProductQty(dist, distItemsMap, p);
-        if (stockMap[p.ID_Produk]) {
-          stockMap[p.ID_Produk].outQty += q;
+        if (stockMap[c]) {
+          stockMap[c].outQty += q;
         }
       });
     });
@@ -318,7 +367,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
 
     return stockMap;
-  }, [products, productions, distributions, distItemsMap]);
+  }, [standardProducts, productions, distributions, distItemsMap]);
 
   // 3. Monthly trends 12 months array for Line Chart (Tahun Terpilih) - memoized
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -576,7 +625,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <AnimatedCounter value={totalStockReady} /> <span className="text-xs font-normal text-slate-500">Dus/Gln</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 pl-1">
-            <span>{products.length} Varian produk di gudang</span>
+            <span>{standardProducts.length} Varian produk di gudang</span>
             <ChevronRight size={13} className="text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
           </div>
         </div>
@@ -602,6 +651,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {Object.values(productStockMap).map(({ product, inQty, outQty, stock }) => {
             const isCritical = stock <= 50;
             const isWarning = stock > 50 && stock <= 200;
+            const cleanName = product.Nama_Produk.replace(/As-Shofaa[']?\s*/gi, '');
             return (
               <div 
                 key={product.ID_Produk}
@@ -610,7 +660,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                   <span className="font-semibold text-slate-700 truncate group-hover:text-blue-600 transition-colors">
-                    {product.Nama_Produk.replace('As-Shofaa ', '')}
+                    {cleanName}
                   </span>
                   <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono font-bold">
                     {product.Satuan}

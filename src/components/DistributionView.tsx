@@ -1299,11 +1299,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const getProductShortCode = (prod: ProductItem): string => {
     const customCode = (prod as any).Kode_Produk;
     if (customCode) return String(customCode);
-    if (prod.ID_Produk.includes('CUP120')) return 'C120';
-    if (prod.ID_Produk.includes('CUP220')) return 'C220';
-    if (prod.ID_Produk.includes('BTL330')) return 'B330';
-    if (prod.ID_Produk.includes('BTL600')) return 'B600';
-    if (prod.ID_Produk.includes('GLN19') || prod.ID_Produk.includes('G19')) return 'G19';
+    const pId = String(prod.ID_Produk || '').toUpperCase();
+    const pNm = String(prod.Nama_Produk || '').toLowerCase();
+    if (pId.includes('GLN') || pId.includes('G19') || pNm.includes('galon') || pNm.includes('gln') || pNm.includes('19')) return 'G19';
+    if (pId.includes('CUP120') || pNm.includes('120')) return 'C120';
+    if (pId.includes('CUP220') || pNm.includes('220')) return 'C220';
+    if (pId.includes('BTL330') || pNm.includes('330')) return 'B330';
+    if (pId.includes('BTL600') || pNm.includes('600')) return 'B600';
 
     const numMatch = prod.Nama_Produk.match(/\d+/);
     const prefix = prod.Nama_Produk.toLowerCase().includes('botol') ? 'B' : 
@@ -1312,6 +1314,46 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     if (numMatch) return `${prefix}${numMatch[0]}`;
     return prod.ID_Produk.slice(-4);
   };
+
+  // 5 Varian Standar Resmi AMDK Bersih Tanpa Duplikasi (Urut: C120, C220, B330, B600, G19)
+  const cleanProducts = useMemo(() => {
+    const orderMap: Record<string, number> = { 'C120': 1, 'C220': 2, 'B330': 3, 'B600': 4, 'G19': 5 };
+    const seen = new Set<string>();
+    const list: ProductItem[] = [];
+
+    const getCode = (p: ProductItem): string => {
+      const code = getProductShortCode(p);
+      return (code === 'GLN 19 L' || code.includes('GLN') || code.includes('G19')) ? 'G19' : code;
+    };
+
+    (products || []).forEach(p => {
+      if (!p) return;
+      const c = getCode(p);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(p);
+      }
+    });
+
+    const fallbackDefaults: ProductItem[] = [
+      { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
+      { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
+    ];
+
+    fallbackDefaults.forEach(dp => {
+      const c = getCode(dp);
+      if (!seen.has(c)) {
+        seen.add(c);
+        list.push(dp);
+      }
+    });
+
+    list.sort((a, b) => (orderMap[getCode(a)] || 99) - (orderMap[getCode(b)] || 99));
+    return list;
+  }, [products]);
 
   // Flexible helper to get qty of any product for a given distribution (dynamic from Master Produk & Ultra-resilient aliases)
   const getDistProductQty = (dist: DistributionItem, prod: ProductItem): number => {
@@ -1545,18 +1587,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Pre-calculate grand totals for footer in a single O(N) pass
   const tableTotals = useMemo(() => {
     const prodSums: Record<string, number> = {};
-    products.forEach(p => { prodSums[p.ID_Produk] = 0; });
+    cleanProducts.forEach(p => { prodSums[p.ID_Produk] = 0; });
     let grandTotalTagihan = 0;
 
     filteredDistributions.forEach(dist => {
-      products.forEach(p => {
+      cleanProducts.forEach(p => {
         prodSums[p.ID_Produk] += getDistProductQty(dist, p);
       });
       grandTotalTagihan += calculateTotalTagihan(dist);
     });
 
     return { prodSums, grandTotalTagihan };
-  }, [filteredDistributions, products, distItemsMap]);
+  }, [filteredDistributions, cleanProducts, distItemsMap]);
 
   // Handler for Export Excel dengan format yang 100% identik dengan Template Import Excel Distribusi
   const handleExportDistributionExcel = () => {
@@ -2155,7 +2197,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <th rowSpan={2} className="p-3 text-center min-w-[90px] border-r border-slate-200">No S.J.</th>
                 <th rowSpan={2} className="p-3 min-w-[130px] border-r border-slate-200">Tujuan</th>
                 {/* Group Header for PRODUK / QTY - Dynamic columns according to Master Produk */}
-                <th colSpan={products.length} className="p-2 text-center bg-[#eef2ff] text-slate-800 font-extrabold uppercase border-r border-slate-200 tracking-wider">
+                <th colSpan={cleanProducts.length} className="p-2 text-center bg-[#eef2ff] text-slate-800 font-extrabold uppercase border-r border-slate-200 tracking-wider">
                   PRODUK / QTY
                 </th>
                 <th rowSpan={2} className="p-3 text-center min-w-[110px] border-r border-slate-200">Metode</th>
@@ -2163,7 +2205,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <th rowSpan={2} className="p-3 text-center min-w-[135px]">Aksi</th>
               </tr>
               <tr className="border-b border-slate-200 bg-[#f8faff] text-slate-700 font-extrabold text-[11px]">
-                {products.map(prod => (
+                {cleanProducts.map(prod => (
                   <th 
                     key={prod.ID_Produk} 
                     className="p-2 text-center min-w-[50px] border-r border-slate-200"
@@ -2177,7 +2219,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredDistributions.length === 0 ? (
                 <tr>
-                  <td colSpan={7 + products.length} className="p-8 text-center text-slate-400">
+                  <td colSpan={7 + cleanProducts.length} className="p-8 text-center text-slate-400">
                     {filterMonth === 'all' ? (
                       'Belum ada data pengiriman distribusi di database. Anda dapat mengimpor data melalui Pengaturan Sistem > Pusat Import & Migrasi Data Excel.'
                     ) : distributions.length > 0 ? (
@@ -2226,7 +2268,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       </td>
 
                       {/* PRODUK / QTY DYNAMIC COLUMNS */}
-                      {products.map(prod => {
+                      {cleanProducts.map(prod => {
                         const qty = getDistProductQty(dist, prod);
                         return (
                           <td key={prod.ID_Produk} className="p-2 text-center border-r border-slate-100">
@@ -2282,7 +2324,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   <td colSpan={5} className="p-3 text-right text-slate-800 uppercase tracking-wider font-extrabold text-xs border-r border-slate-200">
                     TOTAL SELURUH DISTRIBUSI ({filteredDistributions.length} Data)
                   </td>
-                  {products.map(prod => {
+                  {cleanProducts.map(prod => {
                     const sumP = tableTotals.prodSums[prod.ID_Produk] || 0;
                     return (
                       <td key={prod.ID_Produk} className="p-2 text-center font-mono font-extrabold text-blue-700 text-xs border-r border-slate-200">
@@ -2749,14 +2791,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             <th rowSpan={2} className="p-2.5 text-center min-w-[95px] border-r border-slate-200">Tanggal</th>
                             <th rowSpan={2} className="p-2.5 text-center min-w-[90px] border-r border-slate-200">No S.J.</th>
                             <th rowSpan={2} className="p-2.5 min-w-[120px] border-r border-slate-200">Tujuan</th>
-                            <th colSpan={products.length} className="p-2 text-center bg-[#eef2ff] text-slate-800 font-extrabold uppercase border-r border-slate-200 tracking-wider">
+                            <th colSpan={cleanProducts.length} className="p-2 text-center bg-[#eef2ff] text-slate-800 font-extrabold uppercase border-r border-slate-200 tracking-wider">
                               PRODUK / QTY
                             </th>
                             <th rowSpan={2} className="p-2.5 text-center min-w-[100px] border-r border-slate-200">Metode</th>
                             <th rowSpan={2} className="p-2.5 text-right min-w-[110px]">Tagihan (Rp)</th>
                           </tr>
                           <tr className="border-b border-slate-200 bg-[#f8faff] text-slate-700 font-extrabold text-[10.5px]">
-                            {products.map(prod => (
+                            {cleanProducts.map(prod => (
                               <th 
                                 key={prod.ID_Produk} 
                                 className="p-2 text-center min-w-[45px] border-r border-slate-200"
@@ -2770,7 +2812,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         <tbody className="divide-y divide-slate-100">
                           {reportDistributions.length === 0 ? (
                             <tr>
-                              <td colSpan={6 + products.length} className="p-6 text-center text-slate-400">
+                              <td colSpan={6 + cleanProducts.length} className="p-6 text-center text-slate-400">
                                 Tidak ada data pengiriman pada periode filter yang dipilih.
                               </td>
                             </tr>
@@ -2799,7 +2841,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                                   <td className="p-2.5 uppercase text-slate-700 border-r border-slate-100">
                                     {dist.Tujuan}
                                   </td>
-                                  {products.map(prod => {
+                                  {cleanProducts.map(prod => {
                                     const qty = getDistProductQty(dist, prod);
                                     return (
                                       <td key={prod.ID_Produk} className="p-2 text-center border-r border-slate-100">
@@ -2832,7 +2874,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                               <td colSpan={5} className="p-2.5 text-right text-slate-800 uppercase tracking-wider text-xs border-r border-slate-200">
                                 TOTAL REKAP DISTRIBUSI
                               </td>
-                              {products.map(prod => {
+                              {cleanProducts.map(prod => {
                                 const sumP = reportDistributions.reduce((sum, d) => sum + getDistProductQty(d, prod), 0);
                                 return (
                                   <td key={prod.ID_Produk} className="p-2 text-center font-mono font-black text-blue-800 text-xs border-r border-slate-200">
@@ -2866,14 +2908,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                           <th rowSpan={2} className="p-2.5 min-w-[180px] border-r border-slate-200">Nama Konsumen / Toko</th>
                           <th rowSpan={2} className="p-2.5 text-center min-w-[100px] border-r border-slate-200">Level Mitra</th>
-                          <th colSpan={products.length} className="p-2 text-center bg-purple-50 text-purple-900 uppercase font-extrabold tracking-wider border-r border-slate-200">
+                          <th colSpan={cleanProducts.length} className="p-2 text-center bg-purple-50 text-purple-900 uppercase font-extrabold tracking-wider border-r border-slate-200">
                             Rincian Produk Terkirim (Unit)
                           </th>
                           <th rowSpan={2} className="p-2.5 text-right min-w-[100px] border-r border-slate-200">Total Unit</th>
                           <th rowSpan={2} className="p-2.5 text-right min-w-[130px]">Total Nilai Tagihan</th>
                         </tr>
                         <tr className="bg-purple-50/60 text-purple-950 font-bold text-[11px] border-b border-slate-200">
-                          {products.map(prod => (
+                          {cleanProducts.map(prod => (
                             <th 
                               key={prod.ID_Produk} 
                               className="p-2 text-center min-w-[65px] border-r border-slate-200"
@@ -2887,7 +2929,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       <tbody className="divide-y divide-slate-100">
                         {Object.values(customerSummaryMap).length === 0 ? (
                           <tr>
-                            <td colSpan={4 + products.length} className="p-8 text-center text-slate-400 font-sans">
+                            <td colSpan={4 + cleanProducts.length} className="p-8 text-center text-slate-400 font-sans">
                               Tidak ada riwayat distribusi untuk periode ini.
                             </td>
                           </tr>
@@ -2904,7 +2946,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                               </td>
 
                               {/* Dynamic Columns for Each Product */}
-                              {products.map(prod => {
+                              {cleanProducts.map(prod => {
                                 const qty = c.productByCode[prod.ID_Produk] || 0;
                                 return (
                                   <td key={prod.ID_Produk} className="p-2 text-center font-mono border-r border-slate-100">
@@ -2933,7 +2975,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             <td colSpan={2} className="p-2.5 text-right text-slate-800 uppercase font-extrabold text-xs border-r border-slate-200">
                               TOTAL DISTRIBUSI
                             </td>
-                            {products.map(prod => {
+                            {cleanProducts.map(prod => {
                               const sumP = Object.values(customerSummaryMap).reduce((s, c) => s + (c.productByCode[prod.ID_Produk] || 0), 0);
                               return (
                                 <td key={prod.ID_Produk} className="p-2 text-center font-mono font-extrabold text-purple-800 text-xs border-r border-slate-200">
@@ -2975,7 +3017,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
                     {/* Interactive Legend for each Product */}
                     <div className="flex flex-wrap items-center gap-3 py-1">
-                      {products.map((prod, pIdx) => {
+                      {cleanProducts.map((prod, pIdx) => {
                         const colors = ['#9333ea', '#2563eb', '#16a34a', '#d97706', '#dc2626', '#0891b2', '#ea580c'];
                         const color = colors[pIdx % colors.length];
                         const total = (annualDistByProduct[prod.ID_Produk] || []).reduce((a, b) => a + b, 0);
@@ -3001,7 +3043,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
                       // Find max value across all product monthly numbers
                       let maxProductVal = 10;
-                      products.forEach(prod => {
+                      cleanProducts.forEach(prod => {
                         const row = annualDistByProduct[prod.ID_Produk] || [];
                         row.forEach(v => {
                           if (v > maxProductVal) maxProductVal = v;
@@ -3060,7 +3102,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                               ))}
 
                               {/* Render Line for each Product */}
-                              {products.map((prod, pIdx) => {
+                              {cleanProducts.map((prod, pIdx) => {
                                 const row = annualDistByProduct[prod.ID_Produk] || new Array(12).fill(0);
                                 const color = colors[pIdx % colors.length];
                                 const pts = row.map((val, idx) => ({ x: getX(idx), y: getY(val), val }));
@@ -3126,7 +3168,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                        {products.map(prod => {
+                        {cleanProducts.map(prod => {
                           const rowVals = annualDistByProduct[prod.ID_Produk] || new Array(12).fill(0);
                           const totalProd = rowVals.reduce((a, b) => a + b, 0);
                           return (
