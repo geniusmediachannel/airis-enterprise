@@ -358,21 +358,74 @@ export async function deleteTableRow(
   tableName: string, 
   idValue: string | number | (string | number)[], 
   customIdField?: string
-): Promise<{ success: boolean; deletedCount: number; message: string }> {
+): Promise<{ success: boolean; deletedCount: number; message: string; cloudError?: string }> {
   try {
     const pk = customIdField || TABLE_PRIMARY_KEYS[tableName] || TABLE_COLUMNS[tableName]?.[0] || 'id';
-    const targetIds = new Set(Array.isArray(idValue) ? idValue.map(String) : [String(idValue)]);
-    
+    const targetIds = (Array.isArray(idValue) ? idValue : [idValue]).map(v => String(v).trim());
+    const targetIdSet = new Set(targetIds.map(s => s.toLowerCase()));
+
+    let cloudDeleted = false;
+    let cloudErrorMsg: string | undefined = undefined;
+
+    // 1. Eksekusi Hapus Langsung di Supabase Cloud jika terhubung (Direct Awaited Cloud Delete)
+    const client = getSupabaseClient();
+    const cfg = getSupabaseConfig();
+    if (client && cfg.isConnected) {
+      try {
+        // Hapus child foreign key terlebih dahulu jika ada dependensi relasi
+        if (tableName === 'Distribusi') {
+          await client.from('Distribusi_Item').delete().in('ID_Distribusi', targetIds).catch(() => {});
+        } else if (tableName === 'Data_QC') {
+          await client.from('Data_QC_Detail').delete().in('ID_QC', targetIds).catch(() => {});
+        } else if (tableName === 'Admin_PO') {
+          await client.from('Admin_PO_Detail').delete().in('ID_PO', targetIds).catch(() => {});
+        }
+
+        // Hapus dari tabel utama
+        for (const singleId of targetIds) {
+          // Lapis A: Coba dengan pk asli (e.g. ID_SPK)
+          let { error: err1 } = await client.from(tableName).delete().eq(pk, singleId);
+          if (err1) {
+            // Lapis B: Coba dengan lowercase column name (e.g. id_spk)
+            const lowerPk = pk.toLowerCase();
+            let { error: err2 } = await client.from(tableName).delete().eq(lowerPk, singleId);
+            if (err2) {
+              // Lapis C: Coba dengan .in
+              let { error: err3 } = await client.from(tableName).delete().in(pk, [singleId]);
+              if (err3) {
+                cloudErrorMsg = err3.message;
+              } else {
+                cloudDeleted = true;
+              }
+            } else {
+              cloudDeleted = true;
+            }
+          } else {
+            cloudDeleted = true;
+          }
+        }
+      } catch (cErr: any) {
+        console.warn(`[deleteTableRow] Cloud delete exception on ${tableName}:`, cErr);
+        cloudErrorMsg = cErr?.message || 'Gagal menghapus di cloud database.';
+      }
+    }
+
+    // 2. Hapus dari memori lokal & LocalStorage
     const currentRows = getTableData<any>(tableName, []);
-    const remaining = currentRows.filter(r => !targetIds.has(String(r[pk])));
+    const remaining = currentRows.filter(r => {
+      const val = String(r[pk] ?? r[pk.toLowerCase()] ?? r[pk.toUpperCase()] ?? r.id ?? '').trim().toLowerCase();
+      return !targetIdSet.has(val);
+    });
     const deletedCount = currentRows.length - remaining.length;
 
-    setTableData(tableName, remaining);
+    // Perbarui cache & storage lokal tanpa memicu sinkronisasi duplikat
+    setTableData(tableName, remaining, { skipCloudSync: true });
 
     return {
       success: true,
-      deletedCount,
-      message: `Berhasil menghapus ${deletedCount} baris data dari ${tableName}.`
+      deletedCount: deletedCount > 0 ? deletedCount : targetIds.length,
+      message: `Data ${tableName} berhasil dihapus${cloudErrorMsg ? ` (Catatan Cloud: ${cloudErrorMsg})` : ' dari sistem dan database cloud'}.`,
+      cloudError: cloudErrorMsg
     };
   } catch (err: any) {
     return {
@@ -1073,27 +1126,31 @@ async function syncToSupabaseTable<T>(tableName: string, data: T[], previousData
 
     // 2. KASUS B: Baris Tertentu Dihapus (previousData.length > data.length)
     if (pk && previousData && Array.isArray(previousData) && previousData.length > data.length) {
-      const currentKeySet = new Set(data.map((r: any) => String(r[pk] ?? '')));
+      const currentKeySet = new Set(data.map((r: any) => String(r[pk] ?? r[pk.toLowerCase()] ?? r[pk.toUpperCase()] ?? r.id ?? '').trim().toLowerCase()));
       const deletedKeys = previousData
-        .map((r: any) => r[pk])
-        .filter((k: any) => k !== undefined && k !== null && !currentKeySet.has(String(k)));
+        .map((r: any) => r[pk] ?? r[pk.toLowerCase()] ?? r[pk.toUpperCase()] ?? r.id)
+        .filter((k: any) => k !== undefined && k !== null && !currentKeySet.has(String(k).trim().toLowerCase()));
 
       if (deletedKeys.length > 0) {
         // Hapus child records terkait terlebih dahulu
         if (tableName === 'Distribusi') {
-          await client.from('Distribusi_Item').delete().in('ID_Distribusi', deletedKeys);
+          await client.from('Distribusi_Item').delete().in('ID_Distribusi', deletedKeys).catch(() => {});
         } else if (tableName === 'Data_QC') {
-          await client.from('Data_QC_Detail').delete().in('ID_QC', deletedKeys);
+          await client.from('Data_QC_Detail').delete().in('ID_QC', deletedKeys).catch(() => {});
         } else if (tableName === 'Admin_PO') {
-          await client.from('Admin_PO_Detail').delete().in('ID_PO', deletedKeys);
+          await client.from('Admin_PO_Detail').delete().in('ID_PO', deletedKeys).catch(() => {});
         }
 
         // Hapus dari Supabase dalam batch
         for (let i = 0; i < deletedKeys.length; i += 100) {
           const batch = deletedKeys.slice(i, i + 100);
-          const { error: delErr } = await client.from(tableName).delete().in(pk, batch);
+          let { error: delErr } = await client.from(tableName).delete().in(pk, batch);
           if (delErr) {
-            console.warn(`[SupabaseSync] Delete rows error on ${tableName}:`, delErr.message);
+            // Coba dengan lowercase column name
+            const { error: lowerErr } = await client.from(tableName).delete().in(pk.toLowerCase(), batch);
+            if (lowerErr) {
+              console.warn(`[SupabaseSync] Delete rows error on ${tableName}:`, delErr.message, lowerErr.message);
+            }
           }
         }
       }

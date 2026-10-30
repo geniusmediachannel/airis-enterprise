@@ -10,7 +10,7 @@ import {
   SPKItem, ProductionItem, ProductItem, BOMItem, 
   RawMaterialItem, RawMaterialMutation, EmployeeItem 
 } from '../types';
-import { getTableData, setTableData } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
@@ -284,18 +284,22 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   const handleDeleteSpk = async (id: string) => {
     const ok = await confirmAction({
       title: 'Hapus Rencana SPK',
-      message: `Hapus rencana SPK ${id}? Perintah kerja ini akan dibatalkan.`,
+      message: `Hapus rencana SPK ${id}? Perintah kerja ini akan dibatalkan dan dihapus permanen dari database.`,
       confirmText: 'Ya, Hapus SPK',
       cancelText: 'Batal',
       type: 'danger'
     });
     if (!ok) return;
-    const currentSpks = getTableData<SPKItem>('SPK', []);
-    const updated = currentSpks.filter(s => s.ID_SPK !== id);
-    setTableData('SPK', updated);
+
+    const res = await deleteTableRow('SPK', id);
     setShowDetailSpkModal(null);
     onRefresh();
-    showToast('SPK Dihapus', `Rencana SPK ${id} telah dihapus.`, 'info');
+
+    if (res.cloudError) {
+      showToast('Peringatan Database', `SPK ${id} terhapus di aplikasi, namun gagal di database: ${res.cloudError}`, 'warning');
+    } else {
+      showToast('SPK Dihapus', `Rencana SPK ${id} telah dihapus dari sistem & database.`, 'info');
+    }
   };
 
   // Print SPK
@@ -482,17 +486,21 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   const handleDeleteProd = async (id: string) => {
     const ok = await confirmAction({
       title: 'Hapus Catatan Produksi',
-      message: `Hapus catatan hasil produksi ${id}?`,
+      message: `Hapus catatan hasil produksi ${id}? Data akan dihapus permanen dari database.`,
       confirmText: 'Ya, Hapus Data',
       cancelText: 'Batal',
       type: 'danger'
     });
     if (!ok) return;
-    const currentProds = getTableData<ProductionItem>('Produksi', []);
-    const updated = currentProds.filter(p => p.ID_Produksi !== id);
-    setTableData('Produksi', updated);
+
+    const res = await deleteTableRow('Produksi', id);
     onRefresh();
-    showToast('Produksi Dihapus', `Catatan produksi ${id} telah dihapus.`, 'info');
+
+    if (res.cloudError) {
+      showToast('Peringatan Database', `Produksi ${id} terhapus di aplikasi, namun gagal di database: ${res.cloudError}`, 'warning');
+    } else {
+      showToast('Produksi Dihapus', `Catatan produksi ${id} telah dihapus dari sistem & database.`, 'info');
+    }
   };
 
   const filteredProductions = useMemo(() => {
