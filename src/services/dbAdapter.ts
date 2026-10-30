@@ -395,7 +395,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
   Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
-  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan'],
+  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
   Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
   Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Qty', 'Keterangan'],
@@ -853,8 +853,33 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         metode = 'Diantar Armada';
       }
 
+      const distId = String(rawId || `DST-${Date.now().toString().slice(-6)}-${idx + 1}`).trim();
+      let c120 = parseNumeric(row.C120 ?? row.c120, 0);
+      let c220 = parseNumeric(row.C220 ?? row.c220, 0);
+      let b330 = parseNumeric(row.B330 ?? row.b330, 0);
+      let b600 = parseNumeric(row.B600 ?? row.b600, 0);
+      let g19 = parseNumeric(row.G19 ?? row.g19 ?? row.Galon ?? row.galon ?? row.GLN19 ?? row['ASH-GLN19L'], 0);
+
+      // Jika kuantitas produk masih 0 semua, periksa apakah di Distribusi_Item sudah ada rinciannya
+      if (c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0 && g19 === 0 && distId) {
+        try {
+          const items = getTableData<any>('Distribusi_Item', []);
+          const relItems = items.filter(it => it && String(it.ID_Distribusi).trim() === distId);
+          relItems.forEach(it => {
+            const pid = String(it.ID_Produk || '').toUpperCase();
+            const pname = String(it.Nama_Produk || '').toLowerCase();
+            const q = Number(it.Qty) || 0;
+            if (pid === 'ASH-CUP120' || pid === 'C120' || pname.includes('120')) c120 += q;
+            else if (pid === 'ASH-CUP220' || pid === 'C220' || pname.includes('220')) c220 += q;
+            else if (pid === 'ASH-BTL330' || pid === 'B330' || pname.includes('330')) b330 += q;
+            else if (pid === 'ASH-BTL600' || pid === 'B600' || pname.includes('600')) b600 += q;
+            else if (pid === 'ASH-GLN19L' || pid === 'G19' || pname.includes('galon') || pid.includes('GLN')) g19 += q;
+          });
+        } catch {}
+      }
+
       return {
-        ID_Distribusi: String(rawId || `DST-${Date.now().toString().slice(-6)}-${idx + 1}`).trim(),
+        ID_Distribusi: distId,
         Tanggal: parseDateISO(rawTgl),
         ID_Pelanggan: custId,
         Nama_Pelanggan: custName,
@@ -866,7 +891,12 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         No_Surat_Jalan: String(rawSj || '-').trim(),
         No_Invoice: String(rawInv || '-').trim(),
         Total_Tagihan: parseNumeric(rawTagihan, 0),
-        Keterangan: String(rawKet || '').trim()
+        Keterangan: String(rawKet || '').trim(),
+        C120: c120,
+        C220: c220,
+        B330: b330,
+        B600: b600,
+        G19: g19
       };
     }
 
@@ -1160,7 +1190,17 @@ export async function syncTableToSupabaseExplicit(
 
     for (let i = 0; i < cleanPayload.length; i += 200) {
       const batch = cleanPayload.slice(i, i + 200);
-      const { error: upsertErr } = await client.from(tableName).upsert(batch as any);
+      let { error: upsertErr } = await client.from(tableName).upsert(batch as any);
+      if (upsertErr && tableName === 'Distribusi' && (upsertErr.message.includes('column') || upsertErr.message.includes('does not exist'))) {
+        // Fallback: Jika database Supabase belum memiliki kolom C120-G19, kirim versi standar tanpa kolom tersebut
+        const stripped = batch.map((r: any) => {
+          const cp = { ...r };
+          delete cp.C120; delete cp.C220; delete cp.B330; delete cp.B600; delete cp.G19;
+          return cp;
+        });
+        const retryRes = await client.from(tableName).upsert(stripped as any);
+        upsertErr = retryRes.error;
+      }
       if (upsertErr) {
         console.warn(`[SupabaseSyncExplicit] Batch upsert error on ${tableName}:`, upsertErr.message);
         errors.push(upsertErr.message);
@@ -1921,7 +1961,17 @@ export async function pushAllTablesToSupabase(
             setTimeout(() => reject(new Error('Timeout koneksi 5 detik')), 5000)
           );
 
-          const { error: batchErr } = await Promise.race([upsertPromise, timeoutPromise]) as any;
+          let { error: batchErr } = await Promise.race([upsertPromise, timeoutPromise]) as any;
+
+          if (batchErr && table === 'Distribusi' && (batchErr.message?.includes('column') || batchErr.message?.includes('does not exist'))) {
+            const stripped = batch.map((r: any) => {
+              const cp = { ...r };
+              delete cp.C120; delete cp.C220; delete cp.B330; delete cp.B600; delete cp.G19;
+              return cp;
+            });
+            const fbRes = await client.from(table).upsert(stripped as any);
+            batchErr = fbRes.error;
+          }
 
           if (batchErr) {
             lastErrMsg = batchErr.message || 'Upsert error';

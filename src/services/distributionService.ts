@@ -560,6 +560,9 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
         `${pDef.code} (Cup 120ml)`, `${pDef.code} (Cup 220ml)`, 
         `${pDef.code} (Botol 330ml)`, `${pDef.code} (Botol 600ml)`, `${pDef.code} (Galon 19L)`
       ];
+      if (pDef.code === 'G19') {
+        exactKeys.push('Galon', 'galon', 'GALON', 'GLN', 'gln', 'GLN19', 'gln19', '19L', '19l', '19 L');
+      }
       for (const k of exactKeys) {
         if (r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== '') {
           return parseQty(r[k]);
@@ -745,7 +748,11 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
           const gCands = [
             'G19', 'g19', 'Galon', 'galon', 'GALON', 'GLN', 'gln', 
             'GLN19', 'gln19', 'ASH-GLN19L', 'Galon 19L', 'Galon 19', 
-            'G 19', 'g 19', 'G-19', 'Qty G19', 'Qty Galon', 'Jumlah Galon'
+            'G 19', 'g 19', 'G-19', 'Qty G19', 'Qty Galon', 'Jumlah Galon',
+            'Qty_G19', 'Qty_Galon', 'Jumlah_G19', 'Jumlah_Galon', 'Galon 19 Liter',
+            'GLN 19 L', 'GLN 19', 'Galon (19L)', 'Galon (G19)', 'G19 (Galon)',
+            'As-Shofaa Galon', 'As-Shofaa Galon 19L', 'Galon As-Shofaa', 'Air Galon',
+            '19L', '19 L', 'Galon Isi', 'Refill Galon', 'Refill', 'Kemasan Galon'
           ];
           for (const gc of gCands) {
             if (row[gc] !== undefined && row[gc] !== null && String(row[gc]).trim() !== '') {
