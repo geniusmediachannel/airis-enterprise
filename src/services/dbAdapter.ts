@@ -16,7 +16,7 @@ import {
   UserAccount, SpecialPriceItem
 } from '../types';
 
-const STORAGE_KEY_PREFIX = 'AIRIS_ENTERPRISE_';
+export const STORAGE_KEY_PREFIX = 'AIRIS_ENTERPRISE_';
 const SUPABASE_CONFIG_KEY = 'AIRIS_SUPABASE_CONFIG';
 
 // Build-time injected globals via vite.config.ts define
@@ -134,6 +134,27 @@ export function checkAndApplyUrlHashConfig(): { applied: boolean; config?: Supab
   if (typeof window === 'undefined') return { applied: false };
   try {
     const hash = window.location.hash || '';
+    if (hash.includes('turso_connect=')) {
+      const match = hash.match(/turso_connect=([^&]+)/);
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]);
+        const jsonStr = atob(decoded);
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.url && parsed.authToken) {
+          try {
+            localStorage.setItem('airis_turso_config', JSON.stringify({
+              url: parsed.url,
+              authToken: parsed.authToken.trim(),
+              isConnected: true,
+              autoSync: true
+            }));
+          } catch (e) {}
+          const cleanUrl = window.location.pathname + window.location.search;
+          window.history.replaceState(null, '', cleanUrl);
+          return { applied: true };
+        }
+      }
+    }
     if (hash.includes('supabase_connect=')) {
       const match = hash.match(/supabase_connect=([^&]+)/);
       if (match && match[1]) {
@@ -205,7 +226,7 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
 }
 
 // In-memory cache to ensure zero data loss across component lifecycles
-const memoryTableCache: Record<string, any[]> = {};
+export const memoryTableCache: Record<string, any[]> = {};
 
 // Cross-tab instant communication channel
 let crossTabChannel: BroadcastChannel | null = null;
@@ -347,6 +368,16 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
       console.warn(`Supabase background sync for ${tableName} failed`, err);
     });
   }
+
+  // Sinkronisasi otomatis ke Turso Database jika aktif
+  try {
+    import('./tursoAdapter').then(({ getTursoConfig, syncTableToTurso }) => {
+      const tursoCfg = getTursoConfig();
+      if (tursoCfg.isConnected && tursoCfg.autoSync) {
+        syncTableToTurso(tableName, safeData, previousData).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export const saveTableData = setTableData;
@@ -409,6 +440,18 @@ export async function deleteTableRow(
         cloudErrorMsg = cErr?.message || 'Gagal menghapus di cloud database.';
       }
     }
+
+    // Eksekusi hapus di Turso Database jika terhubung
+    try {
+      import('./tursoAdapter').then(({ getTursoConfig, deleteRowFromTurso }) => {
+        const tursoCfg = getTursoConfig();
+        if (tursoCfg.isConnected) {
+          for (const singleId of targetIds) {
+            deleteRowFromTurso(tableName, singleId, pk).catch(() => {});
+          }
+        }
+      }).catch(() => {});
+    } catch (e) {}
 
     // 2. Hapus dari memori lokal & LocalStorage
     const currentRows = getTableData<any>(tableName, []);
