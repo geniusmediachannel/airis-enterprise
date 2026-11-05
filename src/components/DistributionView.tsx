@@ -12,7 +12,7 @@ import {
   CustomerItem, SpecialPriceItem, DraftJournalItem, ReceivablePayableItem,
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
-import { getTableData, setTableData } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
@@ -801,24 +801,36 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setShowAddDistModal(true);
   };
 
-  // Delete Distribution
+  // Delete Distribution Permanently
   const handleDeleteDistribution = async (id: string) => {
     const ok = await confirmAction({
       title: 'Hapus Data Pengiriman',
-      message: `Hapus data pengiriman ${id} secara permanen? Dokumen surat jalan dan invoice terkait akan dihapus dari sistem.`,
+      message: `Hapus data pengiriman ${id} secara permanen? Dokumen surat jalan dan invoice terkait akan dihapus dari sistem dan cloud database.`,
       confirmText: 'Ya, Hapus Pengiriman',
       cancelText: 'Batal',
       type: 'danger'
     });
     if (!ok) return;
-    const currentDist = getTableData<DistributionItem>('Distribusi', []);
+
+    // 1. Rekam ke persistent tombstone agar tidak pernah dimunculkan lagi oleh background sync
+    recordDeletedDistributionId(id);
+
+    // 2. Eksekusi hapus di database cloud (Turso & Supabase) serta local cache
+    await deleteTableRow('Distribusi', id);
+
+    // 3. Hapus item child terkait jika ada
     const currentItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-    const updatedDist = currentDist.filter(d => d.ID_Distribusi !== id);
-    const updatedItems = currentItems.filter(i => i.ID_Distribusi !== id);
-    setTableData('Distribusi', updatedDist);
-    setTableData('Distribusi_Item', updatedItems);
+    const itemsToDelete = currentItems
+      .filter(i => i.ID_Distribusi === id)
+      .map(i => i.ID_Detail || '')
+      .filter(Boolean);
+
+    if (itemsToDelete.length > 0) {
+      await deleteTableRow('Distribusi_Item', itemsToDelete);
+    }
+
     onRefresh();
-    showToast('Pengiriman Dihapus', `Data pengiriman ${id} telah dihapus.`, 'info');
+    showToast('Pengiriman Dihapus', `Data pengiriman ${id} telah dihapus permanen.`, 'info');
   };
 
   // Customer dropdown change
@@ -1537,9 +1549,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return 0;
   };
 
-  // Filtered Distributions using month matcher, search query, and deterministic sorting
+  // Filtered Distributions using month matcher, search query, deterministic sorting, and persistent deletion filter
   const filteredDistributions = useMemo(() => {
-    let list = (distributions || []).filter(d => isMatchMonth(d.Tanggal, filterMonth));
+    const deletedIds = getDeletedDistributionIds();
+    let list = (distributions || [])
+      .filter(d => !deletedIds.has(String(d.ID_Distribusi || '').trim().toLowerCase()))
+      .filter(d => isMatchMonth(d.Tanggal, filterMonth));
     if (searchQueryDist.trim()) {
       const q = searchQueryDist.toLowerCase();
       list = list.filter(d => 
@@ -1599,6 +1614,41 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     return { prodSums, grandTotalTagihan };
   }, [filteredDistributions, cleanProducts, distItemsMap]);
+
+  // Deteksi data pengiriman yang tidak memuat produk sama sekali (seluruh kuantitas produk = 0)
+  const zeroQtyDists = useMemo(() => {
+    return filteredDistributions.filter(d => {
+      const anyD = d as any;
+      const c120 = Number(anyD.C120 || 0);
+      const c220 = Number(anyD.C220 || 0);
+      const b330 = Number(anyD.B330 || 0);
+      const b600 = Number(anyD.B600 || 0);
+      const g19 = Number(anyD.G19 || anyD.g19 || anyD.Galon || anyD.galon || 0);
+      const items = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+      const hasItemQty = items.some(it => Number(it.Qty || 0) > 0);
+      return c120 === 0 && c220 === 0 && b330 === 0 && b600 === 0 && g19 === 0 && !hasItemQty;
+    });
+  }, [filteredDistributions, distItemsMap]);
+
+  // Bersihkan sekaligus seluruh data pengiriman kosong (Qty 0)
+  const handlePurgeZeroQtyDists = async () => {
+    if (zeroQtyDists.length === 0) return;
+    const ok = await confirmAction({
+      title: 'Bersihkan Data Distribusi Kosong',
+      message: `Hapus ${zeroQtyDists.length} data pengiriman tanpa produk (seluruh Qty = 0) secara permanen dari sistem dan cloud database?`,
+      confirmText: 'Ya, Bersihkan Permanen',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    for (const d of zeroQtyDists) {
+      recordDeletedDistributionId(d.ID_Distribusi);
+      await deleteTableRow('Distribusi', d.ID_Distribusi);
+    }
+    onRefresh();
+    showToast('Data Kosong Dibersihkan', `${zeroQtyDists.length} data pengiriman kosong berhasil dihapus permanen.`, 'success');
+  };
 
   // Handler for Export Excel dengan format yang 100% identik dengan Template Import Excel Distribusi
   const handleExportDistributionExcel = () => {
@@ -2089,14 +2139,27 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               Seluruh data distribusi periode {filterMonth === 'all' ? 'semua bulan' : formatMonthName(filterMonth)} ditampilkan lengkap dalam 1 sheet.
             </p>
           </div>
-          <button
-            onClick={handleExportDistributionExcel}
-            className="px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-            title="Unduh Data Distribusi format Excel standar AMDK"
-          >
-            <Download size={14} />
-            <span>Export Excel</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {zeroQtyDists.length > 0 && (
+              <button
+                type="button"
+                onClick={handlePurgeZeroQtyDists}
+                className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title={`Hapus ${zeroQtyDists.length} data pengiriman tanpa produk (seluruh Qty = 0) secara permanen`}
+              >
+                <Trash2 size={13} />
+                <span>Bersihkan {zeroQtyDists.length} Data Qty 0</span>
+              </button>
+            )}
+            <button
+              onClick={handleExportDistributionExcel}
+              className="px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              title="Unduh Data Distribusi format Excel standar AMDK"
+            >
+              <Download size={14} />
+              <span>Export Excel</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Bar Distribusi */}

@@ -37,6 +37,7 @@ import {
   deduplicateMasterProductsAndFixRelations
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
+import { getTursoConfig } from './services/tursoAdapter';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
 import { 
   getStoredSession, signOut 
@@ -306,9 +307,12 @@ export default function App() {
     }, 30000);
 
     // 7. Auto Cloud Sync & Realtime Multi-Device Sync
+    const tursoCfg = getTursoConfig();
     const cfg = getSupabaseConfig();
-    if (cfg.isConnected && cfg.url && cfg.anonKey) {
-      // Pull seluruh data terbaru saat aplikasi dibuka
+
+    // Jika Turso Database aktif, prioritaskan Turso dan jangan tarik data lama Supabase
+    if (!tursoCfg.isConnected && cfg.isConnected && cfg.url && cfg.anonKey) {
+      // Pull seluruh data terbaru saat aplikasi dibuka (hanya jika Turso tidak aktif)
       syncAllTablesFromSupabase({ silent: true })
         .then(res => {
           if (res.success) {
@@ -327,6 +331,9 @@ export default function App() {
     // 7b. Interval background polling hemat CPU (setiap 60 detik saat tab aktif)
     const realtimePollInterval = setInterval(() => {
       if (document.hidden) return; // Hemat baterai & CPU jika tab di-minimize
+      const activeTurso = getTursoConfig();
+      if (activeTurso.isConnected) return; // Mode Turso: Jangan jalankan polling Supabase
+
       const curCfg = getSupabaseConfig();
       if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
         syncAllTablesFromSupabase({ silent: true })
@@ -341,6 +348,9 @@ export default function App() {
 
     // Auto-sync saat tab browser aktif kembali (focus)
     const handleWindowFocus = () => {
+      const activeTurso = getTursoConfig();
+      if (activeTurso.isConnected) return; // Mode Turso: Jangan jalankan polling Supabase
+
       const curCfg = getSupabaseConfig();
       if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
         syncAllTablesFromSupabase({ silent: true })

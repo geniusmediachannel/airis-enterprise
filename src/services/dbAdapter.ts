@@ -254,30 +254,70 @@ export function notifyDbChange(tableName?: string) {
   } catch (e) {}
 }
 
+// Persistent Tombstone untuk mencatat ID Distribusi yang sudah dihapus oleh pengguna
+// Mencegah baris yang sudah dihapus muncul kembali akibat sinkronisasi cloud lama
+const DELETED_DIST_KEY = 'airis_deleted_distribution_ids';
+
+export function getDeletedDistributionIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_DIST_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr.map(s => String(s).trim().toLowerCase()));
+    }
+  } catch (e) {}
+  return new Set();
+}
+
+export function recordDeletedDistributionId(id: string | number) {
+  try {
+    const set = getDeletedDistributionIds();
+    set.add(String(id).trim().toLowerCase());
+    localStorage.setItem(DELETED_DIST_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
+
 export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T[] {
+  let result: T[] | null = null;
+
   // 1. Cek memory cache terlebih dahulu jika sudah ada data aktif
-  if (memoryTableCache[tableName] && Array.isArray(memoryTableCache[tableName]) && memoryTableCache[tableName].length > 0) {
-    return memoryTableCache[tableName] as T[];
+  if (memoryTableCache[tableName] && Array.isArray(memoryTableCache[tableName])) {
+    result = memoryTableCache[tableName] as T[];
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PREFIX + tableName);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          memoryTableCache[tableName] = parsed;
+          result = parsed as T[];
+        }
+      }
+    } catch (e) {
+      console.error(`Error reading ${tableName}`, e);
+    }
   }
 
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PREFIX + tableName);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        memoryTableCache[tableName] = parsed;
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error(`Error reading ${tableName}`, e);
+  if (!result) {
+    memoryTableCache[tableName] = fallbackDefault;
+    try {
+      localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(fallbackDefault));
+    } catch (e) {}
+    result = fallbackDefault;
   }
-  // Initialize with fallback secara pasif (tanpa memicu side-effect render loop atau event listener)
-  memoryTableCache[tableName] = fallbackDefault;
-  try {
-    localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(fallbackDefault));
-  } catch (e) {}
-  return fallbackDefault;
+
+  // Khusus tabel Distribusi: Filter secara permanen baris yang telah dihapus oleh pengguna
+  if (tableName === 'Distribusi' && Array.isArray(result) && result.length > 0) {
+    const deletedIds = getDeletedDistributionIds();
+    if (deletedIds.size > 0) {
+      return result.filter((d: any) => {
+        const id = String(d?.ID_Distribusi || '').trim().toLowerCase();
+        return !deletedIds.has(id);
+      }) as T[];
+    }
+  }
+
+  return result;
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -394,6 +434,11 @@ export async function deleteTableRow(
     const pk = customIdField || TABLE_PRIMARY_KEYS[tableName] || TABLE_COLUMNS[tableName]?.[0] || 'id';
     const targetIds = (Array.isArray(idValue) ? idValue : [idValue]).map(v => String(v).trim());
     const targetIdSet = new Set(targetIds.map(s => s.toLowerCase()));
+
+    // Catat tombstone permanen untuk Distribusi
+    if (tableName === 'Distribusi') {
+      targetIds.forEach(id => recordDeletedDistributionId(id));
+    }
 
     let cloudDeleted = false;
     let cloudErrorMsg: string | undefined = undefined;
@@ -1442,6 +1487,12 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
     const data = await fetchAllRowsFromTable<T>(client, tableName);
     if (data) {
       if (tableName === 'Distribusi') {
+        const deletedDistIds = getDeletedDistributionIds();
+        const nonDeletedData = (data as any[]).filter((r: any) => {
+          const id = String(r?.ID_Distribusi || '').trim().toLowerCase();
+          return !deletedDistIds.has(id);
+        });
+
         // Enriched dengan data lokal dan Distribusi_Item agar kuantitas produk (G19, Galon, C120, dll) TIDAK PERNAH terhapus!
         const localDist = getTableData<any>('Distribusi', []);
         const localItems = getTableData<any>('Distribusi_Item', []);
@@ -1457,7 +1508,7 @@ export async function fetchSingleTableFromSupabase<T = any>(tableName: string): 
           arr.push(it);
         });
 
-        const enrichedRows = (data as any[]).map((r: any) => {
+        const enrichedRows = (nonDeletedData as any[]).map((r: any) => {
           const distId = String(r.ID_Distribusi || '').trim();
           const localMatch = localMap.get(distId);
           const relatedItems = itemMap.get(distId) || [];
@@ -1753,11 +1804,17 @@ export async function syncAllTablesFromSupabase(options?: { silent?: boolean; cu
           // Khusus tabel Distribusi: Gabungkan properti kuantitas produk lokal (C120, C220, B330, B600, G19)
           // agar tidak terhapus akibat skema Supabase yang hanya memiliki kolom header
           if (table === 'Distribusi') {
+            const deletedDistIds = getDeletedDistributionIds();
+            const filteredRows = rows.filter((r: any) => {
+              const id = String(r?.ID_Distribusi || '').trim().toLowerCase();
+              return !deletedDistIds.has(id);
+            });
+
             const localDist = getTableData<any>('Distribusi', []);
             const localMap = new Map<string, any>();
             localDist.forEach((d: any) => { if (d && d.ID_Distribusi) localMap.set(d.ID_Distribusi, d); });
 
-            const enrichedRows = rows.map((r: any) => {
+            const enrichedRows = filteredRows.map((r: any) => {
               const localMatch = localMap.get(r.ID_Distribusi);
               if (localMatch) {
                 return {
