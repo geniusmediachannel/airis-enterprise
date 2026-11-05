@@ -152,7 +152,11 @@ export async function executeTursoQuery(
       const obj: Record<string, any> = {};
       rowArr.forEach((cell, idx) => {
         const colName = cols[idx];
-        if (cell && typeof cell === 'object' && 'value' in cell) {
+        if (!cell || cell.type === 'null') {
+          obj[colName] = null;
+        } else if (cell.type === 'integer' || cell.type === 'float') {
+          obj[colName] = Number(cell.value);
+        } else if (cell && typeof cell === 'object' && 'value' in cell) {
           obj[colName] = cell.value;
         } else {
           obj[colName] = cell;
@@ -402,6 +406,7 @@ export async function pushAllTablesToTurso(options?: {
 export async function pullAllTablesFromTurso(options?: {
   onProgress?: (msg: string) => void;
   customConfig?: TursoConfig;
+  silent?: boolean;
 }): Promise<{ success: boolean; message: string; tablesCount: number }> {
   const cfg = options?.customConfig || getTursoConfig();
   if (!cfg.url || !cfg.authToken) {
@@ -417,13 +422,27 @@ export async function pullAllTablesFromTurso(options?: {
       const res = await executeTursoQuery(`SELECT * FROM "${table}"`, [], cfg);
 
       if (res.success && Array.isArray(res.rows)) {
-        memoryTableCache[table] = res.rows;
+        let cleanedRows = res.rows;
+        if (table === 'Distribusi') {
+          cleanedRows = res.rows.map((r: any) => ({
+            ...r,
+            C120: Number(r.C120) || 0,
+            C220: Number(r.C220) || 0,
+            B330: Number(r.B330) || 0,
+            B600: Number(r.B600) || 0,
+            G19: Number(r.G19) || 0,
+            Galon: Number(r.G19) || 0,
+            Total_Tagihan: Number(r.Total_Tagihan) || 0
+          }));
+        }
+
+        memoryTableCache[table] = cleanedRows;
         try {
-          localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(res.rows));
+          localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(cleanedRows));
         } catch (e) {}
 
         pulledTables++;
-        totalRows += res.rows.length;
+        totalRows += cleanedRows.length;
       }
     } catch (err: any) {
       console.warn(`[TursoPull] Gagal pull tabel ${table}:`, err);
@@ -431,6 +450,9 @@ export async function pullAllTablesFromTurso(options?: {
   }
 
   notifyDbChange();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('airis_cloud_synced'));
+  }
 
   return {
     success: true,

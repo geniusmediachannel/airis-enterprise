@@ -37,7 +37,7 @@ import {
   deduplicateMasterProductsAndFixRelations
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
-import { getTursoConfig } from './services/tursoAdapter';
+import { getTursoConfig, pullAllTablesFromTurso } from './services/tursoAdapter';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
 import { 
   getStoredSession, signOut 
@@ -306,14 +306,12 @@ export default function App() {
       }
     }, 30000);
 
-    // 7. Auto Cloud Sync & Realtime Multi-Device Sync
+    // 7. Auto Cloud Sync & Realtime Multi-Device Sync (Turso Serverless Database)
     const tursoCfg = getTursoConfig();
-    const cfg = getSupabaseConfig();
 
-    // Jika Turso Database aktif, prioritaskan Turso dan jangan tarik data lama Supabase
-    if (!tursoCfg.isConnected && cfg.isConnected && cfg.url && cfg.anonKey) {
-      // Pull seluruh data terbaru saat aplikasi dibuka (hanya jika Turso tidak aktif)
-      syncAllTablesFromSupabase({ silent: true })
+    if (tursoCfg.isConnected && tursoCfg.autoSync) {
+      // Auto-pull seluruh data terbaru dari Turso saat aplikasi dibuka di HP maupun PC
+      pullAllTablesFromTurso({ silent: true })
         .then(res => {
           if (res.success) {
             reloadData();
@@ -321,22 +319,14 @@ export default function App() {
           }
         })
         .catch(console.warn);
-
-      // Aktifkan Realtime Listener agar device/browser lain langsung sinkron seketika
-      setupSupabaseRealtimeSync(() => {
-        reloadData();
-      });
     }
 
-    // 7b. Interval background polling hemat CPU (setiap 60 detik saat tab aktif)
+    // 7b. Interval background polling hemat CPU (setiap 45 detik saat tab aktif)
     const realtimePollInterval = setInterval(() => {
       if (document.hidden) return; // Hemat baterai & CPU jika tab di-minimize
       const activeTurso = getTursoConfig();
-      if (activeTurso.isConnected) return; // Mode Turso: Jangan jalankan polling Supabase
-
-      const curCfg = getSupabaseConfig();
-      if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
-        syncAllTablesFromSupabase({ silent: true })
+      if (activeTurso.isConnected && activeTurso.autoSync) {
+        pullAllTablesFromTurso({ silent: true })
           .then(res => {
             if (res.success) {
               reloadData();
@@ -344,16 +334,13 @@ export default function App() {
           })
           .catch(() => {});
       }
-    }, 60000);
+    }, 45000);
 
-    // Auto-sync saat tab browser aktif kembali (focus)
+    // Auto-sync saat tab browser aktif kembali (focus) - misal saat membuka kembali HP
     const handleWindowFocus = () => {
       const activeTurso = getTursoConfig();
-      if (activeTurso.isConnected) return; // Mode Turso: Jangan jalankan polling Supabase
-
-      const curCfg = getSupabaseConfig();
-      if (curCfg.isConnected && curCfg.url && curCfg.anonKey) {
-        syncAllTablesFromSupabase({ silent: true })
+      if (activeTurso.isConnected && activeTurso.autoSync) {
+        pullAllTablesFromTurso({ silent: true })
           .then(res => {
             if (res.success) {
               reloadData();

@@ -382,7 +382,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
               }`}
             >
               <Database className="w-3.5 h-3.5" />
-              <span>Supabase Cloud</span>
+              <span>Supabase (Nonaktif)</span>
             </button>
           </div>
         </div>

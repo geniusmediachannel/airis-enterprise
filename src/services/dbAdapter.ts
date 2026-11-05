@@ -39,10 +39,8 @@ const DEFAULT_SUPABASE_ANON_KEY =
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseConfig(): SupabaseConfig {
-  let url = DEFAULT_SUPABASE_URL;
-  let anonKey = DEFAULT_SUPABASE_ANON_KEY;
-  let isConnected = Boolean(url && anonKey);
-  let autoSync = true;
+  let url = '';
+  let anonKey = '';
 
   try {
     const raw = localStorage.getItem(SUPABASE_CONFIG_KEY);
@@ -50,22 +48,18 @@ export function getSupabaseConfig(): SupabaseConfig {
       const parsed = JSON.parse(raw);
       if (parsed.url) url = parsed.url;
       if (parsed.anonKey) anonKey = parsed.anonKey;
-      if (typeof parsed.isConnected === 'boolean') isConnected = parsed.isConnected;
-      if (typeof parsed.autoSync === 'boolean') autoSync = parsed.autoSync;
     }
   } catch (e) {
     console.error('Error reading Supabase config', e);
   }
 
-  if (url && anonKey) {
-    isConnected = true;
-  }
-
+  // Sesuai instruksi pengguna: Supabase Cloud dinonaktifkan (OFF) total
+  // untuk mencegah batas kuota Egress dan konflik data dengan Turso Database
   return {
     url,
     anonKey,
-    isConnected,
-    autoSync
+    isConnected: false,
+    autoSync: false
   };
 }
 
