@@ -234,6 +234,14 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
         onProgress: (m) => setSyncStatusMsg(m),
         customConfig: { url: tursoUrl, authToken: tursoToken, isConnected: true, autoSync: true }
       });
+      if (res.success) {
+        saveTursoConfig({
+          url: tursoUrl,
+          authToken: tursoToken,
+          isConnected: true,
+          autoSync: true
+        });
+      }
       setTursoTestResult({
         success: res.success,
         message: res.message

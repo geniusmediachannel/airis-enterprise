@@ -202,6 +202,77 @@ export async function testTursoConnection(
   };
 }
 
+export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
+  MD_Produk: ['ID_Produk', 'Nama_Produk', 'Kategori', 'Satuan', 'Harga_Distributor', 'Harga_Agen', 'Harga_Reseller', 'Harga_Konsumen', 'Status'],
+  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status'],
+  MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
+  MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Tgl_Update_Harga', 'Minimum_Stock'],
+  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
+  MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
+  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun'],
+  MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Keterangan'],
+  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
+  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
+  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
+  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
+  Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
+  Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
+  Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Tipe', 'Qty', 'Keterangan'],
+  Data_QC: ['ID_QC', 'Tanggal', 'Bulan_Tahun', 'Produk', 'Petugas_QC', 'Kesimpulan', 'Status_Data', 'ID_Produksi'],
+  Data_QC_Detail: ['ID_Detail', 'ID_QC', 'Siklus', 'Baku_pH', 'Baku_TDS', 'Baku_Kekeruhan', 'Baku_Bau', 'Baku_Coliform', 'Proses_pH', 'Proses_TDS', 'Proses_Kekeruhan', 'Proses_Bau', 'Proses_Rasa', 'Proses_Ozon', 'Jadi_pH', 'Jadi_TDS', 'Jadi_Kekeruhan', 'Jadi_Bau', 'Jadi_Rasa', 'Jadi_Ozon', 'Jadi_ALT_Awal', 'Jadi_ALT_Akhir', 'Jadi_Coliform'],
+  Data_Presensi: ['ID_Presensi', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Status_Kehadiran', 'Jam_Masuk', 'Jam_Pulang', 'Keterangan'],
+  Data_Lembur: ['ID_Lembur', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Durasi_Jam', 'Keterangan'],
+  Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Status', 'Keterangan'],
+  Histori_Penggajian: ['ID_Histori', 'Periode', 'Tanggal_Bayar', 'ID_Karyawan', 'Nama_Karyawan', 'Gaji_Pokok', 'Tunjangan', 'Lembur', 'Potongan_Kasbon', 'Total_Diterima', 'Status'],
+  Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SUB_KATEGORI', 'SALDO_NORMAL', 'SALDO_AWAL'],
+  Jurnal_Umum: ['ID_Entry', 'ID_Transaksi', 'Tanggal', 'Kode_Akun', 'Nama_Akun', 'Keterangan', 'Debit', 'Kredit'],
+  Draf_Jurnal: ['ID_Draf', 'Tanggal', 'Kategori', 'Keterangan', 'Nominal', 'Akun_Debit', 'Akun_Kredit', 'Status'],
+  Data_Piutang_Utang: ['ID_DOKUMEN', 'TIPE', 'TANGGAL', 'JATUH_TEMPO', 'ENTITAS', 'DESKRIPSI', 'TOTAL_TAGIHAN', 'SISA_TAGIHAN', 'STATUS', 'KETERANGAN'],
+  Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'KATEGORI', 'TGL_PEROLEHAN', 'HARGA_PEROLEHAN', 'NILAI_SISA', 'MASA_MANFAAT', 'METODE_PENYUSUTAN'],
+  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Lampiran', 'Kepada', 'Alamat_Tujuan', 'Isi_Surat', 'Penandatangan_Nama'],
+  Admin_PO: ['ID_PO', 'No_PO', 'Tanggal', 'ID_Supplier', 'Nama_Supplier', 'Perihal', 'Total_Nilai', 'Status'],
+  Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Barang', 'Spesifikasi', 'Qty', 'Satuan', 'Harga_Satuan', 'Subtotal'],
+  Data_Custom_Invoice: ['ID_Invoice', 'Nomor_Invoice', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Total_Tagihan', 'Status'],
+  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Nominal', 'Metode', 'Catatan']
+};
+
+/**
+ * Filter kolom secara ketat sesuai skema resmi Turso SQLite
+ * Mencegah SQLite error: "table ... has no column named ..." akibat properti runtime/UI
+ */
+export function getSanitizedColumns(tableName: string, rows: any[]): string[] {
+  const allowed = TURSO_TABLE_COLUMNS[tableName];
+  if (allowed && allowed.length > 0) {
+    const allowedSet = new Set(allowed);
+    const colSet = new Set<string>();
+    rows.forEach(r => {
+      if (!r || typeof r !== 'object') return;
+      Object.keys(r).forEach(k => {
+        if (allowedSet.has(k)) {
+          colSet.add(k);
+        }
+      });
+    });
+    const pk = TABLE_PRIMARY_KEYS[tableName];
+    if (pk && allowedSet.has(pk)) {
+      colSet.add(pk);
+    }
+    return Array.from(colSet);
+  }
+
+  // Fallback umum jika nama tabel dinamis
+  const colSet = new Set<string>();
+  rows.forEach(r => {
+    if (!r || typeof r !== 'object') return;
+    Object.keys(r).forEach(k => {
+      if (!k.startsWith('_') && k !== 'created_at' && k !== 'updated_at' && k !== 'Items' && k !== 'items') {
+        colSet.add(k);
+      }
+    });
+  });
+  return Array.from(colSet);
+}
+
 /**
  * Eksekusi Batch Query untuk insert banyak data sekaligus secara cepat
  */
@@ -225,6 +296,7 @@ export async function executeTursoBatch(
           return Number.isInteger(arg) ? { type: 'integer', value: String(arg) } : { type: 'float', value: arg };
         }
         if (typeof arg === 'boolean') return { type: 'integer', value: arg ? '1' : '0' };
+        if (typeof arg === 'object') return { type: 'text', value: JSON.stringify(arg) };
         return { type: 'text', value: String(arg) };
       })
     }
@@ -284,16 +356,8 @@ export async function pushAllTablesToTurso(options?: {
         continue;
       }
 
-      // Ambil seluruh nama kolom unik dari baris data
-      const colSet = new Set<string>();
-      rows.forEach(r => {
-        Object.keys(r || {}).forEach(k => {
-          if (!k.startsWith('_') && k !== 'created_at' && k !== 'updated_at') {
-            colSet.add(k);
-          }
-        });
-      });
-      const columns = Array.from(colSet);
+      // Ambil kolom yang benar-benar ada di skema Turso
+      const columns = getSanitizedColumns(table, rows);
       if (columns.length === 0) continue;
 
       const quotedCols = columns.map(c => `"${c}"`).join(', ');
@@ -312,7 +376,10 @@ export async function pushAllTablesToTurso(options?: {
           })
         }));
 
-        await executeTursoBatch(stmts, cfg);
+        const bRes = await executeTursoBatch(stmts, cfg);
+        if (!bRes.success) {
+          console.warn(`[TursoPush] Batch error pada tabel ${table}:`, bRes.error);
+        }
       }
 
       pushedTables++;
@@ -402,15 +469,7 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
     }
 
     // 3. Kasus C: Upsert baris aktif
-    const colSet = new Set<string>();
-    data.forEach(r => {
-      Object.keys(r || {}).forEach(k => {
-        if (!k.startsWith('_') && k !== 'created_at' && k !== 'updated_at') {
-          colSet.add(k);
-        }
-      });
-    });
-    const columns = Array.from(colSet);
+    const columns = getSanitizedColumns(tableName, data);
     if (columns.length === 0) return;
 
     const quotedCols = columns.map(c => `"${c}"`).join(', ');
