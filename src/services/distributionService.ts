@@ -7,10 +7,11 @@
 import { getTableData, setTableData, getSupabaseConfig, syncTableToSupabaseExplicit } from './dbAdapter';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
-  CustomerItem, EmployeeItem, DraftJournalItem, ReceivablePayableItem 
+  CustomerItem, EmployeeItem, DraftJournalItem, ReceivablePayableItem, SpecialPriceItem 
 } from '../types';
 import { syncAllModulesToFinance } from './financeSyncService';
 import { parseExcelFile } from './excelService';
+import { getPriceAtDate } from './priceService';
 
 // Daftar wilayah / kecamatan di Klaten untuk inferensi otomatis jika Alamat kosong
 const KLATEN_DISTRICTS = [
@@ -35,35 +36,35 @@ export const DEFAULT_PRODUCT_DEFS: ProductDefWithAliases[] = [
     code: 'C120', 
     id: 'ASH-CUP120', 
     name: 'As-Shofaa Cup 120ml', 
-    price: 12000,
+    price: 16500,
     aliases: ['c120', 'cup120', 'c120ml', 'cup120ml', '120ml', '120', 'ashcup120', 'ash-cup120', 'cup 120', 'cup 120ml', 'c 120', 'dusc120', 'dus c120', 'qty c120', 'jumlah c120', 'c120 (cup 120ml)']
   },
   { 
     code: 'C220', 
     id: 'ASH-CUP220', 
     name: 'As-Shofaa Cup 220ml', 
-    price: 14500,
+    price: 20500,
     aliases: ['c220', 'cup220', 'c220ml', 'cup220ml', '220ml', '220', 'ashcup220', 'ash-cup220', 'cup 220', 'cup 220ml', 'c 220', 'dusc220', 'dus c220', 'qty c220', 'jumlah c220', 'c220 (cup 220ml)']
   },
   { 
     code: 'B330', 
     id: 'ASH-BTL330', 
     name: 'As-Shofaa Botol 330ml', 
-    price: 24000,
+    price: 32500,
     aliases: ['b330', 'btl330', 'botol330', 'b330ml', 'botol330ml', '330ml', '330', 'ashbtl330', 'ash-btl330', 'botol 330', 'botol 330ml', 'b 330', 'dusb330', 'dus b330', 'qty b330', 'jumlah b330']
   },
   { 
     code: 'B600', 
     id: 'ASH-BTL600', 
     name: 'As-Shofaa Botol 600ml', 
-    price: 28000,
+    price: 36000,
     aliases: ['b600', 'btl600', 'botol600', 'b600ml', 'botol600ml', '600ml', '600', 'ashbtl600', 'ash-btl600', 'botol 600', 'botol 600ml', 'b 600', 'dusb600', 'dus b600', 'qty b600', 'jumlah b600']
   },
   { 
     code: 'G19', 
     id: 'ASH-GLN19L', 
     name: 'As-Shofaa Galon 19L', 
-    price: 9000,
+    price: 12000,
     aliases: [
       'g19', 'gln19', 'gln19l', 'g19l', 'galon19', 'galon19l', 'galon', 'gln', '19l', '19', 
       'galon19liter', 'airgalon', 'galonair', 'ashgln19l', 'ash-gln19l', 'ashgln', 'ash-gln',
@@ -150,6 +151,62 @@ export interface DistributionRepairResult {
 }
 
 /**
+ * Helper terpadu menghitung harga satuan produk yang berlaku untuk mitra tertentu
+ * dengan hierarki 3 tingkat yang konsisten:
+ * 1. MD_HargaKhusus (Berdasarkan rentang Tanggal_Mulai s/d Tanggal_Selesai)
+ * 2. MD_HistoriHarga / Histori_Perubahan_Harga (Berdasarkan tanggal transaksi)
+ * 3. Master Data Produk (Berdasarkan tier level mitra: Distributor / Agen / Reseller / Konsumen)
+ */
+export function calculateEffectiveProductPrice(
+  prodId: string,
+  custId: string,
+  targetDate: string,
+  customers: CustomerItem[],
+  products: ProductItem[],
+  specialPrices: SpecialPriceItem[]
+): number {
+  const normCustId = String(custId || '').trim().toLowerCase();
+  const cust = customers.find(c => 
+    String(c.ID_Pelanggan || '').trim().toLowerCase() === normCustId ||
+    String(c.Nama_Pelanggan || '').trim().toLowerCase() === normCustId
+  );
+  const prod = products.find(p => 
+    p.ID_Produk === prodId || 
+    String(p.Nama_Produk || '').toLowerCase() === String(prodId || '').toLowerCase()
+  );
+  if (!prod) return 0;
+  const level = cust?.Level_Pelanggan || 'Distributor';
+  const dateStr = (targetDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+
+  // 1. Cek Harga Khusus Mitra (MD_HargaKhusus)
+  const custRealId = cust?.ID_Pelanggan || custId;
+  const specials = specialPrices.filter(s => {
+    if (s.ID_Pelanggan !== custRealId || s.ID_Produk !== prod.ID_Produk || !s.Harga_Custom || Number(s.Harga_Custom) <= 0) return false;
+    const mulai = (s.Tanggal_Mulai || '').trim();
+    if (mulai && dateStr < mulai) return false;
+    const selesai = (s.Tanggal_Selesai || '').trim();
+    if (selesai && dateStr > selesai) return false;
+    return true;
+  });
+  if (specials.length > 0) {
+    specials.sort((a, b) => (b.Tanggal_Mulai || '').localeCompare(a.Tanggal_Mulai || ''));
+    return Number(specials[0].Harga_Custom);
+  }
+
+  // 2. Cek Histori Perubahan Harga Berdasarkan Tanggal (Histori_Perubahan_Harga)
+  try {
+    const tierPriceAtDate = getPriceAtDate(prod.ID_Produk, dateStr, 'Produk', level as any);
+    if (tierPriceAtDate > 0) return tierPriceAtDate;
+  } catch (err) {}
+
+  // 3. Fallback ke Harga Master Produk
+  if (level === 'Agen') return prod.Harga_Agen || prod.Harga_Distributor || 0;
+  if (level === 'Reseller') return prod.Harga_Reseller || prod.Harga_Distributor || 0;
+  if (level === 'Konsumen') return prod.Harga_Konsumen || prod.Harga_Distributor || 0;
+  return prod.Harga_Distributor || 0;
+}
+
+/**
  * Memindai seluruh database distribusi dan secara otomatis merapikan
  * format data standar tanpa mengubah atau mengarang kuantitas produk.
  */
@@ -160,12 +217,14 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
     const rawCustomers = getTableData<CustomerItem>('MD_Pelanggan', []) || [];
     const rawEmployees = getTableData<EmployeeItem>('MD_Karyawan', []) || [];
     const rawProducts = getTableData<ProductItem>('MD_Produk', []) || [];
+    const rawSpecialPrices = getTableData<SpecialPriceItem>('MD_HargaKhusus', []) || [];
 
     const currentDist = (Array.isArray(rawDist) ? rawDist : []).filter(d => d && typeof d === 'object');
     const currentItems = (Array.isArray(rawItems) ? rawItems : []).filter(it => it && typeof it === 'object');
     const customers = (Array.isArray(rawCustomers) ? rawCustomers : []).filter(c => c && typeof c === 'object');
     const employees = (Array.isArray(rawEmployees) ? rawEmployees : []).filter(e => e && typeof e === 'object');
     const products = (Array.isArray(rawProducts) ? rawProducts : []).filter(p => p && typeof p === 'object');
+    const specialPrices = (Array.isArray(rawSpecialPrices) ? rawSpecialPrices : []).filter(s => s && typeof s === 'object');
 
     // Map pelanggan untuk lookup cepat (dengan safe string conversion)
     const custMap = new Map<string, CustomerItem>();
@@ -293,7 +352,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
       }
 
       if (distItems.length === 0) {
-        DEFAULT_PRODUCT_DEFS.forEach((pDef, pIdx) => {
+        DEFAULT_PRODUCT_DEFS.forEach((pDef) => {
           let q = 0;
           if (pDef.code === 'G19') {
             q = galonQtyInDist;
@@ -301,6 +360,15 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
             q = Number(anyDist[pDef.code] || anyDist[pDef.code.toLowerCase()] || anyDist[pDef.id] || 0);
           }
           if (q > 0) {
+            const effPrice = calculateEffectiveProductPrice(
+              pDef.id,
+              anyDist.ID_Pelanggan || anyDist.Nama_Pelanggan,
+              anyDist.Tanggal,
+              customers,
+              products,
+              specialPrices
+            ) || pDef.price;
+
             const detailItem: DistributionProductDetail = {
               ID_Detail: `${anyDist.ID_Distribusi}-${pDef.code}`,
               ID_Distribusi: anyDist.ID_Distribusi,
@@ -310,8 +378,8 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
               ID_Produk: pDef.id,
               Nama_Produk: pDef.name,
               Qty: q,
-              Harga_Satuan: pDef.price,
-              Subtotal: q * pDef.price,
+              Harga_Satuan: effPrice,
+              Subtotal: q * effPrice,
               Satuan: pDef.code === 'G19' ? 'Galon' : 'Dus'
             };
             distItems.push(detailItem);
@@ -325,7 +393,36 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
           itemMap.set(anyDist.ID_Distribusi, distItems);
         }
       } else {
-        // Bi-Directional Sync murni:
+        // Bi-Directional Sync & Price Integrity Check:
+        // Selaraskan harga item lama jika masih memuat harga dummy usang (12.000, 14.500, 24.000, 28.000, 9.000) atau 0
+        const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
+        distItems.forEach(it => {
+          const currentPrice = Number(it.Harga_Satuan) || 0;
+          if (currentPrice <= 0 || DUMMY_OLD_PRICES.includes(currentPrice)) {
+            const effPrice = calculateEffectiveProductPrice(
+              it.ID_Produk,
+              anyDist.ID_Pelanggan || anyDist.Nama_Pelanggan,
+              anyDist.Tanggal,
+              customers,
+              products,
+              specialPrices
+            );
+            if (effPrice > 0 && effPrice !== currentPrice) {
+              it.Harga_Satuan = effPrice;
+              it.Subtotal = (Number(it.Qty) || 0) * effPrice;
+              isModified = true;
+              syncedItemsCount++;
+
+              // Update juga di repairedItemsList
+              const repIdx = repairedItemsList.findIndex(r => r.ID_Detail === it.ID_Detail || (r.ID_Distribusi === it.ID_Distribusi && r.ID_Produk === it.ID_Produk));
+              if (repIdx !== -1) {
+                repairedItemsList[repIdx].Harga_Satuan = effPrice;
+                repairedItemsList[repIdx].Subtotal = it.Subtotal;
+              }
+            }
+          }
+        });
+
         // A. Jika distItems SUDAH ADA item Galon, pastikan field anyDist.G19 juga sinkron terisi!
         const existingGalonInItems = distItems.find(it => 
           it.ID_Produk === 'ASH-GLN19L' || 
@@ -345,6 +442,15 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         } else if (galonQtyInDist > 0) {
           // B. Jika record dist memiliki data galon tapi belum masuk ke distItems
           const galonDef = DEFAULT_PRODUCT_DEFS.find(p => p.code === 'G19')!;
+          const effPrice = calculateEffectiveProductPrice(
+            galonDef.id,
+            anyDist.ID_Pelanggan || anyDist.Nama_Pelanggan,
+            anyDist.Tanggal,
+            customers,
+            products,
+            specialPrices
+          ) || galonDef.price;
+
           const detailItem: DistributionProductDetail = {
             ID_Detail: `${anyDist.ID_Distribusi}-G19`,
             ID_Distribusi: anyDist.ID_Distribusi,
@@ -354,8 +460,8 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
             ID_Produk: galonDef.id,
             Nama_Produk: galonDef.name,
             Qty: galonQtyInDist,
-            Harga_Satuan: galonDef.price,
-            Subtotal: galonQtyInDist * galonDef.price,
+            Harga_Satuan: effPrice,
+            Subtotal: galonQtyInDist * effPrice,
             Satuan: 'Galon'
           };
           distItems.push(detailItem);
@@ -387,7 +493,7 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         totalTagihanCalc = Math.max(0, totalTagihanCalc - (totalQtyCalc * 1000));
       }
 
-      if (!anyDist.Total_Tagihan || Number(anyDist.Total_Tagihan) <= 0) {
+      if (!anyDist.Total_Tagihan || Number(anyDist.Total_Tagihan) <= 0 || (isModified && Math.abs(Number(anyDist.Total_Tagihan) - totalTagihanCalc) > 0)) {
         if (totalTagihanCalc > 0) {
           anyDist.Total_Tagihan = totalTagihanCalc;
           isModified = true;

@@ -22,6 +22,7 @@ import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
 import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
 import { formatDateDDMMYYYY } from '../services/formatters';
+import { getPriceAtDate } from '../services/priceService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -697,17 +698,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   ]);
   const [isSavingDist, setIsSavingDist] = useState<boolean>(false);
 
-  // Price calculation based on customer level or special price (considering effective date)
+  // Price calculation based on customer level, historical price date, or special price
   const getProductPriceForCustomer = (prodId: string, custId: string, targetDate?: string) => {
-    const cust = customers.find(c => c.ID_Pelanggan === custId);
-    const prod = products.find(p => p.ID_Produk === prodId);
-    if (!prod || !cust) return 0;
+    const normCustId = String(custId || '').trim().toLowerCase();
+    const cust = customers.find(c => 
+      String(c.ID_Pelanggan || '').trim().toLowerCase() === normCustId ||
+      String(c.Nama_Pelanggan || '').trim().toLowerCase() === normCustId
+    );
+    const prod = products.find(p => 
+      p.ID_Produk === prodId || 
+      String(p.Nama_Produk || '').toLowerCase() === String(prodId || '').toLowerCase()
+    );
+    if (!prod) return 0;
 
     const evalDate = (targetDate || formData?.Tanggal || planForm?.Tanggal_Rencana || new Date().toISOString().slice(0, 10)).trim();
+    const custRealId = cust?.ID_Pelanggan || custId;
 
-    // Evaluasi harga khusus pelanggan berdasarkan rentang tanggal berlaku (Tanggal_Mulai s/d Tanggal_Selesai)
+    // 1. Evaluasi harga khusus mitra (MD_HargaKhusus) berdasarkan rentang tanggal berlaku (Tanggal_Mulai s/d Tanggal_Selesai)
     const activeSpecialPrices = specialPrices.filter(s => {
-      if (s.ID_Pelanggan !== custId || s.ID_Produk !== prodId || !s.Harga_Custom || Number(s.Harga_Custom) <= 0) {
+      if (s.ID_Pelanggan !== custRealId || s.ID_Produk !== prod.ID_Produk || !s.Harga_Custom || Number(s.Harga_Custom) <= 0) {
         return false;
       }
       const mulai = (s.Tanggal_Mulai || '').trim();
@@ -729,10 +738,21 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       return Number(activeSpecialPrices[0].Harga_Custom);
     }
 
-    if (cust.Level_Pelanggan === 'Distributor') return prod.Harga_Distributor;
-    if (cust.Level_Pelanggan === 'Agen') return prod.Harga_Agen;
-    if (cust.Level_Pelanggan === 'Reseller') return prod.Harga_Reseller;
-    return prod.Harga_Konsumen;
+    const level = cust?.Level_Pelanggan || 'Distributor';
+
+    // 2. Evaluasi Histori Perubahan Harga berdasarkan Tanggal Transaksi (MD_HistoriHarga / Histori_Perubahan_Harga)
+    try {
+      const historicalTierPrice = getPriceAtDate(prod.ID_Produk, evalDate, 'Produk', level as any);
+      if (historicalTierPrice > 0) return historicalTierPrice;
+    } catch (e) {
+      // Fallback
+    }
+
+    // 3. Fallback ke Master Data Produk sesuai tier level mitra
+    if (level === 'Agen') return prod.Harga_Agen || prod.Harga_Distributor || 0;
+    if (level === 'Reseller') return prod.Harga_Reseller || prod.Harga_Distributor || 0;
+    if (level === 'Konsumen') return prod.Harga_Konsumen || prod.Harga_Distributor || 0;
+    return prod.Harga_Distributor || 0;
   };
 
   // Open Add Distribution Modal
@@ -795,6 +815,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     const rawItems = distributionItems.filter(i => i.ID_Distribusi === dist.ID_Distribusi);
     let finalItems: { ID_Produk: string; Qty: number; Harga_Satuan: number }[] = [];
+    const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
 
     if (rawItems.length > 0) {
       finalItems = rawItems
@@ -806,9 +827,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             (p.Nama_Produk && it.Nama_Produk && p.Nama_Produk.toLowerCase() === it.Nama_Produk.toLowerCase())
           );
           const pId = matchedProd?.ID_Produk || it.ID_Produk;
-          const price = Number(it.Harga_Satuan) > 0 
-            ? Number(it.Harga_Satuan) 
-            : getProductPriceForCustomer(pId, finalCustId, dist.Tanggal);
+          const calculatedMasterPrice = getProductPriceForCustomer(pId, finalCustId, dist.Tanggal);
+          const rawPrice = Number(it.Harga_Satuan) || 0;
+
+          // Jika harga pada item lama masih memuat harga dummy bawaan (12.000, 14.500, 24.000, 28.000, 9.000)
+          // atau bernilai 0, otomatis sinkronkan dengan harga master data, harga tier mitra, atau harga khusus!
+          const price = (rawPrice <= 0 || DUMMY_OLD_PRICES.includes(rawPrice))
+            ? (calculatedMasterPrice || rawPrice)
+            : rawPrice;
+
           return {
             ID_Produk: pId,
             Qty: it.Qty,
@@ -822,7 +849,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       products.forEach(p => {
         const q = getDistProductQty(dist, p);
         if (q > 0) {
-          const price = getProductPriceForCustomer(p.ID_Produk, finalCustId, dist.Tanggal) || (finalCustLevel === 'Agen' ? (p.Harga_Agen || p.Harga_Distributor) : (p.Harga_Distributor || 12000));
+          const price = getProductPriceForCustomer(p.ID_Produk, finalCustId, dist.Tanggal) || (finalCustLevel === 'Agen' ? (p.Harga_Agen || p.Harga_Distributor) : (p.Harga_Distributor || 0));
           finalItems.push({
             ID_Produk: p.ID_Produk,
             Qty: q,
@@ -2676,8 +2703,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           const q = getDistProductQty(dist, p);
                           if (q <= 0) return null;
                           const item = items.find(i => i.ID_Produk === p.ID_Produk || i.Nama_Produk === p.Nama_Produk);
-                          const price = item ? item.Harga_Satuan : (p.Harga_Distributor || 12000);
-                          const sub = item ? item.Subtotal : (q * price);
+                          const rawPrice = item ? Number(item.Harga_Satuan) : 0;
+                          const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
+                          const calcPrice = getProductPriceForCustomer(p.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+                          const price = (rawPrice <= 0 || DUMMY_OLD_PRICES.includes(rawPrice))
+                            ? (calcPrice || p.Harga_Distributor || 0)
+                            : rawPrice;
+                          const sub = q * price;
                           return (
                             <tr key={p.ID_Produk} className="hover:bg-slate-50">
                               <td className="p-2.5 font-bold text-slate-600">{getProductShortCode(p)}</td>
@@ -2721,7 +2753,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <button
                       onClick={() => {
                         setOpenDetailDist(null);
-                        setViewDocModal({ dist, items, docType: 'inv' });
+                        const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
+                        const normalizedItems = items.map(it => {
+                          const rawP = Number(it.Harga_Satuan) || 0;
+                          if (rawP <= 0 || DUMMY_OLD_PRICES.includes(rawP)) {
+                            const cP = getProductPriceForCustomer(it.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+                            if (cP > 0) {
+                              return { ...it, Harga_Satuan: cP, Subtotal: (Number(it.Qty) || 0) * cP };
+                            }
+                          }
+                          return it;
+                        });
+                        setViewDocModal({ dist, items: normalizedItems, docType: 'inv' });
                       }}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                       title="Buka Preview Invoice, Cetak, atau Download PDF"
@@ -2732,7 +2775,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <button
                       onClick={() => {
                         setOpenDetailDist(null);
-                        setViewDocModal({ dist, items, docType: 'sj' });
+                        const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
+                        const normalizedItems = items.map(it => {
+                          const rawP = Number(it.Harga_Satuan) || 0;
+                          if (rawP <= 0 || DUMMY_OLD_PRICES.includes(rawP)) {
+                            const cP = getProductPriceForCustomer(it.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+                            if (cP > 0) {
+                              return { ...it, Harga_Satuan: cP, Subtotal: (Number(it.Qty) || 0) * cP };
+                            }
+                          }
+                          return it;
+                        });
+                        setViewDocModal({ dist, items: normalizedItems, docType: 'sj' });
                       }}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                       title="Buka Preview Surat Jalan, Cetak, atau Download PDF"
@@ -3703,65 +3757,104 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
               {/* Rincian Produk Item */}
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <span className="font-bold text-slate-900">Rincian Barang yang Dimuat</span>
-                  <button
-                    type="button"
-                    onClick={handleAddItemRow}
-                    className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus size={13} />
-                    <span>Tambah Produk</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormItems(prev => prev.map(item => ({
+                          ...item,
+                          Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, formData.ID_Pelanggan, formData.Tanggal)
+                        })));
+                        showToast('Harga Disinkronkan', 'Harga satuan seluruh produk berhasil diselaraskan dengan Master Produk, Tanggal Kirim & Harga Khusus Mitra.', 'info');
+                      }}
+                      className="text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Hitung ulang harga produk berdasarkan Master Data, Tanggal Kirim, dan Harga Khusus Mitra"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Sinkronkan Harga Master</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddItemRow}
+                      className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer text-xs"
+                    >
+                      <Plus size={13} />
+                      <span>Tambah Produk</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  {formItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
-                      <select
-                        value={item.ID_Produk}
-                        onChange={e => {
-                          const pId = e.target.value;
-                          const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
-                          const updated = [...formItems];
-                          updated[idx] = { ...updated[idx], ID_Produk: pId, Harga_Satuan: price };
-                          setFormItems(updated);
-                        }}
-                        className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded bg-white font-medium"
-                      >
-                        {products.map(p => (
-                          <option key={p.ID_Produk} value={p.ID_Produk}>{p.Nama_Produk}</option>
-                        ))}
-                      </select>
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={item.Qty ?? ''}
+                  {formItems.map((item, idx) => {
+                    const cust = customers.find(c => c.ID_Pelanggan === formData.ID_Pelanggan || c.Nama_Pelanggan === formData.ID_Pelanggan);
+                    const dateStr = (formData.Tanggal || '').slice(0, 10);
+                    const isSpecial = specialPrices.some(s => 
+                      s.ID_Pelanggan === (cust?.ID_Pelanggan || formData.ID_Pelanggan) && 
+                      s.ID_Produk === item.ID_Produk && 
+                      Number(s.Harga_Custom) === Number(item.Harga_Satuan) &&
+                      (!s.Tanggal_Mulai || dateStr >= s.Tanggal_Mulai) &&
+                      (!s.Tanggal_Selesai || dateStr <= s.Tanggal_Selesai)
+                    );
+                    const currentTier = cust?.Level_Pelanggan || formData.Level_Pelanggan || 'Distributor';
+
+                    return (
+                      <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                        <select
+                          value={item.ID_Produk}
                           onChange={e => {
+                            const pId = e.target.value;
+                            const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
                             const updated = [...formItems];
-                            updated[idx].Qty = e.target.value === '' ? ('' as any) : (Number(e.target.value) || 0);
+                            updated[idx] = { ...updated[idx], ID_Produk: pId, Harga_Satuan: price };
                             setFormItems(updated);
                           }}
-                          className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-mono text-center font-bold"
-                        />
-                      </div>
-                      <div className="w-28 text-right font-mono text-xs font-semibold text-slate-700">
-                        @ Rp {Number(item.Harga_Satuan || 0).toLocaleString('id-ID')}
-                      </div>
-                      <div className="w-28 text-right font-mono text-xs font-bold text-slate-900">
-                        Rp {((Number(item.Qty) || 0) * (Number(item.Harga_Satuan) || 0)).toLocaleString('id-ID')}
-                      </div>
-                      {formItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItemRow(idx)}
-                          className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                          className="flex-1 min-w-[160px] px-2.5 py-1 text-xs border border-slate-300 rounded bg-white font-medium"
                         >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                          {products.map(p => (
+                            <option key={p.ID_Produk} value={p.ID_Produk}>{p.Nama_Produk}</option>
+                          ))}
+                        </select>
+                        <div className="w-20">
+                          <input
+                            type="number"
+                            placeholder="0"
+                            value={item.Qty ?? ''}
+                            onChange={e => {
+                              const updated = [...formItems];
+                              updated[idx].Qty = e.target.value === '' ? ('' as any) : (Number(e.target.value) || 0);
+                              setFormItems(updated);
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-mono text-center font-bold"
+                          />
+                        </div>
+                        <div className="w-28 text-right font-mono text-xs font-semibold text-slate-700 flex flex-col items-end">
+                          <span>@ Rp {Number(item.Harga_Satuan || 0).toLocaleString('id-ID')}</span>
+                          {isSpecial ? (
+                            <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1 rounded border border-amber-200">
+                              Harga Khusus
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 font-medium">
+                              Tier {currentTier}
+                            </span>
+                          )}
+                        </div>
+                        <div className="w-28 text-right font-mono text-xs font-bold text-slate-900">
+                          Rp {((Number(item.Qty) || 0) * (Number(item.Harga_Satuan) || 0)).toLocaleString('id-ID')}
+                        </div>
+                        {formItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemRow(idx)}
+                            className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
