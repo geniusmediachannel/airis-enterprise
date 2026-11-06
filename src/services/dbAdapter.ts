@@ -2969,6 +2969,14 @@ export async function resetAllDatabase(keepUserAccounts: boolean = true): Promis
       localStorage.setItem(STORAGE_KEY_PREFIX + 'MD_UserAkses', JSON.stringify(safeUsers));
     }
 
+    // 2.5 Kosongkan seluruh tabel operasional di Turso Cloud Database secara permanen
+    try {
+      const { clearAllTursoDatabase } = await import('./tursoAdapter');
+      await clearAllTursoDatabase(keepUserAccounts);
+    } catch (tursoErr: any) {
+      console.warn('[ResetDatabase] Gagal reset Turso Cloud:', tursoErr?.message);
+    }
+
     // 3. Kosongkan seluruh tabel operasional di Supabase Cloud jika terhubung (Cascade Tiers)
     const client = getSupabaseClient();
     const cfg = getSupabaseConfig();

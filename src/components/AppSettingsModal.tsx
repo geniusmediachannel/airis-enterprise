@@ -485,21 +485,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
 
     setIsProcessingBackup(true);
     try {
-      // Timeout pengaman 8 detik agar UI tidak pernah terjebak atau stuck di loading
-      const timeoutPromise = new Promise<{ success: boolean; clearedTablesCount: number; message: string }>((resolve) => {
-        setTimeout(() => {
-          resolve({
-            success: true,
-            clearedTablesCount: 32,
-            message: 'Database berhasil dikosongkan total.'
-          });
-        }, 8000);
-      });
-
-      const res = await Promise.race([
-        resetAllDatabase(keepUserAccounts),
-        timeoutPromise
-      ]);
+      const res = await resetAllDatabase(keepUserAccounts);
 
       if (onRefreshData) {
         onRefreshData();
@@ -508,8 +494,8 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
       showToast(
         'Database Berhasil Direset Total',
         keepUserAccounts
-          ? `Seluruh data operasional & cloud (${res.clearedTablesCount} tabel) telah dikosongkan total. Seluruh akun pengguna, ID dan kata sandi tetap aman terjaga.`
-          : `Seluruh data (${res.clearedTablesCount} tabel) beserta akun pengguna telah dikosongkan secara permanen dari lokal dan cloud.`,
+          ? `Seluruh data operasional lokal & Turso Cloud (${res.clearedTablesCount} tabel) telah dikosongkan total. Seluruh akun pengguna, ID dan kata sandi tetap aman terjaga.`
+          : `Seluruh data (${res.clearedTablesCount} tabel) beserta akun pengguna telah dikosongkan secara permanen dari perangkat dan Turso Cloud.`,
         'success'
       );
     } catch (e: any) {

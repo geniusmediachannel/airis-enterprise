@@ -542,3 +542,52 @@ export function generateTursoDeviceConnectUrl(cfg?: TursoConfig): string {
     return '';
   }
 }
+
+/**
+ * Kosongkan seluruh tabel di Turso Cloud Database secara permanen (Reset Database Turso)
+ */
+export async function clearAllTursoDatabase(keepUserAccounts: boolean = true): Promise<{ success: boolean; clearedCount: number; error?: string }> {
+  const cfg = getTursoConfig();
+  if (!cfg.url || !cfg.authToken) {
+    return { success: false, clearedCount: 0, error: 'Turso belum dikonfigurasi.' };
+  }
+
+  // Susun urutan tabel: Child/Detail -> Transaksi -> Master -> Akun
+  const tablesToClear = [
+    // 1. Child tables
+    'Distribusi_Item', 'Data_QC_Detail', 'Admin_PO_Detail', 'Mutasi_Bahan',
+    'Data_Presensi', 'Data_Lembur', 'Data_Kasbon', 'Histori_Penggajian',
+    'MD_BOM', 'MD_HargaKhusus', 'Data_Pembayaran_Pelanggan',
+    'Draf_Jurnal', 'Jurnal_Umum', 'Data_Piutang_Utang',
+    // 2. Transaksi & Dokumen
+    'Rencana_Distribusi', 'Distribusi', 'Produksi', 'SPK', 'Pembelian_Bahan',
+    'Data_QC', 'Admin_PO', 'Data_Surat', 'Data_Custom_Invoice', 'Data_Aset_Tetap',
+    // 3. Master Data
+    'MD_Produk', 'MD_Pelanggan', 'MD_Supplier', 'MD_BahanPenolong',
+    'MD_Karyawan', 'Master_COA'
+  ];
+
+  if (!keepUserAccounts) {
+    tablesToClear.push('MD_UserAkses');
+  }
+
+  // Buat batch SQL DELETE untuk seluruh tabel
+  const stmts = tablesToClear.map(table => ({
+    sql: `DELETE FROM "${table}"`,
+    args: []
+  }));
+
+  const res = await executeTursoBatch(stmts, cfg);
+  if (!res.success) {
+    console.warn('[TursoReset] Batch DELETE gagal, mencoba eksekusi satu per satu:', res.error);
+    // Fallback: Eksekusi satu per satu
+    let count = 0;
+    for (const table of tablesToClear) {
+      const qRes = await executeTursoQuery(`DELETE FROM "${table}"`, [], cfg).catch(() => ({ success: false }));
+      if (qRes.success) count++;
+    }
+    return { success: count > 0, clearedCount: count };
+  }
+
+  return { success: true, clearedCount: tablesToClear.length };
+}
