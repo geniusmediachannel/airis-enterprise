@@ -506,7 +506,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
   MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
   MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
-  MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Keterangan'],
+  MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
   Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
@@ -858,6 +858,27 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         Status: status,
         Gaji_Pokok: parseNumeric(rawGaji, 0),
         Tunjangan: parseNumeric(rawTunj, 0)
+      };
+    }
+
+    case 'MD_HargaKhusus':
+    case 'MD_Harga_Khusus': {
+      const rawId = getRowVal(row, ['ID_Harga_Khusus', 'ID Harga Khusus', 'ID', 'Kode']);
+      const rawCust = getRowVal(row, ['ID_Pelanggan', 'ID Pelanggan', 'Pelanggan']);
+      const rawProd = getRowVal(row, ['ID_Produk', 'ID Produk', 'Produk']);
+      const rawHarga = getRowVal(row, ['Harga_Custom', 'Harga Custom', 'Harga', 'Nominal']);
+      const rawTglMulai = getRowVal(row, ['Tanggal_Mulai', 'Tanggal Mulai', 'Tgl_Mulai', 'Mulai_Berlaku', 'Tgl Mulai']);
+      const rawTglSelesai = getRowVal(row, ['Tanggal_Selesai', 'Tanggal Selesai', 'Tgl_Selesai', 'Sampai_Tanggal', 'Tgl Selesai']);
+      const rawKet = getRowVal(row, ['Keterangan', 'Catatan', 'Note']);
+
+      return {
+        ID_Harga_Khusus: String(rawId || `SP-${Date.now().toString().slice(-4)}`).trim(),
+        ID_Pelanggan: String(rawCust || '').trim(),
+        ID_Produk: String(rawProd || '').trim(),
+        Harga_Custom: parseNumeric(rawHarga, 0),
+        Tanggal_Mulai: rawTglMulai ? parseDateISO(rawTglMulai) : '',
+        Tanggal_Selesai: rawTglSelesai ? parseDateISO(rawTglSelesai) : '',
+        Keterangan: String(rawKet || '').trim()
       };
     }
 
@@ -2752,7 +2773,7 @@ export function initializeDatabase() {
     setTableData('MD_Karyawan', DEFAULT_EMPLOYEES, opts);
     setTableData('MD_UserAkses', DEFAULT_USERS, opts);
     setTableData('MD_HargaKhusus', [
-      { ID_Harga_Khusus: 'SP-001', ID_Pelanggan: 'PLG-0001', ID_Produk: 'ASH-CUP220', Harga_Custom: 14000, Keterangan: 'Harga Kontrak Distributor Utama' }
+      { ID_Harga_Khusus: 'SP-001', ID_Pelanggan: 'PLG-0001', ID_Produk: 'ASH-CUP220', Harga_Custom: 14000, Tanggal_Mulai: '2026-01-01', Tanggal_Selesai: '', Keterangan: 'Harga Kontrak Distributor Utama' }
     ], opts);
     setTableData('SPK', DEFAULT_SPK, opts);
     setTableData('Produksi', DEFAULT_PRODUCTION, opts);

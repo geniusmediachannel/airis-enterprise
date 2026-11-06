@@ -696,15 +696,38 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: '' as any }
   ]);
 
-  // Price calculation based on customer level or special price
-  const getProductPriceForCustomer = (prodId: string, custId: string) => {
+  // Price calculation based on customer level or special price (considering effective date)
+  const getProductPriceForCustomer = (prodId: string, custId: string, targetDate?: string) => {
     const cust = customers.find(c => c.ID_Pelanggan === custId);
     const prod = products.find(p => p.ID_Produk === prodId);
     if (!prod || !cust) return 0;
-    const spec = specialPrices.find(s => s.ID_Pelanggan === custId && s.ID_Produk === prodId);
-    if (spec && Number(spec.Harga_Custom) > 0) {
-      return Number(spec.Harga_Custom);
+
+    const evalDate = (targetDate || formData?.Tanggal || planForm?.Tanggal_Rencana || new Date().toISOString().slice(0, 10)).trim();
+
+    // Evaluasi harga khusus pelanggan berdasarkan rentang tanggal berlaku (Tanggal_Mulai s/d Tanggal_Selesai)
+    const activeSpecialPrices = specialPrices.filter(s => {
+      if (s.ID_Pelanggan !== custId || s.ID_Produk !== prodId || !s.Harga_Custom || Number(s.Harga_Custom) <= 0) {
+        return false;
+      }
+      const mulai = (s.Tanggal_Mulai || '').trim();
+      if (mulai && evalDate < mulai) {
+        // Belum mulai berlaku pada tanggal dokumen/kirim
+        return false;
+      }
+      const selesai = (s.Tanggal_Selesai || '').trim();
+      if (selesai && evalDate > selesai) {
+        // Sudah kedaluwarsa / berakhir pada tanggal dokumen/kirim
+        return false;
+      }
+      return true;
+    });
+
+    if (activeSpecialPrices.length > 0) {
+      // Prioritaskan harga khusus dengan Tanggal_Mulai terbaru jika ada beberapa record yang aktif
+      activeSpecialPrices.sort((a, b) => (b.Tanggal_Mulai || '').localeCompare(a.Tanggal_Mulai || ''));
+      return Number(activeSpecialPrices[0].Harga_Custom);
     }
+
     if (cust.Level_Pelanggan === 'Distributor') return prod.Harga_Distributor;
     if (cust.Level_Pelanggan === 'Agen') return prod.Harga_Agen;
     if (cust.Level_Pelanggan === 'Reseller') return prod.Harga_Reseller;
@@ -784,7 +807,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           const pId = matchedProd?.ID_Produk || it.ID_Produk;
           const price = Number(it.Harga_Satuan) > 0 
             ? Number(it.Harga_Satuan) 
-            : getProductPriceForCustomer(pId, finalCustId);
+            : getProductPriceForCustomer(pId, finalCustId, dist.Tanggal);
           return {
             ID_Produk: pId,
             Qty: it.Qty,
@@ -798,7 +821,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       products.forEach(p => {
         const q = getDistProductQty(dist, p);
         if (q > 0) {
-          const price = getProductPriceForCustomer(p.ID_Produk, finalCustId) || (finalCustLevel === 'Agen' ? (p.Harga_Agen || p.Harga_Distributor) : (p.Harga_Distributor || 12000));
+          const price = getProductPriceForCustomer(p.ID_Produk, finalCustId, dist.Tanggal) || (finalCustLevel === 'Agen' ? (p.Harga_Agen || p.Harga_Distributor) : (p.Harga_Distributor || 12000));
           finalItems.push({
             ID_Produk: p.ID_Produk,
             Qty: q,
@@ -813,7 +836,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       finalItems = [{
         ID_Produk: products[0]?.ID_Produk || '',
         Qty: '' as any,
-        Harga_Satuan: products[0] ? getProductPriceForCustomer(products[0].ID_Produk, finalCustId) : 0
+        Harga_Satuan: products[0] ? getProductPriceForCustomer(products[0].ID_Produk, finalCustId, dist.Tanggal) : 0
       }];
     }
 
@@ -866,7 +889,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setCustomerSearchQuery(c ? c.Nama_Pelanggan : '');
     setFormItems(prev => prev.map(item => ({
       ...item,
-      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, custId)
+      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, custId, formData.Tanggal)
     })));
   };
 
@@ -883,7 +906,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setIsCustomerDropdownOpen(false);
     setFormItems(prev => prev.map(item => ({
       ...item,
-      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, c.ID_Pelanggan)
+      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, c.ID_Pelanggan, formData.Tanggal)
     })));
   };
 
@@ -916,7 +939,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const handleAddItemRow = () => {
     const nextP = getNextProductForItems(formItems) || products[0];
     const pId = nextP?.ID_Produk || '';
-    const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan);
+    const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
     setFormItems([...formItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price }]);
   };
 
@@ -929,7 +952,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const handleAddPlanItemRow = () => {
     const nextP = getNextProductForItems(planItems) || products[0];
     const pId = nextP?.ID_Produk || '';
-    const price = getProductPriceForCustomer(pId, planForm.ID_Pelanggan);
+    const price = getProductPriceForCustomer(pId, planForm.ID_Pelanggan, planForm.Tanggal_Rencana);
     setPlanItems([...planItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price }]);
   };
 
@@ -1096,9 +1119,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // ==============================================================
   const handleOpenAddPlan = () => {
     setEditingPlan(null);
+    const today = new Date().toISOString().slice(0, 10);
     const cust = customers[0];
     setPlanForm({
-      Tanggal_Rencana: new Date().toISOString().slice(0, 10),
+      Tanggal_Rencana: today,
       ID_Pelanggan: cust?.ID_Pelanggan || 'PLG-0001',
       Metode_Kirim: 'Kirim Armada',
       Alamat_Tujuan: '',
@@ -1106,7 +1130,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Keterangan: ''
     });
     setPlanItems([
-      { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: products[0] && cust ? getProductPriceForCustomer(products[0].ID_Produk, cust.ID_Pelanggan) : '' as any }
+      { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: products[0] && cust ? getProductPriceForCustomer(products[0].ID_Produk, cust.ID_Pelanggan, today) : '' as any }
     ]);
     setShowPlanModal(true);
   };
@@ -3358,6 +3382,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         No_Surat_Jalan: editingDist ? prev.No_Surat_Jalan : generateSuratJalanNumber(newTgl),
                         No_Invoice: editingDist ? prev.No_Invoice : formatInvoiceNumber('', newTgl)
                       }));
+                      // Update harga satuan otomatis jika tanggal pengiriman diubah sesuai berlakunya harga khusus
+                      if (formData.ID_Pelanggan) {
+                        setFormItems(prev => prev.map(item => ({
+                          ...item,
+                          Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, formData.ID_Pelanggan, newTgl)
+                        })));
+                      }
                     }}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800"
                   />
@@ -3621,7 +3652,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         value={item.ID_Produk}
                         onChange={e => {
                           const pId = e.target.value;
-                          const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan);
+                          const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
                           const updated = [...formItems];
                           updated[idx] = { ...updated[idx], ID_Produk: pId, Harga_Satuan: price };
                           setFormItems(updated);
@@ -3768,7 +3799,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   <input
                     type="date"
                     value={planForm.Tanggal_Rencana}
-                    onChange={e => setPlanForm({ ...planForm, Tanggal_Rencana: e.target.value })}
+                    onChange={e => {
+                      const newTgl = e.target.value;
+                      setPlanForm(prev => ({ ...prev, Tanggal_Rencana: newTgl }));
+                      if (planForm.ID_Pelanggan) {
+                        setPlanItems(prev => prev.map(item => ({
+                          ...item,
+                          Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, planForm.ID_Pelanggan, newTgl)
+                        })));
+                      }
+                    }}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none"
                   />
                 </div>
@@ -3796,10 +3836,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       ID_Pelanggan: e.target.value,
                       Alamat_Tujuan: c?.Alamat || planForm.Alamat_Tujuan
                     });
-                    // Auto-update harga sesuai level pelanggan baru
+                    // Auto-update harga sesuai level pelanggan baru & harga khusus pada tanggal rencana
                     setPlanItems(prev => prev.map(item => ({
                       ...item,
-                      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, e.target.value)
+                      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, e.target.value, planForm.Tanggal_Rencana)
                     })));
                   }}
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
@@ -3888,7 +3928,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         value={it.ID_Produk}
                         onChange={e => {
                           const pId = e.target.value;
-                          const pr = getProductPriceForCustomer(pId, planForm.ID_Pelanggan);
+                          const pr = getProductPriceForCustomer(pId, planForm.ID_Pelanggan, planForm.Tanggal_Rencana);
                           const up = [...planItems];
                           up[idx] = { ...up[idx], ID_Produk: pId, Harga_Satuan: pr };
                           setPlanItems(up);

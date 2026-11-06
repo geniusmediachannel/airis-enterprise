@@ -194,11 +194,14 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Tunjangan: '' 
       };
     } else if (activeTab === 'harga_khusus') {
+      const today = new Date().toISOString().slice(0, 10);
       initial = { 
         ID_Harga_Khusus: `SP-${Date.now().toString().slice(-4)}`, 
         ID_Pelanggan: customers[0]?.ID_Pelanggan || '', 
         ID_Produk: products[0]?.ID_Produk || '', 
         Harga_Custom: '', 
+        Tanggal_Mulai: today,
+        Tanggal_Selesai: '',
         Keterangan: '' 
       };
     } else if (activeTab === 'user') {
@@ -221,6 +224,12 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     if (activeTab === 'user') {
       const existingRoles = item.Roles && item.Roles.length > 0 ? item.Roles : [item.Role || 'Admin Produksi'];
       setFormData({ ...item, Roles: existingRoles });
+    } else if (activeTab === 'harga_khusus') {
+      setFormData({
+        ...item,
+        Tanggal_Mulai: item.Tanggal_Mulai || '',
+        Tanggal_Selesai: item.Tanggal_Selesai || ''
+      });
     } else {
       setFormData({ ...item });
     }
@@ -408,6 +417,53 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       sanitized.ID_Bahan = matId;
       sanitized.Jumlah_Dibutuhkan = qty;
       sanitized.Satuan = (sanitized.Satuan || rawMaterials.find(m => m.ID_Bahan === matId)?.Satuan || 'Pcs').trim();
+      sanitized.Keterangan = (sanitized.Keterangan || '').trim();
+    }
+
+    // Validasi & Penanganan Khusus Harga Khusus Pelanggan
+    if (activeTab === 'harga_khusus') {
+      const custId = (sanitized.ID_Pelanggan || '').trim();
+      const prodId = (sanitized.ID_Produk || '').trim();
+      const rawPrice = sanitized.Harga_Custom;
+      const price = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace(',', '.'));
+      const tglMulai = (sanitized.Tanggal_Mulai || '').trim();
+      const tglSelesai = (sanitized.Tanggal_Selesai || '').trim();
+
+      if (!custId) {
+        showToast('Validasi Gagal', 'Silakan pilih Pelanggan / Mitra terlebih dahulu!', 'warning');
+        return;
+      }
+      if (!prodId) {
+        showToast('Validasi Gagal', 'Silakan pilih Produk terlebih dahulu!', 'warning');
+        return;
+      }
+      if (isNaN(price) || price <= 0) {
+        showToast('Validasi Gagal', 'Harga khusus harus berupa angka lebih besar dari 0!', 'warning');
+        return;
+      }
+      if (!tglMulai) {
+        showToast('Validasi Gagal', 'Tanggal Mulai Berlaku wajib diisi!', 'warning');
+        return;
+      }
+      if (tglSelesai && tglSelesai < tglMulai) {
+        showToast('Validasi Gagal', 'Tanggal Selesai tidak boleh lebih awal dari Tanggal Mulai!', 'warning');
+        return;
+      }
+
+      // Pastikan ID_Harga_Khusus unik jika data baru
+      if (!editingItem) {
+        let spId = (sanitized.ID_Harga_Khusus || '').trim();
+        if (!spId || specialPrices.some(s => s.ID_Harga_Khusus.trim().toLowerCase() === spId.toLowerCase())) {
+          spId = `SP-${Date.now().toString().slice(-4)}`;
+        }
+        sanitized.ID_Harga_Khusus = spId;
+      }
+
+      sanitized.ID_Pelanggan = custId;
+      sanitized.ID_Produk = prodId;
+      sanitized.Harga_Custom = price;
+      sanitized.Tanggal_Mulai = tglMulai;
+      sanitized.Tanggal_Selesai = tglSelesai;
       sanitized.Keterangan = (sanitized.Keterangan || '').trim();
     }
 
@@ -797,8 +853,16 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       headers = ['ID Karyawan', 'Nama Karyawan', 'Departemen', 'Jabatan', 'Gaji Pokok', 'Status'];
       rows = employees.map(k => [k.ID_Karyawan, k.Nama_Karyawan, k.Departemen, k.Jabatan, k.Gaji_Pokok ?? 0, k.Status]);
     } else if (activeTab === 'harga_khusus') {
-      headers = ['ID', 'Pelanggan', 'Produk', 'Harga Khusus', 'Keterangan'];
-      rows = specialPrices.map(s => [s.ID_Harga_Khusus, s.ID_Pelanggan, s.ID_Produk, s.Harga_Custom, s.Keterangan || '-']);
+      headers = ['ID', 'Pelanggan', 'Produk', 'Harga Khusus', 'Mulai Berlaku', 'Sampai Tanggal', 'Keterangan'];
+      rows = specialPrices.map(s => [
+        s.ID_Harga_Khusus, 
+        customers.find(c => c.ID_Pelanggan === s.ID_Pelanggan)?.Nama_Pelanggan || s.ID_Pelanggan, 
+        products.find(p => p.ID_Produk === s.ID_Produk)?.Nama_Produk || s.ID_Produk, 
+        s.Harga_Custom, 
+        s.Tanggal_Mulai || '-',
+        s.Tanggal_Selesai || 'Seterusnya',
+        s.Keterangan || '-'
+      ]);
     } else if (activeTab === 'user') {
       headers = ['ID User', 'Username', 'Role Akses', 'ID Karyawan', 'Status Akun'];
       rows = users.map(u => [u.ID_User, u.Username, u.Role, u.ID_Karyawan, u.Status_Akun]);
@@ -1366,32 +1430,76 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   <th className="p-3">Pelanggan</th>
                   <th className="p-3">Produk</th>
                   <th className="p-3 text-right">Harga Khusus Disepakati</th>
+                  <th className="p-3">Mulai Berlaku</th>
+                  <th className="p-3">Sampai Tanggal</th>
+                  <th className="p-3 text-center">Status</th>
                   <th className="p-3">Keterangan</th>
                   <th className="p-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {specialPrices.map(sp => {
-                  const cust = customers.find(c => c.ID_Pelanggan === sp.ID_Pelanggan);
-                  const prod = products.find(p => p.ID_Produk === sp.ID_Produk);
-                  return (
-                    <tr key={sp.ID_Harga_Khusus} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-blue-700">{sp.ID_Harga_Khusus}</td>
-                      <td className="p-3 font-semibold text-slate-900">{cust?.Nama_Pelanggan || sp.ID_Pelanggan}</td>
-                      <td className="p-3 text-slate-700">{prod?.Nama_Produk || sp.ID_Produk}</td>
-                      <td className="p-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
-                        Rp {sp.Harga_Custom?.toLocaleString('id-ID')}
-                      </td>
-                      <td className="p-3 text-slate-500">{sp.Keterangan || '-'}</td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => handleOpenEdit(sp)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Harga"><Edit2 size={14} /></button>
-                          <button onClick={() => handleDelete(sp.ID_Harga_Khusus)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Hapus Harga"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {specialPrices
+                  .filter(sp => {
+                    if (!searchQuery.trim()) return true;
+                    const q = searchQuery.toLowerCase();
+                    const cust = customers.find(c => c.ID_Pelanggan === sp.ID_Pelanggan);
+                    const prod = products.find(p => p.ID_Produk === sp.ID_Produk);
+                    return (
+                      sp.ID_Harga_Khusus?.toLowerCase().includes(q) ||
+                      sp.ID_Pelanggan?.toLowerCase().includes(q) ||
+                      sp.ID_Produk?.toLowerCase().includes(q) ||
+                      cust?.Nama_Pelanggan?.toLowerCase().includes(q) ||
+                      prod?.Nama_Produk?.toLowerCase().includes(q) ||
+                      sp.Keterangan?.toLowerCase().includes(q)
+                    );
+                  })
+                  .map(sp => {
+                    const cust = customers.find(c => c.ID_Pelanggan === sp.ID_Pelanggan);
+                    const prod = products.find(p => p.ID_Produk === sp.ID_Produk);
+                    const today = new Date().toISOString().slice(0, 10);
+                    
+                    let statusBadge = (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Aktif
+                      </span>
+                    );
+                    if (sp.Tanggal_Mulai && today < sp.Tanggal_Mulai) {
+                      statusBadge = (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          Akan Datang
+                        </span>
+                      );
+                    } else if (sp.Tanggal_Selesai && today > sp.Tanggal_Selesai) {
+                      statusBadge = (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                          Kedaluwarsa
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <tr key={sp.ID_Harga_Khusus} className="hover:bg-slate-50">
+                        <td className="p-3 font-mono font-bold text-blue-700">{sp.ID_Harga_Khusus}</td>
+                        <td className="p-3 font-semibold text-slate-900">{cust?.Nama_Pelanggan || sp.ID_Pelanggan}</td>
+                        <td className="p-3 text-slate-700">{prod?.Nama_Produk || sp.ID_Produk}</td>
+                        <td className="p-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
+                          Rp {sp.Harga_Custom?.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3 font-mono text-slate-700">{sp.Tanggal_Mulai || '-'}</td>
+                        <td className="p-3 font-mono text-slate-700">
+                          {sp.Tanggal_Selesai || <span className="text-slate-400 font-sans italic">Seterusnya</span>}
+                        </td>
+                        <td className="p-3 text-center">{statusBadge}</td>
+                        <td className="p-3 text-slate-500">{sp.Keterangan || '-'}</td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleOpenEdit(sp)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Harga"><Edit2 size={14} /></button>
+                            <button onClick={() => handleDelete(sp.ID_Harga_Khusus)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Hapus Harga"><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           )}
@@ -2360,6 +2468,33 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       onChange={e => setFormData({ ...formData, Harga_Custom: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-bold text-emerald-700"
                     />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Mulai Berlaku <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.Tanggal_Mulai || ''}
+                        onChange={e => setFormData({ ...formData, Tanggal_Mulai: e.target.value })}
+                        required
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-800 outline-none"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Harga khusus mulai aktif di tanggal ini</span>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Sampai Tanggal <span className="text-slate-400 text-[10px] font-normal">(Opsional)</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.Tanggal_Selesai || ''}
+                        onChange={e => setFormData({ ...formData, Tanggal_Selesai: e.target.value })}
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-800 outline-none"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Kosongkan jika berlaku seterusnya</span>
+                    </div>
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Keterangan Kontrak</label>

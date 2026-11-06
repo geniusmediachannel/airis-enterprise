@@ -141,6 +141,8 @@ export interface SpecialPriceItem {
   ID_Pelanggan: string;
   ID_Produk: string;
   Harga_Custom: number;
+  Tanggal_Mulai?: string; // Tanggal mulai berlaku (YYYY-MM-DD)
+  Tanggal_Selesai?: string; // Tanggal akhir berlaku (YYYY-MM-DD, opsional/kosong jika seterusnya)
   Keterangan?: string;
 }
 
