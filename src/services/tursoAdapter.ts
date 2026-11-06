@@ -413,6 +413,11 @@ export async function pullAllTablesFromTurso(options?: {
     return { success: false, message: 'URL atau Token Turso belum dikonfigurasi.', tablesCount: 0 };
   }
 
+  // Bersihkan tombstone usang agar data riil yang ada di Turso tidak terblokir di browser
+  try {
+    localStorage.removeItem('airis_deleted_distribution_ids');
+  } catch (e) {}
+
   let pulledTables = 0;
   let totalRows = 0;
 

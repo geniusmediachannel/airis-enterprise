@@ -248,27 +248,18 @@ export function notifyDbChange(tableName?: string) {
   } catch (e) {}
 }
 
-// Persistent Tombstone untuk mencatat ID Distribusi yang sudah dihapus oleh pengguna
-// Mencegah baris yang sudah dihapus muncul kembali akibat sinkronisasi cloud lama
+// Persistent Tombstone dibersihkan: Semua data di database Turso adalah data resmi yang ditampilkan utuh
 const DELETED_DIST_KEY = 'airis_deleted_distribution_ids';
 
 export function getDeletedDistributionIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(DELETED_DIST_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set(arr.map(s => String(s).trim().toLowerCase()));
-    }
+    localStorage.removeItem(DELETED_DIST_KEY);
   } catch (e) {}
   return new Set();
 }
 
 export function recordDeletedDistributionId(id: string | number) {
-  try {
-    const set = getDeletedDistributionIds();
-    set.add(String(id).trim().toLowerCase());
-    localStorage.setItem(DELETED_DIST_KEY, JSON.stringify(Array.from(set)));
-  } catch (e) {}
+  // No-op: Data di Turso dihapus langsung via SQL DELETE sehingga tidak perlu lagi tombstone lokal
 }
 
 export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T[] {
@@ -298,17 +289,6 @@ export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T
       localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(fallbackDefault));
     } catch (e) {}
     result = fallbackDefault;
-  }
-
-  // Khusus tabel Distribusi: Filter secara permanen baris yang telah dihapus oleh pengguna
-  if (tableName === 'Distribusi' && Array.isArray(result) && result.length > 0) {
-    const deletedIds = getDeletedDistributionIds();
-    if (deletedIds.size > 0) {
-      return result.filter((d: any) => {
-        const id = String(d?.ID_Distribusi || '').trim().toLowerCase();
-        return !deletedIds.has(id);
-      }) as T[];
-    }
   }
 
   return result;

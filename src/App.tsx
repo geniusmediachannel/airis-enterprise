@@ -264,7 +264,10 @@ export default function App() {
       document.documentElement.classList.remove('compact-mode');
     }
 
-    // 2. Load data immediately on first render
+    // 2. Bersihkan tombstone usang dan muat data langsung dari database
+    try {
+      localStorage.removeItem('airis_deleted_distribution_ids');
+    } catch (e) {}
     reloadData(true);
 
     // 3. Listen for internal DB updates

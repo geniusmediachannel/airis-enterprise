@@ -1569,11 +1569,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return 0;
   };
 
-  // Filtered Distributions using month matcher, search query, deterministic sorting, and persistent deletion filter
+  // Filtered Distributions using month matcher, search query, deterministic sorting
   const filteredDistributions = useMemo(() => {
-    const deletedIds = getDeletedDistributionIds();
-    const activeDists = (distributions || [])
-      .filter(d => !deletedIds.has(String(d.ID_Distribusi || '').trim().toLowerCase()));
+    const activeDists = distributions || [];
 
     let list: DistributionItem[] = [];
     const q = searchQueryDist.trim().toLowerCase();
