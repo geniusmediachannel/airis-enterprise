@@ -33,6 +33,34 @@ interface MasterDataViewProps {
   onRefresh: () => void;
 }
 
+/**
+ * Generator ID berurutan yang aman dari tabrakan (collision-safe)
+ * Mencari angka maksimum yang ada di tabel dan menambahkan 1,
+ * sehingga tidak pernah menghasilkan ID duplikat meskipun ada baris yang pernah dihapus.
+ */
+const getNextSequenceId = (list: any[], idField: string, prefix: string, padLength: number): string => {
+  let maxNum = 0;
+  if (Array.isArray(list)) {
+    list.forEach(item => {
+      const val = item?.[idField];
+      if (!val) return;
+      const match = String(val).match(/\d+/g);
+      if (match) {
+        const n = parseInt(match[match.length - 1], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+  }
+  let next = maxNum + 1;
+  let candidate = `${prefix}-${String(next).padStart(padLength, '0')}`;
+  const existingSet = new Set((list || []).map(it => String(it?.[idField] || '').trim().toLowerCase()));
+  while (existingSet.has(candidate.toLowerCase())) {
+    next++;
+    candidate = `${prefix}-${String(next).padStart(padLength, '0')}`;
+  }
+  return candidate;
+};
+
 export const MasterDataView: React.FC<MasterDataViewProps> = ({
   products,
   customers,
@@ -98,9 +126,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     setEditingItem(null);
     let initial: Record<string, any> = {};
     if (activeTab === 'produk') {
-      const maxNum = products.length + 1;
+      const nextId = getNextSequenceId(products, 'ID_Produk', 'ASH-PRD', 3);
       initial = { 
-        ID_Produk: `ASH-PRD${String(maxNum).padStart(3, '0')}`, 
+        ID_Produk: nextId, 
         Nama_Produk: '', 
         Kategori: 'Air Mineral Cup', 
         Satuan: 'Dus', 
@@ -111,9 +139,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Status: 'Aktif' 
       };
     } else if (activeTab === 'pelanggan') {
-      const maxNum = customers.length + 1;
+      const nextId = getNextSequenceId(customers, 'ID_Pelanggan', 'PLG', 4);
       initial = { 
-        ID_Pelanggan: `PLG-${String(maxNum).padStart(4, '0')}`, 
+        ID_Pelanggan: nextId, 
         Nama_Pelanggan: '', 
         No_Telp: '', 
         Alamat: '', 
@@ -121,9 +149,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Status: 'Aktif' 
       };
     } else if (activeTab === 'supplier') {
-      const maxNum = suppliers.length + 1;
+      const nextId = getNextSequenceId(suppliers, 'ID_Supplier', 'SUP', 4);
       initial = { 
-        ID_Supplier: `SUP-${String(maxNum).padStart(4, '0')}`, 
+        ID_Supplier: nextId, 
         Nama_Supplier: '', 
         PIC: '', 
         No_Telp: '', 
@@ -131,9 +159,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Status: 'Aktif' 
       };
     } else if (activeTab === 'bahan') {
-      const nextSeq = String(rawMaterials.length + 1).padStart(3, '0');
+      const nextSeq = getNextSequenceId(rawMaterials, 'ID_Bahan', 'BHN', 3);
       initial = { 
-        ID_Bahan: `BHN-${nextSeq}`, 
+        ID_Bahan: nextSeq, 
         Nama_Bahan: '', 
         Kategori: 'Kemasan', 
         Satuan: 'Pcs', 
@@ -141,17 +169,22 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Minimum_Stock: '' 
       };
     } else if (activeTab === 'bom') {
+      const nextId = getNextSequenceId(boms, 'ID_BOM', 'BOM', 4);
+      const defaultProd = products[0]?.ID_Produk || '';
+      const defaultMat = rawMaterials[0]?.ID_Bahan || '';
+      const defaultSatuan = rawMaterials[0]?.Satuan || 'Pcs';
       initial = { 
-        ID_BOM: `BOM-${String(boms.length + 1).padStart(4, '0')}`, 
-        ID_Produk: products[0]?.ID_Produk || '', 
-        ID_Bahan: rawMaterials[0]?.ID_Bahan || '', 
+        ID_BOM: nextId, 
+        ID_Produk: defaultProd, 
+        ID_Bahan: defaultMat, 
         Jumlah_Dibutuhkan: '', 
-        Satuan: 'Pcs', 
+        Satuan: defaultSatuan, 
         Keterangan: '' 
       };
     } else if (activeTab === 'karyawan') {
+      const nextId = getNextSequenceId(employees, 'ID_Karyawan', 'KAR', 4);
       initial = { 
-        ID_Karyawan: `KAR-${String(employees.length + 1).padStart(4, '0')}`, 
+        ID_Karyawan: nextId, 
         Nama_Karyawan: '', 
         Departemen: 'Produksi', 
         Jabatan: 'Operator', 
@@ -169,8 +202,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Keterangan: '' 
       };
     } else if (activeTab === 'user') {
+      const nextId = getNextSequenceId(users, 'ID_User', 'USR', 2);
       initial = { 
-        ID_User: `USR-${String(users.length + 1).padStart(2, '0')}`, 
+        ID_User: nextId, 
         Username: '', 
         Role: 'Admin Produksi', 
         Roles: ['Admin Produksi'],
@@ -223,7 +257,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     showToast('Akun Ditolak', `Permohonan akun ${userItem.Username} telah ditolak.`, 'info');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     let tableName = '';
     let currentList: any[] = [];
     let idField = '';
@@ -324,49 +358,115 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       }
     }
 
-    if (editingItem) {
-      const updated = currentList.map(item => item[idField] === editingItem[idField] ? sanitized : item);
-      setTableData(tableName, updated);
-      if (activeTab === 'bahan') {
-        setTableData('MD_Bahan', updated);
-        // Catat histori perubahan harga jika nominal diubah
-        if (Number(editingItem.Harga_Satuan) !== Number(sanitized.Harga_Satuan)) {
-          recordRawMaterialPriceChange({
-            idBahan: customId || sanitized.ID_Bahan,
-            hargaBaru: Number(sanitized.Harga_Satuan) || 0,
-            tanggalBerlaku: sanitized.Tgl_Update_Harga || new Date().toISOString().slice(0, 10),
-            keterangan: 'Pembaruan dari Form Master Bahan Penolong'
-          });
-          reloadPriceHistories();
-        }
-      } else if (activeTab === 'produk') {
-        // Catat histori perubahan harga produk jika ada tier yang diubah
-        if (
-          Number(editingItem.Harga_Distributor) !== Number(sanitized.Harga_Distributor) ||
-          Number(editingItem.Harga_Agen) !== Number(sanitized.Harga_Agen) ||
-          Number(editingItem.Harga_Reseller) !== Number(sanitized.Harga_Reseller) ||
-          Number(editingItem.Harga_Konsumen) !== Number(sanitized.Harga_Konsumen)
-        ) {
-          recordProductPriceChange({
-            idProduk: sanitized.ID_Produk,
-            hargaDistributor: Number(sanitized.Harga_Distributor) || 0,
-            hargaAgen: Number(sanitized.Harga_Agen) || 0,
-            hargaReseller: Number(sanitized.Harga_Reseller) || 0,
-            hargaKonsumen: Number(sanitized.Harga_Konsumen) || 0,
-            tanggalBerlaku: sanitized.Tgl_Update_Harga || new Date().toISOString().slice(0, 10),
-            keterangan: 'Pembaruan dari Form Master Produk'
-          });
-          reloadPriceHistories();
-        }
+    // Validasi & Penanganan Khusus BOM / Resep Produksi
+    if (activeTab === 'bom') {
+      const prodId = (sanitized.ID_Produk || '').trim();
+      const matId = (sanitized.ID_Bahan || '').trim();
+      const rawQty = sanitized.Jumlah_Dibutuhkan;
+      const qty = typeof rawQty === 'number' ? rawQty : parseFloat(String(rawQty).replace(',', '.'));
+
+      if (!prodId) {
+        showToast('Validasi Gagal', 'Silakan pilih Target Produk terlebih dahulu!', 'warning');
+        return;
       }
-    } else {
-      setTableData(tableName, [...currentList, sanitized]);
-      if (activeTab === 'bahan') {
-        setTableData('MD_Bahan', [...currentList, sanitized]);
+      if (!matId) {
+        showToast('Validasi Gagal', 'Silakan pilih Bahan Penolong yang digunakan!', 'warning');
+        return;
+      }
+      if (isNaN(qty) || qty <= 0) {
+        showToast('Validasi Gagal', 'Rasio kebutuhan bahan per unit harus berupa angka lebih besar dari 0!', 'warning');
+        return;
+      }
+
+      // Cek apakah formula untuk pasangan Produk & Bahan ini sudah pernah ada
+      const duplicateFormula = boms.find(b => 
+        b.ID_Produk.trim().toLowerCase() === prodId.toLowerCase() &&
+        b.ID_Bahan.trim().toLowerCase() === matId.toLowerCase() &&
+        (!editingItem || editingItem.ID_BOM.trim().toLowerCase() !== b.ID_BOM.trim().toLowerCase())
+      );
+      if (duplicateFormula) {
+        const prodObj = products.find(p => p.ID_Produk === prodId);
+        const matObj = rawMaterials.find(m => m.ID_Bahan === matId);
+        showToast(
+          'Formula Sudah Ada', 
+          `Formula untuk "${prodObj?.Nama_Produk || prodId}" dengan bahan "${matObj?.Nama_Bahan || matId}" sudah terdaftar di ${duplicateFormula.ID_BOM} (${duplicateFormula.Jumlah_Dibutuhkan} ${duplicateFormula.Satuan}). Silakan edit baris tersebut.`, 
+          'warning'
+        );
+        return;
+      }
+
+      // Pastikan ID_BOM unik dan tidak pernah menabrak ID yang sudah ada
+      if (!editingItem) {
+        let bomId = (sanitized.ID_BOM || '').trim();
+        if (!bomId || boms.some(b => b.ID_BOM.trim().toLowerCase() === bomId.toLowerCase())) {
+          bomId = getNextSequenceId(boms, 'ID_BOM', 'BOM', 4);
+        }
+        sanitized.ID_BOM = bomId;
+      }
+
+      sanitized.ID_Produk = prodId;
+      sanitized.ID_Bahan = matId;
+      sanitized.Jumlah_Dibutuhkan = qty;
+      sanitized.Satuan = (sanitized.Satuan || rawMaterials.find(m => m.ID_Bahan === matId)?.Satuan || 'Pcs').trim();
+      sanitized.Keterangan = (sanitized.Keterangan || '').trim();
+    }
+
+    const updatedList = editingItem
+      ? currentList.map(item => item[idField] === editingItem[idField] ? sanitized : item)
+      : [...currentList, sanitized];
+
+    setTableData(tableName, updatedList);
+    if (activeTab === 'bahan') {
+      setTableData('MD_Bahan', updatedList);
+      // Catat histori perubahan harga jika nominal diubah
+      if (editingItem && Number(editingItem.Harga_Satuan) !== Number(sanitized.Harga_Satuan)) {
+        recordRawMaterialPriceChange({
+          idBahan: sanitized.ID_Bahan,
+          hargaBaru: Number(sanitized.Harga_Satuan) || 0,
+          tanggalBerlaku: sanitized.Tgl_Update_Harga || new Date().toISOString().slice(0, 10),
+          keterangan: 'Pembaruan dari Form Master Bahan Penolong'
+        });
+        reloadPriceHistories();
+      }
+    } else if (activeTab === 'produk' && editingItem) {
+      // Catat histori perubahan harga produk jika ada tier yang diubah
+      if (
+        Number(editingItem.Harga_Distributor) !== Number(sanitized.Harga_Distributor) ||
+        Number(editingItem.Harga_Agen) !== Number(sanitized.Harga_Agen) ||
+        Number(editingItem.Harga_Reseller) !== Number(sanitized.Harga_Reseller) ||
+        Number(editingItem.Harga_Konsumen) !== Number(sanitized.Harga_Konsumen)
+      ) {
+        recordProductPriceChange({
+          idProduk: sanitized.ID_Produk,
+          hargaDistributor: Number(sanitized.Harga_Distributor) || 0,
+          hargaAgen: Number(sanitized.Harga_Agen) || 0,
+          hargaReseller: Number(sanitized.Harga_Reseller) || 0,
+          hargaKonsumen: Number(sanitized.Harga_Konsumen) || 0,
+          tanggalBerlaku: sanitized.Tgl_Update_Harga || new Date().toISOString().slice(0, 10),
+          keterangan: 'Pembaruan dari Form Master Produk'
+        });
+        reloadPriceHistories();
       }
     }
+
+    // Direct awaited sync ke Turso Cloud untuk menjamin data tersimpan di serverless database sebelum modal tertutup
+    try {
+      const { getTursoConfig, syncTableToTurso } = await import('../services/tursoAdapter');
+      const tursoCfg = getTursoConfig();
+      if (tursoCfg.isConnected && tursoCfg.autoSync) {
+        await syncTableToTurso(tableName, updatedList, currentList);
+      }
+    } catch (tursoErr) {
+      console.warn(`[MasterDataView] Direct Turso sync on ${tableName} failed:`, tursoErr);
+    }
+
     setShowModal(false);
     onRefresh();
+    showToast(
+      editingItem ? 'Data Diperbarui' : 'Data Ditambahkan', 
+      `${activeTab === 'bom' ? 'Formula Resep BOM' : 'Data'} berhasil disimpan ke database.`, 
+      'success'
+    );
   };
 
   // Buka Modal Pengaturan Perubahan Harga Berdasarkan Tanggal
@@ -593,7 +693,15 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       const found = rawMaterials.find(m => m.ID_Bahan === id);
       if (found) itemLabel = `${found.Nama_Bahan} (${found.ID_Bahan})`;
     }
-    else if (activeTab === 'bom') { tableName = 'MD_BOM'; currentList = boms; idField = 'ID_BOM'; }
+    else if (activeTab === 'bom') {
+      tableName = 'MD_BOM'; currentList = boms; idField = 'ID_BOM';
+      const found = boms.find(b => b.ID_BOM === id);
+      if (found) {
+        const prod = products.find(p => p.ID_Produk === found.ID_Produk);
+        const mat = rawMaterials.find(m => m.ID_Bahan === found.ID_Bahan);
+        itemLabel = `Formula ${prod?.Nama_Produk || found.ID_Produk} - ${mat?.Nama_Bahan || found.ID_Bahan} (${found.ID_BOM})`;
+      }
+    }
     else if (activeTab === 'karyawan') {
       tableName = 'MD_Karyawan'; currentList = employees; idField = 'ID_Karyawan';
       const found = employees.find(e => e.ID_Karyawan === id);
@@ -620,6 +728,10 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     if (!ok) return;
 
     await deleteTableRow(tableName, id, idField);
+    try {
+      const { deleteRowFromTurso } = await import('../services/tursoAdapter');
+      await deleteRowFromTurso(tableName, id, idField);
+    } catch (e) {}
     onRefresh();
     showToast('Data Dihapus', `Data ${itemLabel} telah berhasil dihapus permanen.`, 'success');
   };
@@ -2028,12 +2140,14 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   </div>
                   {/* Dropdown ID Produk */}
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Target Produk</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Target Produk <span className="text-red-500">*</span></label>
                     <select
                       value={formData.ID_Produk || ''}
                       onChange={e => setFormData({ ...formData, ID_Produk: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold text-slate-900 bg-white"
+                      required
                     >
+                      <option value="">-- Pilih Target Produk --</option>
                       {products.map(p => (
                         <option key={p.ID_Produk} value={p.ID_Produk}>
                           {p.ID_Produk} - {p.Nama_Produk} ({p.Satuan})
@@ -2043,19 +2157,22 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   </div>
                   {/* Dropdown ID Bahan */}
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Bahan Penolong yang Digunakan</label>
+                    <label className="block font-semibold text-slate-700 mb-1">Bahan Penolong yang Digunakan <span className="text-red-500">*</span></label>
                     <select
                       value={formData.ID_Bahan || ''}
                       onChange={e => {
-                        const mat = rawMaterials.find(m => m.ID_Bahan === e.target.value);
+                        const selId = e.target.value;
+                        const mat = rawMaterials.find(m => m.ID_Bahan === selId);
                         setFormData({ 
                           ...formData, 
-                          ID_Bahan: e.target.value,
-                          Satuan: mat?.Satuan || formData.Satuan
+                          ID_Bahan: selId,
+                          Satuan: mat?.Satuan || formData.Satuan || 'Pcs'
                         });
                       }}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold text-slate-900 bg-white"
+                      required
                     >
+                      <option value="">-- Pilih Bahan Penolong --</option>
                       {rawMaterials.map(m => (
                         <option key={m.ID_Bahan} value={m.ID_Bahan}>
                           {m.ID_Bahan} - {m.Nama_Bahan} ({m.Satuan})
@@ -2065,14 +2182,16 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Jumlah Dibutuhkan per Unit</label>
+                      <label className="block font-semibold text-slate-700 mb-1">Jumlah per Unit Produk <span className="text-red-500">*</span></label>
                       <input
                         type="number"
-                        step="0.01"
-                        placeholder="0"
+                        step="any"
+                        min="0.0001"
+                        placeholder="Contoh: 1 atau 0.04"
                         value={formData.Jumlah_Dibutuhkan ?? ''}
-                        onChange={e => setFormData({ ...formData, Jumlah_Dibutuhkan: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
-                        className="w-full px-3 py-1.5 border rounded-lg font-mono font-bold text-blue-900"
+                        onChange={e => setFormData({ ...formData, Jumlah_Dibutuhkan: e.target.value })}
+                        className="w-full px-3 py-1.5 border rounded-lg font-mono font-bold text-blue-900 bg-white"
+                        required
                       />
                     </div>
                     {/* Satuan Dropdown */}
