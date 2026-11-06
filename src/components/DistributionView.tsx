@@ -242,6 +242,26 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return mStr;
   };
 
+  // Daftar seluruh periode bulan unik yang memiliki data transaksi di database (Otomatis mendeteksi tahun 2025 & 2026)
+  const availablePeriods = useMemo(() => {
+    const counts = new Map<string, number>();
+    (distributions || []).forEach(d => {
+      if (!d || !d.Tanggal) return;
+      const parsed = parseDateYearAndMonth(d.Tanggal);
+      if (!parsed) return;
+      const key = `${parsed.year}-${String(parsed.monthIndex + 1).padStart(2, '0')}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([period, count]) => ({
+        period,
+        label: `${formatMonthName(period)} (${count.toLocaleString('id-ID')} Transaksi)`,
+        count
+      }))
+      .sort((a, b) => b.period.localeCompare(a.period));
+  }, [distributions]);
+
   // Pre-index distributionItems by ID_Distribusi using Map (O(1) hash lookup anti-lag)
   const distItemsMap = useMemo(() => {
     const map = new Map<string, DistributionProductDetail[]>();
@@ -1552,21 +1572,43 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Filtered Distributions using month matcher, search query, deterministic sorting, and persistent deletion filter
   const filteredDistributions = useMemo(() => {
     const deletedIds = getDeletedDistributionIds();
-    let list = (distributions || [])
-      .filter(d => !deletedIds.has(String(d.ID_Distribusi || '').trim().toLowerCase()))
-      .filter(d => isMatchMonth(d.Tanggal, filterMonth));
-    if (searchQueryDist.trim()) {
-      const q = searchQueryDist.toLowerCase();
-      list = list.filter(d => 
-        (d.Nama_Pelanggan && d.Nama_Pelanggan.toLowerCase().includes(q)) ||
-        (d.No_Surat_Jalan && d.No_Surat_Jalan.toLowerCase().includes(q)) ||
-        (d.No_Invoice && d.No_Invoice.toLowerCase().includes(q)) ||
-        (d.Tujuan && d.Tujuan.toLowerCase().includes(q)) ||
-        (d.Pengirim && d.Pengirim.toLowerCase().includes(q)) ||
-        (d.Penerima && d.Penerima.toLowerCase().includes(q)) ||
-        (d.Metode_Kirim && d.Metode_Kirim.toLowerCase().includes(q)) ||
-        (d.Keterangan && d.Keterangan.toLowerCase().includes(q))
-      );
+    const activeDists = (distributions || [])
+      .filter(d => !deletedIds.has(String(d.ID_Distribusi || '').trim().toLowerCase()));
+
+    let list: DistributionItem[] = [];
+    const q = searchQueryDist.trim().toLowerCase();
+
+    if (q) {
+      // Helper matcher pencarian lengkap (Nama, SJ, Invoice, Tujuan, Tanggal, Sopir, Keterangan, ID)
+      const matchesSearch = (d: DistributionItem) => {
+        const formattedDate = formatDateDDMMYYYY(d.Tanggal).toLowerCase();
+        return (
+          (d.Nama_Pelanggan && d.Nama_Pelanggan.toLowerCase().includes(q)) ||
+          (d.No_Surat_Jalan && d.No_Surat_Jalan.toLowerCase().includes(q)) ||
+          (d.No_Invoice && d.No_Invoice.toLowerCase().includes(q)) ||
+          (d.Tujuan && d.Tujuan.toLowerCase().includes(q)) ||
+          (d.Pengirim && d.Pengirim.toLowerCase().includes(q)) ||
+          (d.Penerima && d.Penerima.toLowerCase().includes(q)) ||
+          (d.Metode_Kirim && d.Metode_Kirim.toLowerCase().includes(q)) ||
+          (d.Keterangan && d.Keterangan.toLowerCase().includes(q)) ||
+          (d.Tanggal && d.Tanggal.toLowerCase().includes(q)) ||
+          formattedDate.includes(q) ||
+          (d.ID_Distribusi && d.ID_Distribusi.toLowerCase().includes(q))
+        );
+      };
+
+      // 1. Coba cari di bulan terpilih terlebih dahulu
+      const inMonth = activeDists.filter(d => isMatchMonth(d.Tanggal, filterMonth)).filter(matchesSearch);
+
+      if (inMonth.length > 0 || filterMonth === 'all') {
+        list = inMonth;
+      } else {
+        // 2. Jika di bulan terpilih tidak ada tapi ada di periode lain (misal mencari data 27-11-2025 di bulan Nov 2026),
+        // otomatis perluas pencarian ke SELURUH data database agar data langsung ditemukan!
+        list = activeDists.filter(matchesSearch);
+      }
+    } else {
+      list = activeDists.filter(d => isMatchMonth(d.Tanggal, filterMonth));
     }
 
     // Stable, deterministic sorting according to Tanggal, No_Surat_Jalan, and ID (anti-geser)
@@ -1967,13 +2009,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </button>
 
           {/* Filter Periode Bulan (Tampil Lengkap 1 Sheet) */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-semibold text-slate-600 hidden sm:inline">Periode:</span>
+
+            {/* Dropdown Seluruh Periode yang Ada Datanya di Database */}
+            {availablePeriods.length > 0 && (
+              <select
+                value={filterMonth}
+                onChange={e => setFilterMonth(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-bold border border-blue-300 rounded-lg outline-none bg-blue-50/60 text-blue-900 focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer max-w-[210px]"
+                title="Pilih Bulan dari Riwayat Database"
+              >
+                <option value="all">Semua Periode ({distributions.length} Data)</option>
+                {availablePeriods.map(p => (
+                  <option key={p.period} value={p.period}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <input
               type="month"
               value={filterMonth === 'all' ? '' : filterMonth}
               onChange={e => setFilterMonth(e.target.value || 'all')}
-              className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-white focus:ring-1 focus:ring-blue-500 shadow-2xs"
+              className="px-2 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-white focus:ring-1 focus:ring-blue-500 shadow-2xs"
               title="Pilih Bulan Spesifik untuk Ditampilkan Lengkap dalam 1 Sheet"
             />
             {filterMonth !== currentMonth && (
