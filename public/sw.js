@@ -1,5 +1,5 @@
 // AIRIS Enterprise AMDK - Lightweight Offline Cache & Service Worker
-const CACHE_NAME = 'airis-enterprise-v1';
+const CACHE_NAME = 'airis-enterprise-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Database, Factory, Truck, 
   Boxes, FlaskConical, Scale, Users, FileSpreadsheet, 
   ChevronRight, Shield, X, Settings, Sliders, History,
-  Eye, Edit3, ShieldAlert, Clock, Mail, Check, Minus
+  Eye, Edit3, ShieldAlert, Clock, Mail, Check, Minus, Droplets
 } from 'lucide-react';
 import { UserAccount } from '../types';
 import { canAccessMenu, canEditModule, isHyperAdmin } from '../services/permissionService';
@@ -136,8 +136,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand & Factory Header */}
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 font-black text-lg">
-            A
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-700 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0 ring-1 ring-blue-600/20">
+            <Droplets size={20} className="text-cyan-100" />
           </div>
           <div>
             <div className="font-bold text-white text-sm tracking-tight flex items-center gap-1.5">
