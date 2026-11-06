@@ -695,6 +695,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const [formItems, setFormItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number }[]>([
     { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: '' as any }
   ]);
+  const [isSavingDist, setIsSavingDist] = useState<boolean>(false);
 
   // Price calculation based on customer level or special price (considering effective date)
   const getProductPriceForCustomer = (prodId: string, custId: string, targetDate?: string) => {
@@ -962,156 +963,213 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   };
 
   // Save Distribution
-  const handleSaveDistribution = () => {
+  const handleSaveDistribution = async () => {
     if (!formData.Nama_Pelanggan.trim() && !formData.ID_Pelanggan) {
       showToast('Pilih Pelanggan', 'Harap cari dan pilih pelanggan terlebih dahulu.', 'warning');
       return;
     }
 
-    const cust = customers.find(c => c.ID_Pelanggan === formData.ID_Pelanggan);
-    const finalCustName = cust?.Nama_Pelanggan || formData.Nama_Pelanggan || editingDist?.Nama_Pelanggan || 'Pelanggan';
-    const finalCustLevel = cust?.Level_Pelanggan || formData.Level_Pelanggan || editingDist?.Level_Pelanggan || 'Distributor';
+    setIsSavingDist(true);
+    try {
+      const cust = customers.find(c => c.ID_Pelanggan === formData.ID_Pelanggan);
+      const finalCustName = cust?.Nama_Pelanggan || formData.Nama_Pelanggan || editingDist?.Nama_Pelanggan || 'Pelanggan';
+      const finalCustLevel = cust?.Level_Pelanggan || formData.Level_Pelanggan || editingDist?.Level_Pelanggan || 'Distributor';
 
-    const currentDist = getTableData<DistributionItem>('Distribusi', []);
-    const currentItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
+      const currentDist = getTableData<DistributionItem>('Distribusi', []);
+      const currentItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
 
-    const distId = editingDist ? editingDist.ID_Distribusi : (() => {
-      const d = new Date(formData.Tanggal);
-      const yy = String(d.getFullYear()).slice(-2);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const prefix = `DST-${yy}${mm}${dd}`;
-      const count = currentDist.filter(dist => dist.ID_Distribusi.startsWith(prefix)).length;
-      return `${prefix}${String(count + 1).padStart(3, '0')}`;
-    })();
+      const distId = editingDist ? editingDist.ID_Distribusi : (() => {
+        const d = new Date(formData.Tanggal);
+        const yy = String(d.getFullYear()).slice(-2);
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const prefix = `DST-${yy}${mm}${dd}`;
+        const count = currentDist.filter(dist => dist.ID_Distribusi.startsWith(prefix)).length;
+        return `${prefix}${String(count + 1).padStart(3, '0')}`;
+      })();
 
-    const distRecord: any = {
-      ...(editingDist || {}),
-      ID_Distribusi: distId,
-      Tanggal: formData.Tanggal,
-      ID_Pelanggan: formData.ID_Pelanggan,
-      Nama_Pelanggan: finalCustName,
-      Level_Pelanggan: finalCustLevel,
-      Pengirim: formData.Pengirim,
-      Penerima: formData.Penerima,
-      Tujuan: formData.Tujuan,
-      Metode_Kirim: formData.Metode_Kirim,
-      No_Surat_Jalan: formData.No_Surat_Jalan,
-      No_Invoice: formData.No_Invoice || formatInvoiceNumber(distId, formData.Tanggal),
-      Keterangan: formData.Keterangan
-    };
+      const distRecord: any = {
+        ...(editingDist || {}),
+        ID_Distribusi: distId,
+        Tanggal: formData.Tanggal,
+        ID_Pelanggan: formData.ID_Pelanggan,
+        Nama_Pelanggan: finalCustName,
+        Level_Pelanggan: finalCustLevel,
+        Pengirim: formData.Pengirim,
+        Penerima: formData.Penerima,
+        Tujuan: formData.Tujuan,
+        Metode_Kirim: formData.Metode_Kirim,
+        No_Surat_Jalan: formData.No_Surat_Jalan,
+        No_Invoice: formData.No_Invoice || formatInvoiceNumber(distId, formData.Tanggal),
+        Keterangan: formData.Keterangan
+      };
 
-    let totalTagihanAwal = 0;
-    let totalQty = 0;
-    const newDetails: DistributionProductDetail[] = formItems
-      .filter(item => Number(item.Qty) > 0)
-      .map((item, idx) => {
-        const prod = products.find(p => p.ID_Produk === item.ID_Produk);
-        const subtotal = Number(item.Qty) * Number(item.Harga_Satuan);
-        totalTagihanAwal += subtotal;
-        totalQty += Number(item.Qty);
-        return {
-          ID_Detail: `${distId}-D${idx + 1}`,
-          ID_Distribusi: distId,
-          ID_Produk: item.ID_Produk,
-          Nama_Produk: prod?.Nama_Produk || item.ID_Produk,
-          Qty: Number(item.Qty),
-          Harga_Satuan: Number(item.Harga_Satuan),
-          Subtotal: subtotal
-        };
+      let totalTagihanAwal = 0;
+      let totalQty = 0;
+      const newDetails: DistributionProductDetail[] = formItems
+        .filter(item => Number(item.Qty) > 0)
+        .map((item, idx) => {
+          const prod = products.find(p => p.ID_Produk === item.ID_Produk);
+          const subtotal = Number(item.Qty) * Number(item.Harga_Satuan);
+          totalTagihanAwal += subtotal;
+          totalQty += Number(item.Qty);
+          return {
+            ID_Detail: `${distId}-D${idx + 1}`,
+            ID_Distribusi: distId,
+            ID_Produk: item.ID_Produk,
+            Nama_Produk: prod?.Nama_Produk || item.ID_Produk,
+            Qty: Number(item.Qty),
+            Harga_Satuan: Number(item.Harga_Satuan),
+            Subtotal: subtotal
+          };
+        });
+
+      // Sync direct product columns on distRecord (C120, C220, B330, B600, G19)
+      products.forEach(p => {
+        const code = getProductShortCode(p);
+        const itemMatch = newDetails.filter(it => it.ID_Produk === p.ID_Produk);
+        const sumQty = itemMatch.reduce((sum, it) => sum + it.Qty, 0);
+        distRecord[code] = sumQty;
+        distRecord[p.ID_Produk] = sumQty;
       });
 
-    // Sync direct product columns on distRecord (C120, C220, B330, B600, G19)
-    products.forEach(p => {
-      const code = getProductShortCode(p);
-      const itemMatch = newDetails.filter(it => it.ID_Produk === p.ID_Produk);
-      const sumQty = itemMatch.reduce((sum, it) => sum + it.Qty, 0);
-      distRecord[code] = sumQty;
-      distRecord[p.ID_Produk] = sumQty;
-    });
-
-    // Potongan ekspedisi jika Ambil Sendiri (Rp 1.000 / dus)
-    let grandTotal = totalTagihanAwal;
-    if (formData.Metode_Kirim === 'Ambil Sendiri') {
-      grandTotal -= (totalQty * 1000);
-    }
-    distRecord.Total_Tagihan = Math.max(0, grandTotal);
-
-    if (editingDist) {
-      const updatedDist = currentDist.map(d => d.ID_Distribusi === editingDist.ID_Distribusi ? distRecord : d);
-      const otherItems = currentItems.filter(i => i.ID_Distribusi !== editingDist.ID_Distribusi);
-      setTableData('Distribusi', updatedDist);
-      setTableData('Distribusi_Item', [...otherItems, ...newDetails]);
-    } else {
-      setTableData('Distribusi', [...currentDist, distRecord]);
-      setTableData('Distribusi_Item', [...currentItems, ...newDetails]);
-
-      // Create Draf Jurnal Keuangan
-      const existingDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
-      const newDraft: DraftJournalItem = {
-        ID_Draf: `DRF-DST-${Date.now().toString().slice(-6)}`,
-        Sumber: 'Distribusi',
-        Tanggal: formData.Tanggal,
-        Referensi: `${distId} / ${distRecord.Nama_Pelanggan}`,
-        Keterangan: `Penjualan ${totalQty} dus ke ${distRecord.Nama_Pelanggan} (Inv: ${distRecord.No_Invoice})`,
-        Kode_Debit: '112-10', // Piutang Usaha
-        Kode_Kredit: '411-10', // Pendapatan Penjualan Air
-        Nominal: grandTotal,
-        Status: 'Menunggu Verifikasi',
-        Waktu_Dibuat: new Date().toISOString()
-      };
-      setTableData('Draf_Jurnal', [...existingDrafts, newDraft]);
-
-      // Record into Piutang Usaha (normalized fields)
-      const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
-      const dueD = new Date(formData.Tanggal);
-      dueD.setDate(dueD.getDate() + 14);
-      const newPiutang: ReceivablePayableItem = {
-        ID_DOKUMEN: distId,
-        ID_Transaksi: distId,
-        TIPE: 'Piutang',
-        Jenis: 'Piutang',
-        TANGGAL: formData.Tanggal,
-        Tanggal: formData.Tanggal,
-        JATUH_TEMPO: dueD.toISOString().slice(0, 10),
-        Tgl_Jatuh_Tempo: dueD.toISOString().slice(0, 10),
-        NAMA_ENTITAS: distRecord.Nama_Pelanggan,
-        Entitas: distRecord.Nama_Pelanggan,
-        TOTAL_TAGIHAN: grandTotal,
-        Nominal: grandTotal,
-        TOTAL_DIBAYAR: 0,
-        Terbayar: 0,
-        SISA_SALDO: grandTotal,
-        Sisa: grandTotal,
-        STATUS: 'Belum Lunas',
-        Status: 'Belum Lunas'
-      };
-      setTableData('Data_Piutang_Utang', [...existingPiutang, newPiutang]);
-    }
-
-    // Auto register missing customer in MD_Pelanggan
-    if (formData.ID_Pelanggan && finalCustName) {
-      const currentCustomers = getTableData<CustomerItem>('MD_Pelanggan', []);
-      if (!currentCustomers.some(c => c.ID_Pelanggan === formData.ID_Pelanggan || (c.Nama_Pelanggan && c.Nama_Pelanggan.trim().toLowerCase() === finalCustName.trim().toLowerCase()))) {
-        const newCustomer: CustomerItem = {
-          ID_Pelanggan: formData.ID_Pelanggan,
-          Nama_Pelanggan: finalCustName,
-          Level_Pelanggan: (finalCustLevel as any) || 'Distributor',
-          Alamat: formData.Tujuan || '-',
-          Kontak: '-',
-          Status: 'Aktif'
-        };
-        setTableData('MD_Pelanggan', [...currentCustomers, newCustomer]);
+      // Potongan ekspedisi jika Ambil Sendiri (Rp 1.000 / dus)
+      let grandTotal = totalTagihanAwal;
+      if (formData.Metode_Kirim === 'Ambil Sendiri') {
+        grandTotal -= (totalQty * 1000);
       }
-    }
+      distRecord.Total_Tagihan = Math.max(0, grandTotal);
 
-    setShowAddDistModal(false);
-    onRefresh();
-    showToast(
-      'Distribusi Disimpan',
-      `Transaksi ${distId} berhasil disimpan, stok produk terpotong & draf piutang dicatat.`,
-      'success'
-    );
+      let updatedDistList: DistributionItem[] = [];
+      let updatedItemsList: DistributionProductDetail[] = [];
+
+      if (editingDist) {
+        updatedDistList = currentDist.map(d => d.ID_Distribusi === editingDist.ID_Distribusi ? distRecord : d);
+        const otherItems = currentItems.filter(i => i.ID_Distribusi !== editingDist.ID_Distribusi);
+        updatedItemsList = [...otherItems, ...newDetails];
+
+        setTableData('Distribusi', updatedDistList);
+        setTableData('Distribusi_Item', updatedItemsList);
+
+        // Perbarui data Piutang Usaha jika nominal atau tanggal berubah
+        const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
+        if (existingPiutang.some(p => p.ID_DOKUMEN === distId || p.ID_Transaksi === distId)) {
+          const updatedPiutang = existingPiutang.map(p => {
+            if (p.ID_DOKUMEN === distId || p.ID_Transaksi === distId) {
+              const paid = Number(p.TOTAL_DIBAYAR ?? p.Terbayar) || 0;
+              const newTotal = grandTotal;
+              const newSisa = Math.max(0, newTotal - paid);
+              return {
+                ...p,
+                TANGGAL: formData.Tanggal,
+                Tanggal: formData.Tanggal,
+                NAMA_ENTITAS: distRecord.Nama_Pelanggan,
+                Entitas: distRecord.Nama_Pelanggan,
+                TOTAL_TAGIHAN: newTotal,
+                Nominal: newTotal,
+                SISA_SALDO: newSisa,
+                Sisa: newSisa,
+                STATUS: newSisa <= 0 ? 'Lunas' : 'Belum Lunas',
+                Status: newSisa <= 0 ? 'Lunas' : 'Belum Lunas'
+              };
+            }
+            return p;
+          });
+          setTableData('Data_Piutang_Utang', updatedPiutang);
+        }
+      } else {
+        updatedDistList = [...currentDist, distRecord];
+        updatedItemsList = [...currentItems, ...newDetails];
+
+        setTableData('Distribusi', updatedDistList);
+        setTableData('Distribusi_Item', updatedItemsList);
+
+        // Create Draf Jurnal Keuangan
+        const existingDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
+        const newDraft: DraftJournalItem = {
+          ID_Draf: `DRF-DST-${Date.now().toString().slice(-6)}`,
+          Sumber: 'Distribusi',
+          Tanggal: formData.Tanggal,
+          Referensi: `${distId} / ${distRecord.Nama_Pelanggan}`,
+          Keterangan: `Penjualan ${totalQty} dus ke ${distRecord.Nama_Pelanggan} (Inv: ${distRecord.No_Invoice})`,
+          Kode_Debit: '112-10', // Piutang Usaha
+          Kode_Kredit: '411-10', // Pendapatan Penjualan Air
+          Nominal: grandTotal,
+          Status: 'Menunggu Verifikasi',
+          Waktu_Dibuat: new Date().toISOString()
+        };
+        setTableData('Draf_Jurnal', [...existingDrafts, newDraft]);
+
+        // Record into Piutang Usaha (normalized fields)
+        const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
+        const dueD = new Date(formData.Tanggal);
+        dueD.setDate(dueD.getDate() + 14);
+        const newPiutang: ReceivablePayableItem = {
+          ID_DOKUMEN: distId,
+          ID_Transaksi: distId,
+          TIPE: 'Piutang',
+          Jenis: 'Piutang',
+          TANGGAL: formData.Tanggal,
+          Tanggal: formData.Tanggal,
+          JATUH_TEMPO: dueD.toISOString().slice(0, 10),
+          Tgl_Jatuh_Tempo: dueD.toISOString().slice(0, 10),
+          NAMA_ENTITAS: distRecord.Nama_Pelanggan,
+          Entitas: distRecord.Nama_Pelanggan,
+          TOTAL_TAGIHAN: grandTotal,
+          Nominal: grandTotal,
+          TOTAL_DIBAYAR: 0,
+          Terbayar: 0,
+          SISA_SALDO: grandTotal,
+          Sisa: grandTotal,
+          STATUS: 'Belum Lunas',
+          Status: 'Belum Lunas'
+        };
+        setTableData('Data_Piutang_Utang', [...existingPiutang, newPiutang]);
+      }
+
+      // Auto register missing customer in MD_Pelanggan
+      if (formData.ID_Pelanggan && finalCustName) {
+        const currentCustomers = getTableData<CustomerItem>('MD_Pelanggan', []);
+        if (!currentCustomers.some(c => c.ID_Pelanggan === formData.ID_Pelanggan || (c.Nama_Pelanggan && c.Nama_Pelanggan.trim().toLowerCase() === finalCustName.trim().toLowerCase()))) {
+          const newCustomer: CustomerItem = {
+            ID_Pelanggan: formData.ID_Pelanggan,
+            Nama_Pelanggan: finalCustName,
+            Level_Pelanggan: (finalCustLevel as any) || 'Distributor',
+            Alamat: formData.Tujuan || '-',
+            Kontak: '-',
+            Status: 'Aktif'
+          };
+          setTableData('MD_Pelanggan', [...currentCustomers, newCustomer]);
+        }
+      }
+
+      // Direct awaited sync ke Turso Cloud sebelum menutup modal agar cloud terkonfirmasi konsisten
+      try {
+        const { getTursoConfig, syncTableToTurso } = await import('../services/tursoAdapter');
+        const tursoCfg = getTursoConfig();
+        if (tursoCfg.isConnected && tursoCfg.autoSync) {
+          await Promise.all([
+            syncTableToTurso('Distribusi', updatedDistList, currentDist),
+            syncTableToTurso('Distribusi_Item', updatedItemsList, currentItems)
+          ]);
+        }
+      } catch (tursoErr) {
+        console.warn('[DistributionView] Direct Turso sync failed:', tursoErr);
+      }
+
+      setShowAddDistModal(false);
+      onRefresh();
+      showToast(
+        editingDist ? 'Perubahan Disimpan' : 'Distribusi Disimpan',
+        `Data pengiriman ${distId} berhasil disimpan ke database lokal dan Turso Cloud.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('[DistributionView] Gagal menyimpan distribusi:', err);
+      showToast('Gagal Menyimpan', err?.message || 'Terjadi kesalahan saat menyimpan pengiriman.', 'error');
+    } finally {
+      setIsSavingDist(false);
+    }
   };
 
   // ==============================================================
@@ -1160,7 +1218,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setShowPlanModal(true);
   };
 
-  const handleSavePlan = () => {
+  const handleSavePlan = async () => {
     const cust = customers.find(c => c.ID_Pelanggan === planForm.ID_Pelanggan);
     const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
     const planId = editingPlan ? editingPlan.ID_Rencana : `ORD-${Date.now().toString().slice(-6)}`;
@@ -1190,16 +1248,27 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Items: items
     };
 
+    let updatedPlans: DeliveryPlanItem[] = [];
+
     if (editingPlan) {
       // Update existing plan
-      const updatedPlans = plans.map(p => p.ID_Rencana === editingPlan.ID_Rencana ? planRecord : p);
+      updatedPlans = plans.map(p => p.ID_Rencana === editingPlan.ID_Rencana ? planRecord : p);
       setTableData('Rencana_Distribusi', updatedPlans);
       showToast('Pesanan Diperbarui', `Rencana pesanan ${planId} berhasil diperbarui.`, 'success');
     } else {
       // Create new plan
-      setTableData('Rencana_Distribusi', [...plans, planRecord]);
+      updatedPlans = [...plans, planRecord];
+      setTableData('Rencana_Distribusi', updatedPlans);
       showToast('Pesanan Disimpan', `Rencana pesanan ${planId} berhasil ditambahkan ke antrean.`, 'success');
     }
+
+    try {
+      const { getTursoConfig, syncTableToTurso } = await import('../services/tursoAdapter');
+      const tursoCfg = getTursoConfig();
+      if (tursoCfg.isConnected && tursoCfg.autoSync) {
+        await syncTableToTurso('Rencana_Distribusi', updatedPlans, plans);
+      }
+    } catch (e) {}
 
     setShowPlanModal(false);
     setEditingPlan(null);
@@ -3771,9 +3840,22 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => setShowAddDistModal(false)} className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 cursor-pointer">Batal</button>
-                <button onClick={handleSaveDistribution} className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs cursor-pointer">
-                  {editingDist ? 'Simpan Perubahan' : 'Simpan & Terbitkan Surat Jalan'}
+                <button 
+                  type="button" 
+                  disabled={isSavingDist} 
+                  onClick={() => setShowAddDistModal(false)} 
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 disabled:opacity-50 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="button"
+                  disabled={isSavingDist}
+                  onClick={handleSaveDistribution} 
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSavingDist && <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full"></span>}
+                  <span>{isSavingDist ? 'Menyimpan...' : (editingDist ? 'Simpan Perubahan' : 'Simpan & Terbitkan Surat Jalan')}</span>
                 </button>
               </div>
             </div>

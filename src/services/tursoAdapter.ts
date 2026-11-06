@@ -400,6 +400,14 @@ export async function pushAllTablesToTurso(options?: {
   };
 }
 
+// Tracking tabel yang sedang aktif sinkronisasi / baru saja di-write untuk mencegah race condition
+const activeTableSyncs = new Set<string>();
+const lastTableWriteTimestamp: Record<string, number> = {};
+
+export function markTableWritten(tableName: string) {
+  lastTableWriteTimestamp[tableName] = Date.now();
+}
+
 /**
  * Tarik Seluruh Tabel & Data dari Turso Cloud ke Perangkat (Pull from Turso)
  */
@@ -423,6 +431,16 @@ export async function pullAllTablesFromTurso(options?: {
 
   for (const table of ALL_DATABASE_TABLES) {
     try {
+      // Proteksi Race Condition: Jika tabel sedang di-sync ke cloud atau baru saja diedit (< 6 detik lalu),
+      // jangan ditimpa oleh pull background agar perubahan lokal pengguna tidak hilang/kembali ke semula
+      if (activeTableSyncs.has(table)) {
+        continue;
+      }
+      const lastWrite = lastTableWriteTimestamp[table] || 0;
+      if (Date.now() - lastWrite < 6000) {
+        continue;
+      }
+
       options?.onProgress?.(`Menarik tabel ${table}...`);
       const res = await executeTursoQuery(`SELECT * FROM "${table}"`, [], cfg);
 
@@ -475,6 +493,9 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
 
   const pk = TABLE_PRIMARY_KEYS[tableName] || 'id';
 
+  activeTableSyncs.add(tableName);
+  lastTableWriteTimestamp[tableName] = Date.now();
+
   try {
     // 1. Kasus A: Tabel dikosongkan
     if (data.length === 0) {
@@ -495,17 +516,42 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
       }
     }
 
-    // 3. Kasus C: Upsert baris aktif
+    // 3. Kasus C: Upsert baris aktif (Optimasi Diffing Cepat: prioritaskan baris yang baru atau berubah)
     const columns = getSanitizedColumns(tableName, data);
     if (columns.length === 0) return;
+
+    let rowsToUpsert = data;
+    if (pk && previousData && Array.isArray(previousData) && previousData.length > 0) {
+      const prevMap = new Map<string, any>();
+      previousData.forEach(r => {
+        if (!r) return;
+        const key = String(r[pk] ?? '').trim().toLowerCase();
+        if (key) prevMap.set(key, r);
+      });
+
+      const changedOrNewRows = data.filter(r => {
+        if (!r) return false;
+        const key = String(r[pk] ?? '').trim().toLowerCase();
+        const prev = prevMap.get(key);
+        if (!prev) return true; // Baris baru
+        return columns.some(col => String(r[col] ?? '') !== String(prev[col] ?? ''));
+      });
+
+      if (changedOrNewRows.length > 0) {
+        rowsToUpsert = changedOrNewRows;
+      } else if (previousData.length <= data.length) {
+        // Tidak ada baris yang berubah maupun dihapus
+        return;
+      }
+    }
 
     const quotedCols = columns.map(c => `"${c}"`).join(', ');
     const placeholders = columns.map(() => '?').join(', ');
     const sql = `INSERT OR REPLACE INTO "${tableName}" (${quotedCols}) VALUES (${placeholders})`;
 
     const BATCH_SIZE = 100;
-    for (let i = 0; i < data.length; i += BATCH_SIZE) {
-      const chunk = data.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < rowsToUpsert.length; i += BATCH_SIZE) {
+      const chunk = rowsToUpsert.slice(i, i + BATCH_SIZE);
       const stmts = chunk.map(row => ({
         sql,
         args: columns.map(col => (row[col] !== undefined ? row[col] : null))
@@ -514,6 +560,9 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
     }
   } catch (err: any) {
     console.warn(`[TursoSync] Sinkronisasi ${tableName} gagal:`, err);
+  } finally {
+    activeTableSyncs.delete(tableName);
+    lastTableWriteTimestamp[tableName] = Date.now();
   }
 }
 

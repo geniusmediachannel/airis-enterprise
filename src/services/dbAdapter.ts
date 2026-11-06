@@ -385,7 +385,10 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
 
   // Sinkronisasi otomatis ke Turso Database jika aktif
   try {
-    import('./tursoAdapter').then(({ getTursoConfig, syncTableToTurso }) => {
+    import('./tursoAdapter').then(({ getTursoConfig, syncTableToTurso, markTableWritten }) => {
+      if (typeof markTableWritten === 'function') {
+        markTableWritten(tableName);
+      }
       const tursoCfg = getTursoConfig();
       if (tursoCfg.isConnected && tursoCfg.autoSync) {
         syncTableToTurso(tableName, safeData, previousData).catch(() => {});
