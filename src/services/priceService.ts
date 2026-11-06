@@ -513,8 +513,21 @@ export function checkAndApplyScheduledPriceChanges(): { appliedCount: number } {
 }
 
 /**
+ * Standar acuan resmi harga lama sebelum kenaikan harga tanggal 22 April 2026
+ * (berdasarkan catatan histori penyesuaian tier harga jual produk).
+ */
+export const HISTORICAL_PRICES_BEFORE_2026_04_22: Record<string, { Distributor: number; Agen: number; Reseller: number; Konsumen: number }> = {
+  'ASH-CUP120': { Distributor: 15000, Agen: 17000, Reseller: 18500, Konsumen: 19500 },
+  'ASH-CUP220': { Distributor: 17500, Agen: 19500, Reseller: 21000, Konsumen: 22000 },
+  'ASH-BTL330': { Distributor: 28000, Agen: 30000, Reseller: 31500, Konsumen: 32500 },
+  'ASH-BTL600': { Distributor: 31500, Agen: 33500, Reseller: 35000, Konsumen: 36000 },
+  'ASH-GLN19L': { Distributor: 12000, Agen: 12000, Reseller: 12000, Konsumen: 12000 }
+};
+
+/**
  * Ambil harga historis suatu item pada tanggal transaksi tertentu.
- * Berguna saat menghitung HPP produksi atau pembelian bahan di tanggal lampau.
+ * - Jika tanggal transaksi < 22 April 2026: otomatis menggunakan harga lama.
+ * - Jika tanggal transaksi >= 22 April 2026: menggunakan harga baru.
  */
 export function getPriceAtDate(
   idItem: string,
@@ -524,26 +537,53 @@ export function getPriceAtDate(
 ): number {
   try {
     const tgl = tanggalTransaksi ? tanggalTransaksi.slice(0, 10) : getTodayISO();
-    const histories = getAllPriceHistories().filter(
-      h => h.ID_Item === idItem && h.Tipe_Item === itemType && h.Tanggal_Berlaku <= tgl
+    const allHistories = getAllPriceHistories().filter(
+      h => h.ID_Item === idItem && h.Tipe_Item === itemType
     );
 
-    // Ambil histori paling mutakhir yang berlaku sebelum/pada tanggal transaksi
-    if (histories.length > 0) {
-      histories.sort((a, b) => b.Tanggal_Berlaku.localeCompare(a.Tanggal_Berlaku));
-      const latestHist = histories[0];
+    // 1. Ambil histori paling mutakhir yang berlaku sebelum/pada tanggal transaksi
+    const applicableHistories = allHistories.filter(h => h.Tanggal_Berlaku <= tgl);
+    if (applicableHistories.length > 0) {
+      applicableHistories.sort((a, b) => b.Tanggal_Berlaku.localeCompare(a.Tanggal_Berlaku));
+      const latestHist = applicableHistories[0];
 
       if (itemType === 'Bahan Penolong') {
-        return latestHist.Harga_Baru ?? 0;
+        return Number(latestHist.Harga_Baru) || 0;
       } else {
-        if (tier === 'Agen') return latestHist.Harga_Baru_Agen ?? latestHist.Harga_Baru ?? 0;
-        if (tier === 'Reseller') return latestHist.Harga_Baru_Reseller ?? latestHist.Harga_Baru ?? 0;
-        if (tier === 'Konsumen') return latestHist.Harga_Baru_Konsumen ?? latestHist.Harga_Baru ?? 0;
-        return latestHist.Harga_Baru_Distributor ?? latestHist.Harga_Baru ?? 0;
+        if (tier === 'Agen') return Number(latestHist.Harga_Baru_Agen ?? latestHist.Harga_Baru) || 0;
+        if (tier === 'Reseller') return Number(latestHist.Harga_Baru_Reseller ?? latestHist.Harga_Baru) || 0;
+        if (tier === 'Konsumen') return Number(latestHist.Harga_Baru_Konsumen ?? latestHist.Harga_Baru) || 0;
+        return Number(latestHist.Harga_Baru_Distributor ?? latestHist.Harga_Baru) || 0;
       }
     }
 
-    // Jika tidak ada catatan histori sebelum tanggal itu, gunakan harga master saat ini
+    // 2. Jika tanggal transaksi SEBELUM tanggal perubahan harga paling awal (misal tgl < '2026-04-22'):
+    // Ambil Harga_Lama dari histori paling awal yang tersimpan
+    if (allHistories.length > 0) {
+      allHistories.sort((a, b) => a.Tanggal_Berlaku.localeCompare(b.Tanggal_Berlaku));
+      const earliestHist = allHistories[0];
+      if (tgl < earliestHist.Tanggal_Berlaku) {
+        if (itemType === 'Bahan Penolong') {
+          return Number(earliestHist.Harga_Lama) || 0;
+        } else {
+          if (tier === 'Agen') return Number(earliestHist.Harga_Lama_Agen ?? earliestHist.Harga_Agen_Lama ?? earliestHist.Harga_Lama) || 0;
+          if (tier === 'Reseller') return Number(earliestHist.Harga_Lama_Reseller ?? earliestHist.Harga_Reseller_Lama ?? earliestHist.Harga_Lama) || 0;
+          if (tier === 'Konsumen') return Number(earliestHist.Harga_Lama_Konsumen ?? earliestHist.Harga_Konsumen_Lama ?? earliestHist.Harga_Lama) || 0;
+          return Number(earliestHist.Harga_Lama_Distributor ?? earliestHist.Harga_Distributor_Lama ?? earliestHist.Harga_Lama) || 0;
+        }
+      }
+    }
+
+    // 3. Jika tanggal transaksi < 2026-04-22 tapi histori di storage belum dimuat:
+    // Gunakan standar acuan harga lama resmi sebelum kenaikan 22 April 2026
+    if (itemType === 'Produk' && tgl < '2026-04-22') {
+      const oldPrices = HISTORICAL_PRICES_BEFORE_2026_04_22[idItem];
+      if (oldPrices) {
+        return oldPrices[tier] || oldPrices.Distributor || 0;
+      }
+    }
+
+    // 4. Fallback jika tanggal >= 2026-04-22 dan tidak ada histori khusus: gunakan Master Data Produk saat ini
     if (itemType === 'Bahan Penolong') {
       const mats = getTableData<RawMaterialItem>('MD_BahanPenolong', []);
       const m = mats.find(mat => mat.ID_Bahan === idItem);
