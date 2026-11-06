@@ -1333,11 +1333,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     if (customCode) return String(customCode);
     const pId = String(prod.ID_Produk || '').toUpperCase();
     const pNm = String(prod.Nama_Produk || '').toLowerCase();
-    if (pId.includes('GLN') || pId.includes('G19') || pNm.includes('galon') || pNm.includes('gln') || pNm.includes('19')) return 'G19';
-    if (pId.includes('CUP120') || pNm.includes('120')) return 'C120';
-    if (pId.includes('CUP220') || pNm.includes('220')) return 'C220';
-    if (pId.includes('BTL330') || pNm.includes('330')) return 'B330';
-    if (pId.includes('BTL600') || pNm.includes('600')) return 'B600';
+    if (pId === 'ASH-GLN19L' || pId === 'G19' || pNm.includes('galon')) return 'G19';
+    if (pId === 'ASH-CUP120' || pNm.includes('cup 120') || (pNm.includes('cup') && pNm.includes('120'))) return 'C120';
+    if (pId === 'ASH-CUP220' || pNm.includes('cup 220') || (pNm.includes('cup') && pNm.includes('220'))) return 'C220';
+    if (pId === 'ASH-BTL220' || pNm.includes('botol 220') || (pNm.includes('botol') && pNm.includes('220'))) return 'B220';
+    if (pId === 'ASH-BTL330' || pNm.includes('botol 330') || (pNm.includes('botol') && pNm.includes('330'))) return 'B330';
+    if (pId === 'ASH-BTL600' || pNm.includes('botol 600') || (pNm.includes('botol') && pNm.includes('600'))) return 'B600';
 
     const numMatch = prod.Nama_Produk.match(/\d+/);
     const prefix = prod.Nama_Produk.toLowerCase().includes('botol') ? 'B' : 
@@ -1347,9 +1348,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return prod.ID_Produk.slice(-4);
   };
 
-  // 5 Varian Standar Resmi AMDK Bersih Tanpa Duplikasi (Urut: C120, C220, B330, B600, G19)
+  // Varian Produk Aktif dari Master Data Produk
   const cleanProducts = useMemo(() => {
-    const orderMap: Record<string, number> = { 'C120': 1, 'C220': 2, 'B330': 3, 'B600': 4, 'G19': 5 };
+    const orderMap: Record<string, number> = { 'C120': 1, 'C220': 2, 'B220': 3, 'B330': 4, 'B600': 5, 'G19': 6 };
     const seen = new Set<string>();
     const list: ProductItem[] = [];
 
@@ -1367,21 +1368,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     });
 
-    const fallbackDefaults: ProductItem[] = [
-      { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
-      { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
-      { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
-      { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
-      { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
-    ];
-
-    fallbackDefaults.forEach(dp => {
-      const c = getCode(dp);
-      if (!seen.has(c)) {
-        seen.add(c);
-        list.push(dp);
-      }
-    });
+    if (list.length === 0) {
+      const fallbackDefaults: ProductItem[] = [
+        { ID_Produk: 'ASH-CUP120', Nama_Produk: 'As-Shofaa Cup 120ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 12000, Harga_Agen: 13000, Harga_Reseller: 14000, Harga_Konsumen: 16000, Status: 'Aktif' },
+        { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
+        { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
+        { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
+        { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
+      ];
+      return fallbackDefaults;
+    }
 
     list.sort((a, b) => (orderMap[getCode(a)] || 99) - (orderMap[getCode(b)] || 99));
     return list;

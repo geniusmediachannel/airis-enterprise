@@ -9,7 +9,7 @@ import {
   ProductItem, CustomerItem, SupplierItem, RawMaterialItem, 
   BOMItem, EmployeeItem, UserAccount, SpecialPriceItem, UserRole, PriceHistoryItem 
 } from '../types';
-import { getTableData, setTableData } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { 
@@ -243,6 +243,30 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         sanitized[k] = 0;
       }
     });
+
+    // Validasi & Penanganan Khusus ID Produk
+    if (activeTab === 'produk') {
+      const customId = (sanitized.ID_Produk || '').trim();
+      if (!customId) {
+        showToast('Validasi Gagal', 'ID Produk tidak boleh kosong!', 'warning');
+        return;
+      }
+      if (!sanitized.Nama_Produk || !sanitized.Nama_Produk.trim()) {
+        showToast('Validasi Gagal', 'Nama Produk wajib diisi!', 'warning');
+        return;
+      }
+
+      // Cek duplikasi ID Produk (kecuali jika mengedit produk yang sama)
+      const duplicate = products.find(p => 
+        p.ID_Produk.trim().toLowerCase() === customId.toLowerCase() &&
+        (!editingItem || editingItem.ID_Produk.trim().toLowerCase() !== customId.toLowerCase())
+      );
+      if (duplicate) {
+        showToast('ID Produk Sudah Ada', `ID Produk "${customId}" sudah digunakan oleh "${duplicate.Nama_Produk}". Harap gunakan ID lain yang unik.`, 'error');
+        return;
+      }
+      sanitized.ID_Produk = customId;
+    }
 
     // Validasi & Penanganan Khusus ID Bahan Custom
     if (activeTab === 'bahan') {
@@ -595,10 +619,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
     });
     if (!ok) return;
 
-    const updated = currentList.filter(item => item[idField] !== id);
-    setTableData(tableName, updated);
+    await deleteTableRow(tableName, id, idField);
     onRefresh();
-    showToast('Data Dihapus', `Data ${id} telah berhasil dihapus permanen.`, 'success');
+    showToast('Data Dihapus', `Data ${itemLabel} telah berhasil dihapus permanen.`, 'success');
   };
 
   const handleExportExcel = () => {

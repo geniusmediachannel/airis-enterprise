@@ -2245,57 +2245,45 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
     const rawProds = getTableData<ProductItem>('MD_Produk', []);
     const standardProducts = [...DEFAULT_PRODUCTS];
 
+    if (!Array.isArray(rawProds) || rawProds.length === 0) {
+      setTableData('MD_Produk', standardProducts, { skipCloudSync: true });
+      return standardProducts;
+    }
+
     const duplicateIdsToMigrate = new Map<string, string>(); // duplicateId -> officialId
     const duplicateIdsToDelete = new Set<string>();
 
     const getStandardTargetId = (p: ProductItem): string | null => {
       const idUpper = String(p.ID_Produk || '').trim().toUpperCase();
-      const nameLower = String(p.Nama_Produk || '').trim().toLowerCase();
-      const katLower = String(p.Kategori || '').trim().toLowerCase();
-      const satLower = String(p.Satuan || '').trim().toLowerCase();
 
-      // Galon 19L
-      if (
-        idUpper === 'ASH-GLN19L' || idUpper === 'G19' || idUpper.includes('GLN') ||
-        nameLower.includes('galon') || nameLower.includes('gln') || nameLower.includes('19') ||
-        katLower.includes('galon') || satLower === 'galon'
-      ) {
+      // Hanya remapping jika persis alias legacy lama yang bukan format resmi ASH-*
+      if (idUpper === 'G19' || idUpper === 'GLN19' || idUpper === 'GALON19L') {
         return 'ASH-GLN19L';
       }
-
-      // Cup 120
-      if (idUpper === 'ASH-CUP120' || idUpper === 'C120' || idUpper.includes('CUP120') || nameLower.includes('120')) {
+      if (idUpper === 'C120' || idUpper === 'CUP120') {
         return 'ASH-CUP120';
       }
-
-      // Cup 220
-      if (idUpper === 'ASH-CUP220' || idUpper === 'C220' || idUpper.includes('CUP220') || nameLower.includes('220')) {
+      if (idUpper === 'C220' || idUpper === 'CUP220') {
         return 'ASH-CUP220';
       }
-
-      // Botol 330
-      if (idUpper === 'ASH-BTL330' || idUpper === 'B330' || idUpper.includes('BTL330') || nameLower.includes('330')) {
+      if (idUpper === 'B330' || idUpper === 'BTL330') {
         return 'ASH-BTL330';
       }
-
-      // Botol 600
-      if (idUpper === 'ASH-BTL600' || idUpper === 'B600' || idUpper.includes('BTL600') || nameLower.includes('600')) {
+      if (idUpper === 'B600' || idUpper === 'BTL600') {
         return 'ASH-BTL600';
       }
 
       return null;
     };
 
-    if (Array.isArray(rawProds) && rawProds.length > 0) {
-      rawProds.forEach(p => {
-        if (!p || !p.ID_Produk) return;
-        const targetOfficialId = getStandardTargetId(p);
-        if (targetOfficialId && p.ID_Produk !== targetOfficialId) {
-          duplicateIdsToMigrate.set(p.ID_Produk, targetOfficialId);
-          duplicateIdsToDelete.add(p.ID_Produk);
-        }
-      });
-    }
+    rawProds.forEach(p => {
+      if (!p || !p.ID_Produk) return;
+      const targetOfficialId = getStandardTargetId(p);
+      if (targetOfficialId && p.ID_Produk !== targetOfficialId) {
+        duplicateIdsToMigrate.set(p.ID_Produk, targetOfficialId);
+        duplicateIdsToDelete.add(p.ID_Produk);
+      }
+    });
 
     // Jika ditemukan record duplikat, migrasikan seluruh relasi transaksi
     if (duplicateIdsToMigrate.size > 0) {
@@ -2313,7 +2301,6 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
       });
       if (prodMod) {
         setTableData('Produksi', fixedProds, { skipCloudSync: true });
-        syncToSupabaseTable('Produksi', fixedProds).catch(() => {});
       }
 
       // 2. Remap SPK
@@ -2330,7 +2317,6 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
       });
       if (spkMod) {
         setTableData('SPK', fixedSpks, { skipCloudSync: true });
-        syncToSupabaseTable('SPK', fixedSpks).catch(() => {});
       }
 
       // 3. Remap Distribusi_Item
@@ -2352,7 +2338,6 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
       });
       if (itemMod) {
         setTableData('Distribusi_Item', fixedItems, { skipCloudSync: true });
-        syncToSupabaseTable('Distribusi_Item', fixedItems).catch(() => {});
       }
 
       // 4. Remap MD_BOM
@@ -2369,41 +2354,34 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
       });
       if (bomMod) {
         setTableData('MD_BOM', fixedBoms, { skipCloudSync: true });
-        syncToSupabaseTable('MD_BOM', fixedBoms).catch(() => {});
       }
-
-      // 5. Hapus record duplikat dari Supabase Cloud
-      try {
-        const client = getSupabaseClient();
-        if (client) {
-          duplicateIdsToDelete.forEach(dupId => {
-            client.from('MD_Produk').delete().eq('ID_Produk', dupId).catch(() => {});
-          });
-        }
-      } catch (e) {}
     }
 
-    // Bangun daftar final produk ter-deduplikasi yang pasti tepat 5 varian resmi
+    // Bangun daftar final produk: Pertahankan seluruh produk unik (baik 5 produk standar maupun produk kustom baru)
     const cleanedList: ProductItem[] = [];
-    standardProducts.forEach(sp => {
-      const existing = (rawProds || []).find(rp => rp && rp.ID_Produk === sp.ID_Produk);
-      cleanedList.push(existing ? { ...sp, ...existing } : sp);
+    const seenIds = new Set<string>();
+
+    rawProds.forEach(p => {
+      if (!p || !p.ID_Produk) return;
+      const idKey = String(p.ID_Produk).trim().toUpperCase();
+      if (!duplicateIdsToDelete.has(p.ID_Produk) && !seenIds.has(idKey)) {
+        seenIds.add(idKey);
+        cleanedList.push(p);
+      }
     });
 
-    setTableData('MD_Produk', cleanedList, { skipCloudSync: true });
+    if (cleanedList.length === 0) {
+      cleanedList.push(...standardProducts);
+    }
 
-    // Sinkronkan master produk bersih ke cloud jika client aktif
-    try {
-      const client = getSupabaseClient();
-      if (client) {
-        client.from('MD_Produk').upsert(cleanedList as any).catch(() => {});
-      }
-    } catch (e) {}
+    if (cleanedList.length !== rawProds.length) {
+      setTableData('MD_Produk', cleanedList, { skipCloudSync: true });
+    }
 
     return cleanedList;
   } catch (err) {
     console.warn('[DeduplicateMasterProducts] Error:', err);
-    return DEFAULT_PRODUCTS;
+    return getTableData<ProductItem>('MD_Produk', DEFAULT_PRODUCTS);
   }
 }
 
