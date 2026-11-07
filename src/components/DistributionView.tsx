@@ -33,43 +33,6 @@ interface DistributionViewProps {
   onRefresh: () => void;
 }
 
-// Month matcher supporting ISO (2026-10-01), 2-digit years (01-Okt-26, 01/10/26), and "all" filter
-const isMatchMonth = (dateStr?: string, targetMonth?: string): boolean => {
-  if (!targetMonth || targetMonth === 'all' || targetMonth === '') return true;
-  if (!dateStr) return false;
-  if (dateStr.startsWith(targetMonth)) return true;
-
-  const parts = targetMonth.split('-');
-  if (parts.length === 2) {
-    const yr = parts[0];              // '2026'
-    const yr2 = parts[0].slice(-2);    // '26'
-    const mNum = parts[1].padStart(2, '0'); // '10'
-    const mIdx = parseInt(parts[1], 10) - 1;
-
-    // 1. Check for 2-digit year ISO format: '26-10-...'
-    if (dateStr.startsWith(`${yr2}-${mNum}`)) return true;
-
-    // 2. Check for DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
-    if (dateStr.includes(`/${mNum}/${yr}`) || dateStr.includes(`-${mNum}-${yr}`) ||
-        dateStr.includes(`/${mNum}/${yr2}`) || dateStr.includes(`-${mNum}-${yr2}`)) {
-      return true;
-    }
-
-    // 3. Check for Indonesian month name with 4-digit or 2-digit year (e.g. 'okt' and '2026' or '26')
-    const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
-    const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    if (mIdx >= 0 && mIdx < 12) {
-      const monCode = months[mIdx];
-      const monCodeEn = monthsEn[mIdx];
-      const lower = dateStr.toLowerCase();
-      const hasMonth = lower.includes(monCode) || lower.includes(monCodeEn);
-      const hasYear = lower.includes(yr) || lower.includes(yr2);
-      if (hasMonth && hasYear) return true;
-    }
-  }
-  return false;
-};
-
 // Robust helper to parse year and month index (0-11) from various Indonesian & ISO date formats
 const parseDateYearAndMonth = (dateStr?: string | number): { year: string; monthIndex: number } | null => {
   if (!dateStr) return null;
@@ -110,8 +73,8 @@ const parseDateYearAndMonth = (dateStr?: string | number): { year: string; month
     if (m >= 0 && m < 12) return { year: yr, monthIndex: m };
   }
 
-  // 4. Pattern: YY-MM-DD
-  const ymdShortMatch = str.match(/^(\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  // 4. Pattern: YY-MM-DD (2-digit year di depan)
+  const ymdShortMatch = str.match(/^(\d{2})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (ymdShortMatch && parseInt(ymdShortMatch[1], 10) >= 20 && parseInt(ymdShortMatch[1], 10) <= 35) {
     const yr = '20' + ymdShortMatch[1];
     const m = parseInt(ymdShortMatch[2], 10) - 1;
@@ -142,6 +105,32 @@ const parseDateYearAndMonth = (dateStr?: string | number): { year: string; month
   }
 
   return null;
+};
+
+// Month matcher: membandingkan tahun dan bulan secara presisi dan aman
+const isMatchMonth = (dateStr?: string, targetMonth?: string): boolean => {
+  if (!targetMonth || targetMonth === 'all' || targetMonth === '') return true;
+  if (!dateStr) return false;
+
+  // 1. Cepat: Format ISO standar YYYY-MM-DD
+  if (dateStr.length >= 7 && (dateStr[4] === '-' || dateStr[4] === '/')) {
+    const yr = dateStr.slice(0, 4);
+    const m = dateStr.slice(5, 7);
+    return `${yr}-${m}` === targetMonth;
+  }
+
+  // 2. Evaluasi tahun dan bulan menggunakan parser terstruktur
+  const parts = targetMonth.split('-');
+  if (parts.length === 2) {
+    const targetYr = parts[0];
+    const targetMonthIdx = parseInt(parts[1], 10) - 1;
+    const parsed = parseDateYearAndMonth(dateStr);
+    if (parsed) {
+      return parsed.year === targetYr && parsed.monthIndex === targetMonthIdx;
+    }
+  }
+
+  return false;
 };
 
 // Robust timestamp extractor for sorting dates in diverse formats (ISO, DD/MM/YYYY, DD-MMM-YY, etc)
