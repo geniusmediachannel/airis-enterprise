@@ -489,9 +489,8 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
         totalTagihanCalc += Number(it.Subtotal) || 0;
       });
 
-      if (anyDist.Metode_Kirim === 'Ambil Sendiri') {
-        totalTagihanCalc = Math.max(0, totalTagihanCalc - (totalQtyCalc * 1000));
-      }
+      // Total_Tagihan tetap mencatat nilai bruto barang (tidak langsung dipotong Rp 1.000/dus jika Ambil Sendiri,
+      // potongan ongkir dikelola dan dicairkan melalui Buku Piutang Keuangan Konsumen).
 
       if (!anyDist.Total_Tagihan || Number(anyDist.Total_Tagihan) <= 0 || (isModified && Math.abs(Number(anyDist.Total_Tagihan) - totalTagihanCalc) > 0)) {
         if (totalTagihanCalc > 0) {

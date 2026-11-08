@@ -1049,12 +1049,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         distRecord[p.ID_Produk] = sumQty;
       });
 
-      // Potongan ekspedisi jika Ambil Sendiri (Rp 1.000 / dus)
-      let grandTotal = totalTagihanAwal;
-      if (formData.Metode_Kirim === 'Ambil Sendiri') {
-        grandTotal -= (totalQty * 1000);
-      }
-      distRecord.Total_Tagihan = Math.max(0, grandTotal);
+      // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000/dus jika Ambil Sendiri).
+      // Pengurangan potongan Rp 1.000/dus dicairkan melalui Buku Piutang Konsumen di Keuangan.
+      distRecord.Total_Tagihan = Math.max(0, totalTagihanAwal);
 
       let updatedDistList: DistributionItem[] = [];
       let updatedItemsList: DistributionProductDetail[] = [];
@@ -1372,10 +1369,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       };
     });
 
-    let grandTotal = totalTagihanAwal;
-    if (plan.Metode_Kirim === 'Ambil Sendiri') {
-      grandTotal -= (totalQtyCalc * 1000);
-    }
+    // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000 jika ambil sendiri)
+    const grandTotal = totalTagihanAwal;
 
     // Save to Distribusi
     setTableData('Distribusi', [...currentDist, distRecord]);
@@ -1664,11 +1659,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     const items = distItemsMap.get(String(dist.ID_Distribusi).trim()) || [];
     if (items.length > 0) {
-      let total = items.reduce((sum, item) => sum + item.Subtotal, 0);
-      const totalQty = items.reduce((sum, item) => sum + item.Qty, 0);
-      if (dist.Metode_Kirim === 'Ambil Sendiri') {
-        total -= (totalQty * 1000);
-      }
+      const total = items.reduce((sum, item) => sum + item.Subtotal, 0);
       if (total > 0) return total;
     }
     return 0;
@@ -2729,6 +2720,23 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </table>
                   </div>
                 </div>
+
+                {dist.Metode_Kirim === 'Ambil Sendiri' && (
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center gap-2">
+                        <span>Metode Ambil Sendiri (Hak Kompensasi Ongkir):</span>
+                        <span className="font-mono text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-[11px]">
+                          Rp {(products.reduce((sum, p) => sum + getDistProductQty(dist, p), 0) * 1000).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        Tagihan pada data transaksi distribusi tetap dicatat penuh (Rp {total.toLocaleString('id-ID')}). Hak potongan ongkir Rp 1.000/dus dikurangkan melalui pencairan di <strong>Buku Piutang Konsumen</strong> (Modul Keuangan) dan tercantum pada Invoice fisik.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {dist.Keterangan && (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs">
@@ -3853,7 +3861,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 const subtotalKotor = formItems.reduce((acc, it) => acc + ((Number(it.Qty) || 0) * (Number(it.Harga_Satuan) || 0)), 0);
                 const isAmbilSendiri = formData.Metode_Kirim === 'Ambil Sendiri';
                 const potonganAmbilSendiri = isAmbilSendiri ? (totalFormQty * 1000) : 0;
-                const totalTagihanNetto = Math.max(0, subtotalKotor - potonganAmbilSendiri);
 
                 return (
                   <div className="bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 mt-2">
@@ -3869,14 +3876,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
                           <span className="flex items-center gap-1.5">
                             <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
-                            <span>Pengurangan Biaya (Ambil Sendiri):</span>
+                            <span>Hak Kompensasi Ongkir (Ambil Sendiri):</span>
                           </span>
                           <span className="font-mono text-emerald-700">
-                            - Rp {potonganAmbilSendiri.toLocaleString('id-ID')}
+                            Rp {potonganAmbilSendiri.toLocaleString('id-ID')} ({totalFormQty} unit × Rp 1.000)
                           </span>
                         </div>
                         <p className="text-[10.5px] text-emerald-700 leading-relaxed">
-                          Keterangan: Karena barang <strong>diambil sendiri</strong> langsung oleh pembeli di pabrik, sistem otomatis menerapkan potongan ongkos kirim sebesar <strong>Rp 1.000 / unit</strong> ({totalFormQty} unit × Rp 1.000 = Rp {potonganAmbilSendiri.toLocaleString('id-ID')}).
+                          Sesuai kebijakan, nilai tagihan distribusi dicatat <strong>tetap bruto</strong> (Rp {subtotalKotor.toLocaleString('id-ID')}). Hak potongan Rp 1.000/dus akan <strong>dikurangkan lewat Buku Piutang Konsumen di menu Keuangan</strong> saat dicairkan, dan tetap dicantumkan pada cetak Invoice.
                         </p>
                       </div>
                     )}
@@ -3884,17 +3891,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <div className="border-t border-slate-200 pt-2 flex items-center justify-between">
                       <div>
                         <span className="font-extrabold text-xs text-slate-900 block">
-                          Jumlah Total yang Harus Dibayar:
+                          Total Tagihan Transaksi Distribusi:
                         </span>
                         <span className="text-[10px] text-slate-500 font-medium">
                           {isAmbilSendiri 
-                            ? '* Total tagihan netto setelah dikurangi potongan ambil sendiri' 
-                            : '* Total tagihan pengiriman armada pabrik'}
+                            ? '* Tagihan tercantum tetap utuh (potongan Rp 1.000 dicairkan di Buku Piutang)' 
+                            : '* Tagihan pengiriman armada pabrik'}
                         </span>
                       </div>
                       <div className="text-right">
                         <span className="text-base font-extrabold font-mono text-blue-700">
-                          Rp {totalTagihanNetto.toLocaleString('id-ID')}
+                          Rp {subtotalKotor.toLocaleString('id-ID')}
                         </span>
                       </div>
                     </div>
@@ -3908,16 +3915,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <span className="text-xs font-semibold text-slate-600">Total Tagihan:</span>
                 <span className="text-sm font-extrabold font-mono text-blue-700">
                   {(() => {
-                    const totalFormQty = formItems.reduce((acc, it) => acc + (Number(it.Qty) || 0), 0);
                     const subtotalKotor = formItems.reduce((acc, it) => acc + ((Number(it.Qty) || 0) * (Number(it.Harga_Satuan) || 0)), 0);
-                    const isAmbilSendiri = formData.Metode_Kirim === 'Ambil Sendiri';
-                    const potonganAmbilSendiri = isAmbilSendiri ? (totalFormQty * 1000) : 0;
-                    return `Rp ${Math.max(0, subtotalKotor - potonganAmbilSendiri).toLocaleString('id-ID')}`;
+                    return `Rp ${subtotalKotor.toLocaleString('id-ID')}`;
                   })()}
                 </span>
                 {formData.Metode_Kirim === 'Ambil Sendiri' && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    Potongan Rp 1.000/unit
+                    Ambil Sendiri (Hak Ongkir Dicairkan di Piutang)
                   </span>
                 )}
               </div>

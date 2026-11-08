@@ -5,7 +5,7 @@ import {
   Calculator, Check, X, Building2, AlertTriangle, RefreshCw,
   Edit2, Trash2, FileSpreadsheet, Save, FileDown, Users, History, CreditCard, Search,
   ChevronRight, ArrowLeft, ArrowUpRight, ArrowDownLeft, Eye, ShoppingBag, Banknote, ShieldCheck,
-  ArrowUpDown, ArrowUp, ArrowDown
+  ArrowUpDown, ArrowUp, ArrowDown, Truck, Coins, PackageCheck
 } from 'lucide-react';
 import { 
   COAItem, GeneralJournalItem, DraftJournalItem, CashTransactionItem, 
@@ -141,6 +141,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   // State untuk sub-tab Piutang: Rekap Tagihan vs Buku Pelanggan
   const [piutangSubTab, setPiutangSubTab] = useState<'semua_tagihan' | 'pelanggan'>('pelanggan');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [custDetailSubTab, setCustDetailSubTab] = useState<'transaksi' | 'transportasi'>('transaksi');
   const [searchCustQuery, setSearchCustQuery] = useState<string>('');
   const [custFilterStatus, setCustFilterStatus] = useState<'all' | 'piutang' | 'deposit' | 'lunas'>('all');
   const [piutangSearchQuery, setPiutangSearchQuery] = useState<string>('');
@@ -365,7 +366,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   }, [distReceivables, purchasePayables, receivables]);
 
   // -------------------------------------------------------------
-  // REKAPITULASI BUKU PEMBANTU PER PELANGGAN (PEMBELIAN, BAYAR, SALDO/DEPOSIT)
+  // REKAPITULASI BUKU PEMBANTU PER PELANGGAN (PEMBELIAN, BAYAR, SALDO/DEPOSIT, LOGISTIK)
   // -------------------------------------------------------------
   interface CustomerLedgerSummary {
     idPelanggan: string;
@@ -380,10 +381,56 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       tanggal: string;
       noSuratJalan: string;
       noInvoice: string;
+      metodeKirim: string;
+      pengirim: string;
+      penerima: string;
+      totalQty: number;
       nominal: number;
       items: DistributionProductDetail[];
     }[];
     pembayaranList: CustomerPaymentRecord[];
+    // METRIK SUBSIDI POTONGAN AMBIL SENDIRI (Rp 1.000 / DUS)
+    ambilSendiriSummary: {
+      totalTransaksi: number;
+      totalDus: number;
+      totalHakPotongan: number;
+      potonganDicairkan: number;
+      potonganBelumDicairkan: number;
+      daftarTransaksi: {
+        idDistribusi: string;
+        tanggal: string;
+        noSuratJalan: string;
+        noInvoice: string;
+        penerima: string;
+        totalDus: number;
+        hakPotongan: number;
+        isClaimed: boolean;
+        claimedDate?: string;
+        claimedRef?: string;
+      }[];
+    };
+    // METRIK PENGIRIMAN DRIVER ARMADA PABRIK (KIRIM ARMADA)
+    driverSummary: {
+      totalDus: number;
+      totalTrip: number;
+      estimasiBiayaTransport: number;
+      perDriver: {
+        namaDriver: string;
+        totalDus: number;
+        totalTrip: number;
+        estimasiBiaya: number;
+      }[];
+      daftarPengiriman: {
+        idDistribusi: string;
+        tanggal: string;
+        noSuratJalan: string;
+        noInvoice: string;
+        namaDriver: string;
+        tujuan: string;
+        totalDus: number;
+        estimasiBiaya: number;
+      }[];
+    };
   }
 
   // Pre-group distributions by customer name key in a single O(N) pass
@@ -436,6 +483,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       const custDist = distributionsByCustMap.get(key) || [];
       const pembelianList = custDist.map(d => {
         const itms = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+        const totalQty = itms.reduce((s, it) => s + (Number(it.Qty) || 0), 0);
         let nominal = Number(d.Total_Tagihan);
         if (isNaN(nominal) || nominal <= 0) {
           nominal = itms.reduce((s, it) => s + (Number(it.Subtotal) || (Number(it.Qty) * Number(it.Harga_Satuan)) || 0), 0);
@@ -445,6 +493,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           tanggal: d.Tanggal,
           noSuratJalan: d.No_Surat_Jalan || '-',
           noInvoice: d.No_Invoice || `INV-${d.No_Surat_Jalan || d.ID_Distribusi}`,
+          metodeKirim: d.Metode_Kirim || 'Kirim Armada',
+          pengirim: d.Pengirim || '-',
+          penerima: d.Penerima || d.Nama_Pelanggan || '-',
+          totalQty,
           nominal,
           items: itms
         };
@@ -455,6 +507,89 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       // Semua transaksi pembayaran dari pelanggan ini (O(1) Map lookup)
       const pembayaranList = customerPaymentsByNameMap.get(key) || [];
       const totalBayar = pembayaranList.reduce((s, p) => s + Number(p.Jumlah_Bayar || 0), 0);
+
+      // Saring pembayaran yang merupakan pencairan potongan ongkir ambil sendiri
+      const claimPayments = pembayaranList.filter(p => {
+        const met = String(p.Metode || '').toLowerCase();
+        const ket = String(p.Keterangan || '').toLowerCase();
+        return met.includes('ambil sendiri') || ket.includes('ambil sendiri') || ket.includes('potongan ongkir');
+      });
+
+      // 1. Akumulasi & Pelacakan Ambil Sendiri
+      const ambilSendiriTransaksiList: CustomerLedgerSummary['ambilSendiriSummary']['daftarTransaksi'] = [];
+      let totalDusAmbilSendiri = 0;
+      let totalHakPotonganAmbilSendiri = 0;
+      let totalPotonganDicairkan = 0;
+
+      // 2. Akumulasi Pengiriman Driver Armada Pabrik
+      const driverMap = new Map<string, { namaDriver: string; totalDus: number; totalTrip: number; estimasiBiaya: number }>();
+      const daftarPengirimanDriver: CustomerLedgerSummary['driverSummary']['daftarPengiriman'] = [];
+      let totalDusKirimArmada = 0;
+      let totalTripDriver = 0;
+
+      custDist.forEach(d => {
+        const itms = distItemsMap.get(String(d.ID_Distribusi).trim()) || [];
+        const totalDus = itms.reduce((s, it) => s + (Number(it.Qty) || 0), 0);
+        const isAmbilSendiri = d.Metode_Kirim === 'Ambil Sendiri';
+
+        if (isAmbilSendiri) {
+          const hakPotongan = totalDus * 1000;
+          totalDusAmbilSendiri += totalDus;
+          totalHakPotonganAmbilSendiri += hakPotongan;
+
+          const sj = String(d.No_Surat_Jalan || '').trim().toLowerCase();
+          const id = String(d.ID_Distribusi || '').trim().toLowerCase();
+          const match = claimPayments.find(p => {
+            const ref = String(p.No_Referensi || '').trim().toLowerCase();
+            const ket = String(p.Keterangan || '').trim().toLowerCase();
+            return (sj && (ref === sj || ket.includes(sj))) || (id && (ref === id || ket.includes(id)));
+          });
+
+          const isClaimed = !!match;
+          if (isClaimed) {
+            totalPotonganDicairkan += hakPotongan;
+          }
+
+          ambilSendiriTransaksiList.push({
+            idDistribusi: d.ID_Distribusi,
+            tanggal: d.Tanggal,
+            noSuratJalan: d.No_Surat_Jalan || '-',
+            noInvoice: d.No_Invoice || `INV-${d.No_Surat_Jalan || d.ID_Distribusi}`,
+            penerima: d.Penerima || d.Nama_Pelanggan || '-',
+            totalDus,
+            hakPotongan,
+            isClaimed,
+            claimedDate: match?.Tanggal,
+            claimedRef: match?.No_Referensi || match?.ID_Pembayaran
+          });
+        } else {
+          // Kirim Armada Pabrik
+          const driverName = (d.Pengirim && d.Pengirim !== '-' ? d.Pengirim : 'Driver Pabrik').trim();
+          const estimasiBiaya = totalDus * 1000; // Standar biaya armada distribusi pabrik Rp 1.000/dus
+          totalDusKirimArmada += totalDus;
+          totalTripDriver += 1;
+
+          const cur = driverMap.get(driverName) || { namaDriver: driverName, totalDus: 0, totalTrip: 0, estimasiBiaya: 0 };
+          cur.totalDus += totalDus;
+          cur.totalTrip += 1;
+          cur.estimasiBiaya += estimasiBiaya;
+          driverMap.set(driverName, cur);
+
+          daftarPengirimanDriver.push({
+            idDistribusi: d.ID_Distribusi,
+            tanggal: d.Tanggal,
+            noSuratJalan: d.No_Surat_Jalan || '-',
+            noInvoice: d.No_Invoice || `INV-${d.No_Surat_Jalan || d.ID_Distribusi}`,
+            namaDriver: driverName,
+            tujuan: d.Tujuan || '-',
+            totalDus,
+            estimasiBiaya
+          });
+        }
+      });
+
+      const potonganBelumDicairkan = Math.max(0, totalHakPotonganAmbilSendiri - totalPotonganDicairkan);
+      const estimasiTotalTransportDriver = totalDusKirimArmada * 1000;
 
       const net = totalBayar - totalTagihan;
       const sisaPiutang = net < 0 ? Math.abs(net) : 0;
@@ -469,7 +604,22 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         sisaPiutang,
         saldoDeposit,
         pembelianList,
-        pembayaranList
+        pembayaranList,
+        ambilSendiriSummary: {
+          totalTransaksi: ambilSendiriTransaksiList.length,
+          totalDus: totalDusAmbilSendiri,
+          totalHakPotongan: totalHakPotonganAmbilSendiri,
+          potonganDicairkan: totalPotonganDicairkan,
+          potonganBelumDicairkan,
+          daftarTransaksi: ambilSendiriTransaksiList
+        },
+        driverSummary: {
+          totalDus: totalDusKirimArmada,
+          totalTrip: totalTripDriver,
+          estimasiBiayaTransport: estimasiTotalTransportDriver,
+          perDriver: Array.from(driverMap.values()).sort((a, b) => b.totalDus - a.totalDus),
+          daftarPengiriman: daftarPengirimanDriver
+        }
       };
     });
   }, [customers, distributions, distributionsByCustMap, distItemsMap, customerPaymentsByNameMap]);
@@ -1299,6 +1449,92 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     setTableData('Data_Pembayaran_Pelanggan', updated);
     setCustomerPayments(updated);
     showToast('success', `Catatan pembayaran ${payId} telah dihapus.`);
+    onRefresh();
+  };
+
+  // Pencairan Kompensasi Subsidi Potongan Ongkir Ambil Sendiri (Rp 1.000 / dus) ke Saldo Piutang Konsumen
+  const handleClaimAmbilSendiri = async (
+    item: { idDistribusi: string; noSuratJalan: string; totalDus: number; hakPotongan: number },
+    cust: { idPelanggan: string; namaPelanggan: string }
+  ) => {
+    const ok = await confirmAction({
+      title: 'Cairkan Potongan Ongkir Ambil Sendiri',
+      message: `Cairkan hak potongan ongkir sebesar Rp ${item.hakPotongan.toLocaleString('id-ID')} (${item.totalDus} dus x Rp 1.000) untuk Surat Jalan ${item.noSuratJalan} pelanggan "${cust.namaPelanggan}"? Potongan ini akan dicatat ke pembayaran dan langsung mengurangi sisa saldo piutang.`,
+      confirmText: 'Ya, Cairkan ke Piutang',
+      cancelText: 'Batal',
+      type: 'info',
+      itemDetails: {
+        'Pelanggan': cust.namaPelanggan,
+        'No. Surat Jalan': item.noSuratJalan,
+        'Jumlah Muatan': `${item.totalDus} Dus`,
+        'Tarif Kompensasi': 'Rp 1.000 / dus',
+        'Total Kompensasi Ongkir': `Rp ${item.hakPotongan.toLocaleString('id-ID')}`
+      }
+    });
+    if (!ok) return;
+
+    const currentPayments = getTableData<CustomerPaymentRecord>('Data_Pembayaran_Pelanggan', []);
+    const newPayId = `PAY-AMB-${Date.now().toString().slice(-6)}`;
+    const newPayment: CustomerPaymentRecord = {
+      ID_Pembayaran: newPayId,
+      Tanggal: new Date().toISOString().slice(0, 10),
+      ID_Pelanggan: cust.idPelanggan,
+      Nama_Pelanggan: cust.namaPelanggan,
+      Jumlah_Bayar: item.hakPotongan,
+      Metode: 'Potongan Ambil Sendiri',
+      No_Referensi: item.noSuratJalan || item.idDistribusi,
+      Keterangan: `Pencairan potongan ongkir ambil sendiri (${item.totalDus} unit x Rp 1.000) untuk SJ ${item.noSuratJalan}`,
+      Waktu_Input: new Date().toISOString()
+    };
+
+    const updated = [...currentPayments, newPayment];
+    setTableData('Data_Pembayaran_Pelanggan', updated);
+    setCustomerPayments(updated);
+    showToast('success', `Hak kompensasi ongkir Rp ${item.hakPotongan.toLocaleString('id-ID')} untuk SJ ${item.noSuratJalan} berhasil dicairkan dan memotong piutang pelanggan!`);
+    onRefresh();
+  };
+
+  const handleClaimAllAmbilSendiri = async (
+    unclaimedItems: { idDistribusi: string; noSuratJalan: string; totalDus: number; hakPotongan: number }[],
+    cust: { idPelanggan: string; namaPelanggan: string }
+  ) => {
+    if (!unclaimedItems || unclaimedItems.length === 0) return;
+    const totalNominal = unclaimedItems.reduce((s, it) => s + it.hakPotongan, 0);
+    const totalDus = unclaimedItems.reduce((s, it) => s + it.totalDus, 0);
+
+    const ok = await confirmAction({
+      title: 'Cairkan Semua Kompensasi Ongkir Pending',
+      message: `Cairkan sekaligus ${unclaimedItems.length} transaksi ambil sendiri (${totalDus} dus) senilai total Rp ${totalNominal.toLocaleString('id-ID')} untuk pelanggan "${cust.namaPelanggan}"? Nilai ini akan langsung dipotongkan ke buku piutang.`,
+      confirmText: 'Ya, Cairkan Semua Sekaligus',
+      cancelText: 'Batal',
+      type: 'info',
+      itemDetails: {
+        'Pelanggan': cust.namaPelanggan,
+        'Total Transaksi': `${unclaimedItems.length} Pengiriman Ambil Sendiri`,
+        'Total Dus Diambil': `${totalDus} Dus`,
+        'Total Potongan Ongkir': `Rp ${totalNominal.toLocaleString('id-ID')}`
+      }
+    });
+    if (!ok) return;
+
+    const currentPayments = getTableData<CustomerPaymentRecord>('Data_Pembayaran_Pelanggan', []);
+    const timestamp = Date.now().toString().slice(-6);
+    const newRecords: CustomerPaymentRecord[] = unclaimedItems.map((item, idx) => ({
+      ID_Pembayaran: `PAY-AMB-${timestamp}-${idx + 1}`,
+      Tanggal: new Date().toISOString().slice(0, 10),
+      ID_Pelanggan: cust.idPelanggan,
+      Nama_Pelanggan: cust.namaPelanggan,
+      Jumlah_Bayar: item.hakPotongan,
+      Metode: 'Potongan Ambil Sendiri',
+      No_Referensi: item.noSuratJalan || item.idDistribusi,
+      Keterangan: `Pencairan potongan ongkir ambil sendiri (${item.totalDus} unit x Rp 1.000) untuk SJ ${item.noSuratJalan}`,
+      Waktu_Input: new Date().toISOString()
+    }));
+
+    const updated = [...currentPayments, ...newRecords];
+    setTableData('Data_Pembayaran_Pelanggan', updated);
+    setCustomerPayments(updated);
+    showToast('success', `Berhasil mencairkan ${newRecords.length} transaksi kompensasi ongkir (Total Rp ${totalNominal.toLocaleString('id-ID')}) ke saldo piutang!`);
     onRefresh();
   };
 
@@ -2838,149 +3074,476 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                           </div>
                         </div>
                       )}
-                    </div>
 
-                    {/* Dua Tabel: Riwayat Pembelian vs Riwayat Pembayaran */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* Tabel 1: Riwayat Pembelian (Distribusi Terkirim) */}
-                      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-                        <div className="flex items-center justify-between p-3.5 bg-slate-50 border-b border-slate-200">
-                          <div className="flex items-center gap-2">
-                            <ShoppingBag size={15} className="text-blue-600" />
-                            <h5 className="text-xs font-bold text-slate-800">Riwayat Pembelian & Distribusi ({sel.pembelianList.length})</h5>
-                          </div>
-                          <span className="text-[11px] text-slate-500 font-mono">Faktur Tagihan</span>
-                        </div>
-                        <div className="overflow-x-auto max-h-96">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0">
-                              <tr>
-                                <th className="p-2.5">Tanggal</th>
-                                <th className="p-2.5">No Invoice / SJ</th>
-                                <th className="p-2.5">Rincian Barang</th>
-                                <th className="p-2.5 text-right">Nilai Tagihan</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 font-mono">
-                              {sel.pembelianList.length === 0 ? (
-                                <tr>
-                                  <td colSpan={4} className="p-6 text-center text-slate-400 font-sans italic">
-                                    Belum ada data distribusi penjualan untuk pelanggan ini.
-                                  </td>
-                                </tr>
-                              ) : (
-                                sel.pembelianList.map(item => (
-                                  <tr key={item.id} className="hover:bg-slate-50/70">
-                                    <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(item.tanggal)}</td>
-                                    <td className="p-2.5 font-bold text-blue-700">
-                                      <div>{item.noInvoice}</div>
-                                      <div className="text-[10px] text-slate-400 font-normal">SJ: {item.noSuratJalan}</div>
-                                    </td>
-                                    <td className="p-2.5 font-sans">
-                                      {item.items.length === 0 ? (
-                                        <span className="text-slate-400 italic">Produk terdistribusi</span>
-                                      ) : (
-                                        <div className="space-y-1">
-                                          {item.items.map((it, idx) => (
-                                            <div key={idx} className="text-[11px] text-slate-700">
-                                              • {it.Nama_Produk}: <span className="font-semibold">{it.Qty} {it.Satuan || 'Dus'}</span> @ Rp {(Number(it.Harga_Satuan) || 0).toLocaleString('id-ID')}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="p-2.5 text-right font-bold text-slate-900 tabular-nums">
-                                      Rp {item.nominal.toLocaleString('id-ID')}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                            <tfoot className="bg-slate-50 font-bold border-t border-slate-200 text-slate-800">
-                              <tr>
-                                <td colSpan={3} className="p-2.5 text-right font-sans">Total Pembelian:</td>
-                                <td className="p-2.5 text-right font-mono tabular-nums">
-                                  Rp {sel.totalTagihan.toLocaleString('id-ID')}
-                                </td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-
-                      {/* Tabel 2: Riwayat Pembayaran Masuk */}
-                      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-                        <div className="flex items-center justify-between p-3.5 bg-slate-50 border-b border-slate-200">
-                          <div className="flex items-center gap-2">
-                            <CreditCard size={15} className="text-emerald-600" />
-                            <h5 className="text-xs font-bold text-slate-800">Riwayat Pembayaran Diterima ({sel.pembayaranList.length})</h5>
-                          </div>
+                      {/* Sub-Navigasi Detail Pelanggan */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleOpenAddPayment({ id: sel.idPelanggan, nama: sel.namaPelanggan })}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 flex items-center gap-1 cursor-pointer"
+                            onClick={() => setCustDetailSubTab('transaksi')}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all ${
+                              custDetailSubTab === 'transaksi'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }`}
                           >
-                            <Plus size={12} />
-                            <span>Tambah Bayar</span>
+                            <FileText size={14} />
+                            <span>Faktur & Pembayaran ({sel.pembelianList.length})</span>
+                          </button>
+                          <button
+                            onClick={() => setCustDetailSubTab('transportasi')}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all ${
+                              custDetailSubTab === 'transportasi'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }`}
+                          >
+                            <Truck size={14} />
+                            <span>Distribusi & Transportasi</span>
+                            {sel.ambilSendiriSummary.potonganBelumDicairkan > 0 && (
+                              <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[10px] font-extrabold">
+                                {sel.ambilSendiriSummary.daftarTransaksi.filter(t => !t.isClaimed).length} Pending
+                              </span>
+                            )}
                           </button>
                         </div>
-                        <div className="overflow-x-auto max-h-96">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0">
-                              <tr>
-                                <th className="p-2.5">Tanggal</th>
-                                <th className="p-2.5">Metode / Ref</th>
-                                <th className="p-2.5">Keterangan</th>
-                                <th className="p-2.5 text-right">Jumlah Bayar</th>
-                                <th className="p-2.5 text-center">Aksi</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 font-mono">
-                              {sel.pembayaranList.length === 0 ? (
-                                <tr>
-                                  <td colSpan={5} className="p-6 text-center text-slate-400 font-sans italic">
-                                    Belum ada catatan pembayaran. Klik 'Tambah Bayar' untuk menginput pembayaran.
-                                  </td>
-                                </tr>
-                              ) : (
-                                sel.pembayaranList.map(pay => (
-                                  <tr key={pay.ID_Pembayaran} className="hover:bg-slate-50/70">
-                                    <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(pay.Tanggal)}</td>
-                                    <td className="p-2.5 font-sans">
-                                      <div className="font-semibold text-slate-800">{pay.Metode}</div>
-                                      <div className="text-[10px] text-slate-400 font-mono">{pay.No_Referensi || pay.ID_Pembayaran}</div>
-                                    </td>
-                                    <td className="p-2.5 font-sans text-slate-600 max-w-[150px] truncate" title={pay.Keterangan}>
-                                      {pay.Keterangan || '-'}
-                                    </td>
-                                    <td className="p-2.5 text-right font-bold text-emerald-700 tabular-nums">
-                                      Rp {Number(pay.Jumlah_Bayar || 0).toLocaleString('id-ID')}
-                                    </td>
-                                    <td className="p-2.5 text-center font-sans">
-                                      <button
-                                        onClick={() => handleDeletePayment(pay.ID_Pembayaran)}
-                                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer"
-                                        title="Hapus Pembayaran"
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                            <tfoot className="bg-slate-50 font-bold border-t border-slate-200 text-slate-800">
-                              <tr>
-                                <td colSpan={3} className="p-2.5 text-right font-sans">Total Terbayar:</td>
-                                <td className="p-2.5 text-right font-mono tabular-nums text-emerald-700">
-                                  Rp {sel.totalBayar.toLocaleString('id-ID')}
-                                </td>
-                                <td></td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
+
+                        {custDetailSubTab === 'transportasi' && sel.ambilSendiriSummary.potonganBelumDicairkan > 0 && (
+                          <button
+                            onClick={() => handleClaimAllAmbilSendiri(
+                              sel.ambilSendiriSummary.daftarTransaksi.filter(t => !t.isClaimed),
+                              { idPelanggan: sel.idPelanggan, namaPelanggan: sel.namaPelanggan }
+                            )}
+                            className="px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                          >
+                            <Coins size={14} />
+                            <span>Cairkan Semua Potongan Pending (Rp {sel.ambilSendiriSummary.potonganBelumDicairkan.toLocaleString('id-ID')})</span>
+                          </button>
+                        )}
                       </div>
                     </div>
+
+                    {/* KONTEN SUB-TAB 1: FAKTUR PEMBELIAN & PEMBAYARAN */}
+                    {custDetailSubTab === 'transaksi' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Tabel 1: Riwayat Pembelian (Distribusi Terkirim) */}
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                          <div className="flex items-center justify-between p-3.5 bg-slate-50 border-b border-slate-200">
+                            <div className="flex items-center gap-2">
+                              <ShoppingBag size={15} className="text-blue-600" />
+                              <h5 className="text-xs font-bold text-slate-800">Riwayat Pembelian & Distribusi ({sel.pembelianList.length})</h5>
+                            </div>
+                            <span className="text-[11px] text-slate-500 font-mono">Faktur Tagihan (Bruto)</span>
+                          </div>
+                          <div className="overflow-x-auto max-h-96">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0">
+                                <tr>
+                                  <th className="p-2.5">Tanggal</th>
+                                  <th className="p-2.5">No Invoice / SJ</th>
+                                  <th className="p-2.5">Metode Kirim</th>
+                                  <th className="p-2.5">Rincian Barang</th>
+                                  <th className="p-2.5 text-right">Nilai Tagihan</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-mono">
+                                {sel.pembelianList.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={5} className="p-6 text-center text-slate-400 font-sans italic">
+                                      Belum ada data distribusi penjualan untuk pelanggan ini.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  sel.pembelianList.map(item => (
+                                    <tr key={item.id} className="hover:bg-slate-50/70">
+                                      <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(item.tanggal)}</td>
+                                      <td className="p-2.5 font-bold text-blue-700">
+                                        <div>{item.noInvoice}</div>
+                                        <div className="text-[10px] text-slate-400 font-normal">SJ: {item.noSuratJalan}</div>
+                                      </td>
+                                      <td className="p-2.5 font-sans">
+                                        {item.metodeKirim === 'Ambil Sendiri' ? (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-white whitespace-nowrap inline-block">
+                                            Ambil Sendiri
+                                          </span>
+                                        ) : (
+                                          <div>
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap inline-block">
+                                              Kirim Armada
+                                            </span>
+                                            <div className="text-[10px] text-slate-500 mt-0.5">Sopir: {item.pengirim}</div>
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 font-sans">
+                                        {item.items.length === 0 ? (
+                                          <span className="text-slate-400 italic">Produk terdistribusi</span>
+                                        ) : (
+                                          <div className="space-y-1">
+                                            {item.items.map((it, idx) => (
+                                              <div key={idx} className="text-[11px] text-slate-700">
+                                                • {it.Nama_Produk}: <span className="font-semibold">{it.Qty} {it.Satuan || 'Dus'}</span> @ Rp {(Number(it.Harga_Satuan) || 0).toLocaleString('id-ID')}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 text-right font-bold text-slate-900 tabular-nums">
+                                        Rp {item.nominal.toLocaleString('id-ID')}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                              <tfoot className="bg-slate-50 font-bold border-t border-slate-200 text-slate-800">
+                                <tr>
+                                  <td colSpan={4} className="p-2.5 text-right font-sans">Total Tagihan (Bruto):</td>
+                                  <td className="p-2.5 text-right font-mono tabular-nums">
+                                    Rp {sel.totalTagihan.toLocaleString('id-ID')}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Tabel 2: Riwayat Pembayaran Masuk */}
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                          <div className="flex items-center justify-between p-3.5 bg-slate-50 border-b border-slate-200">
+                            <div className="flex items-center gap-2">
+                              <CreditCard size={15} className="text-emerald-600" />
+                              <h5 className="text-xs font-bold text-slate-800">Riwayat Pembayaran Diterima ({sel.pembayaranList.length})</h5>
+                            </div>
+                            <button
+                              onClick={() => handleOpenAddPayment({ id: sel.idPelanggan, nama: sel.namaPelanggan })}
+                              className="px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus size={12} />
+                              <span>Tambah Bayar</span>
+                            </button>
+                          </div>
+                          <div className="overflow-x-auto max-h-96">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0">
+                                <tr>
+                                  <th className="p-2.5">Tanggal</th>
+                                  <th className="p-2.5">Metode / Ref</th>
+                                  <th className="p-2.5">Keterangan</th>
+                                  <th className="p-2.5 text-right">Jumlah Bayar</th>
+                                  <th className="p-2.5 text-center">Aksi</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-mono">
+                                {sel.pembayaranList.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={5} className="p-6 text-center text-slate-400 font-sans italic">
+                                      Belum ada catatan pembayaran. Klik 'Tambah Bayar' untuk menginput pembayaran.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  sel.pembayaranList.map(pay => (
+                                    <tr key={pay.ID_Pembayaran} className="hover:bg-slate-50/70">
+                                      <td className="p-2.5 text-slate-600 font-mono">{formatDateDDMMYYYY(pay.Tanggal)}</td>
+                                      <td className="p-2.5 font-sans">
+                                        <div className="font-semibold text-slate-800">{pay.Metode}</div>
+                                        <div className="text-[10px] text-slate-400 font-mono">{pay.No_Referensi || pay.ID_Pembayaran}</div>
+                                      </td>
+                                      <td className="p-2.5 font-sans text-slate-600 max-w-[150px] truncate" title={pay.Keterangan}>
+                                        {pay.Keterangan || '-'}
+                                      </td>
+                                      <td className="p-2.5 text-right font-bold text-emerald-700 tabular-nums">
+                                        Rp {Number(pay.Jumlah_Bayar || 0).toLocaleString('id-ID')}
+                                      </td>
+                                      <td className="p-2.5 text-center font-sans">
+                                        <button
+                                          onClick={() => handleDeletePayment(pay.ID_Pembayaran)}
+                                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                                          title="Hapus Pembayaran"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                              <tfoot className="bg-slate-50 font-bold border-t border-slate-200 text-slate-800">
+                                <tr>
+                                  <td colSpan={3} className="p-2.5 text-right font-sans">Total Terbayar:</td>
+                                  <td className="p-2.5 text-right font-mono tabular-nums text-emerald-700">
+                                    Rp {sel.totalBayar.toLocaleString('id-ID')}
+                                  </td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* KONTEN SUB-TAB 2: DISTRIBUSI, SUBSIDI AMBIL SENDIRI & BIAYA TRANSPORTASI DRIVER */}
+                    {custDetailSubTab === 'transportasi' && (
+                      <div className="space-y-5">
+                        {/* 1. BAGIAN SUBSIDI ONGKIR AMBIL SENDIRI */}
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs space-y-3 p-4">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                            <div className="flex items-center gap-2.5">
+                              <span className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <Coins size={18} />
+                              </span>
+                              <div>
+                                <h5 className="text-sm font-bold text-slate-900">
+                                  Akumulasi Kompensasi Subsidi Ongkir (Ambil Sendiri)
+                                </h5>
+                                <p className="text-xs text-slate-500">
+                                  Pengambilan mandiri langsung di pabrik berhak atas subsidi Rp 1.000 / dus yang dikurangkan ke saldo piutang.
+                                </p>
+                              </div>
+                            </div>
+
+                            {sel.ambilSendiriSummary.potonganBelumDicairkan > 0 && (
+                              <button
+                                onClick={() => handleClaimAllAmbilSendiri(
+                                  sel.ambilSendiriSummary.daftarTransaksi.filter(t => !t.isClaimed),
+                                  { idPelanggan: sel.idPelanggan, namaPelanggan: sel.namaPelanggan }
+                                )}
+                                className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                              >
+                                <CheckCircle2 size={14} />
+                                <span>Cairkan Semua Pending (Rp {sel.ambilSendiriSummary.potonganBelumDicairkan.toLocaleString('id-ID')})</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* 4 Kartu Metrik Ambil Sendiri */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Total Transaksi Ambil Mandiri</span>
+                              <span className="text-sm font-bold text-slate-900 font-mono">
+                                {sel.ambilSendiriSummary.totalTransaksi} Transaksi ({sel.ambilSendiriSummary.totalDus.toLocaleString('id-ID')} Dus)
+                              </span>
+                            </div>
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Total Hak Subsidi (@ Rp 1.000)</span>
+                              <span className="text-sm font-bold text-slate-900 font-mono tabular-nums">
+                                Rp {sel.ambilSendiriSummary.totalHakPotongan.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                            <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
+                              <span className="text-emerald-700 block text-[11px] font-semibold">Sudah Dicairkan (Potong Piutang)</span>
+                              <span className="text-sm font-bold text-emerald-800 font-mono tabular-nums">
+                                Rp {sel.ambilSendiriSummary.potonganDicairkan.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                            <div className={`p-2.5 rounded-lg border ${sel.ambilSendiriSummary.potonganBelumDicairkan > 0 ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200'}`}>
+                              <span className="text-amber-800 block text-[11px] font-semibold">Belum Dicairkan (Pending Klaim)</span>
+                              <span className={`text-sm font-bold font-mono tabular-nums ${sel.ambilSendiriSummary.potonganBelumDicairkan > 0 ? 'text-amber-800' : 'text-slate-400'}`}>
+                                Rp {sel.ambilSendiriSummary.potonganBelumDicairkan.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Tabel Rincian Transaksi Ambil Sendiri */}
+                          <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="p-2.5 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-between">
+                              <span>Daftar Pengambilan Mandiri & Status Pencairan Ongkir</span>
+                              <span className="text-[11px] text-slate-500 font-normal">
+                                {sel.ambilSendiriSummary.daftarTransaksi.length} Data Pengambilan
+                              </span>
+                            </div>
+                            <div className="overflow-x-auto max-h-72">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-100/70 text-slate-600 border-b border-slate-200 sticky top-0">
+                                  <tr>
+                                    <th className="p-2.5">Tanggal</th>
+                                    <th className="p-2.5">No. Surat Jalan / Invoice</th>
+                                    <th className="p-2.5">Pengambil / Penerima</th>
+                                    <th className="p-2.5 text-center">Volume Muatan</th>
+                                    <th className="p-2.5 text-right">Hak Potongan</th>
+                                    <th className="p-2.5 text-center">Status Ongkir</th>
+                                    <th className="p-2.5 text-center">Aksi Pencairan</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-mono">
+                                  {sel.ambilSendiriSummary.daftarTransaksi.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={7} className="p-6 text-center text-slate-400 font-sans italic">
+                                        Pelanggan ini belum memiliki riwayat transaksi metode 'Ambil Sendiri'.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    sel.ambilSendiriSummary.daftarTransaksi.map((item, idx) => (
+                                      <tr key={item.idDistribusi || idx} className="hover:bg-slate-50/70">
+                                        <td className="p-2.5 text-slate-600">{formatDateDDMMYYYY(item.tanggal)}</td>
+                                        <td className="p-2.5">
+                                          <div className="font-bold text-blue-700">{item.noSuratJalan}</div>
+                                          <div className="text-[10px] text-slate-400 font-normal">{item.noInvoice}</div>
+                                        </td>
+                                        <td className="p-2.5 font-sans text-slate-800">{item.penerima}</td>
+                                        <td className="p-2.5 text-center font-bold text-slate-800">
+                                          {item.totalDus.toLocaleString('id-ID')} Dus
+                                        </td>
+                                        <td className="p-2.5 text-right font-bold text-emerald-700 tabular-nums">
+                                          Rp {item.hakPotongan.toLocaleString('id-ID')}
+                                        </td>
+                                        <td className="p-2.5 text-center font-sans">
+                                          {item.isClaimed ? (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                                              <CheckCircle2 size={11} className="text-emerald-600" />
+                                              <span>Sudah Dicairkan</span>
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 inline-block">
+                                              Belum Dicairkan
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="p-2.5 text-center font-sans">
+                                          {item.isClaimed ? (
+                                            <span className="text-[11px] text-slate-400 italic font-mono">
+                                              {item.claimedDate ? formatDateDDMMYYYY(item.claimedDate) : 'Lunas Potong'}
+                                            </span>
+                                          ) : (
+                                            <button
+                                              onClick={() => handleClaimAmbilSendiri(item, { idPelanggan: sel.idPelanggan, namaPelanggan: sel.namaPelanggan })}
+                                              className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-xs cursor-pointer inline-flex items-center gap-1 transition-colors"
+                                              title="Cairkan potongan ongkir ini langsung ke piutang pelanggan"
+                                            >
+                                              <Coins size={12} />
+                                              <span>Cairkan</span>
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. BAGIAN PENGIRIMAN DRIVER ARMADA PABRIK */}
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs space-y-3 p-4">
+                          <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+                            <span className="p-2 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                              <Truck size={18} />
+                            </span>
+                            <div>
+                              <h5 className="text-sm font-bold text-slate-900">
+                                Rekapitulasi Distribusi Driver Armada Pabrik
+                              </h5>
+                              <p className="text-xs text-slate-500">
+                                Pemantauan muatan produk yang diantar oleh driver/sopir pabrik per konsumen untuk evaluasi biaya transportasi.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Kartu Ringkasan Muatan Driver */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Total Muatan Terkirim Armada Pabrik</span>
+                              <span className="text-sm font-bold text-blue-700 font-mono">
+                                {sel.driverSummary.totalDus.toLocaleString('id-ID')} Dus
+                              </span>
+                            </div>
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Frekuensi Pengiriman (Trip / Rit)</span>
+                              <span className="text-sm font-bold text-slate-900 font-mono">
+                                {sel.driverSummary.totalTrip} Kali Trip Pengiriman
+                              </span>
+                            </div>
+                            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              <span className="text-slate-500 block text-[11px]">Estimasi Alokasi Biaya Transport Pabrik</span>
+                              <span className="text-sm font-bold text-slate-900 font-mono tabular-nums">
+                                Rp {sel.driverSummary.estimasiBiayaTransport.toLocaleString('id-ID')}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">* Berdasarkan acuan Rp 1.000 / dus</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
+                            {/* Rekap Per Driver Pabrik */}
+                            <div className="lg:col-span-1 border border-slate-200 rounded-lg overflow-hidden">
+                              <div className="p-2.5 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-between">
+                                <span>Distribusi Per Driver</span>
+                                <span className="text-[10px] text-slate-400 font-mono">{sel.driverSummary.perDriver.length} Driver</span>
+                              </div>
+                              <div className="overflow-x-auto max-h-64">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead className="bg-slate-100/70 text-slate-600 border-b border-slate-200">
+                                    <tr>
+                                      <th className="p-2">Nama Driver</th>
+                                      <th className="p-2 text-center">Rit</th>
+                                      <th className="p-2 text-right">Volume</th>
+                                      <th className="p-2 text-right">Biaya Kirim</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                                    {sel.driverSummary.perDriver.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={4} className="p-4 text-center text-slate-400 font-sans italic">
+                                          Belum ada data pengiriman armada.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      sel.driverSummary.perDriver.map((drv, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50">
+                                          <td className="p-2 font-bold font-sans text-slate-800">{drv.namaDriver}</td>
+                                          <td className="p-2 text-center text-slate-600">{drv.totalTrip}x</td>
+                                          <td className="p-2 text-right font-bold text-blue-700">{drv.totalDus.toLocaleString('id-ID')} Dus</td>
+                                          <td className="p-2 text-right font-bold text-slate-800 tabular-nums">Rp {drv.estimasiBiaya.toLocaleString('id-ID')}</td>
+                                        </tr>
+                                      ))
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* Log Riwayat Pengiriman Kirim Armada */}
+                            <div className="lg:col-span-2 border border-slate-200 rounded-lg overflow-hidden">
+                              <div className="p-2.5 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-between">
+                                <span>Riwayat Pengiriman Armada Pabrik ({sel.driverSummary.daftarPengiriman.length})</span>
+                                <span className="text-[10px] text-slate-400">Log Pengantaran</span>
+                              </div>
+                              <div className="overflow-x-auto max-h-64">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead className="bg-slate-100/70 text-slate-600 border-b border-slate-200 sticky top-0">
+                                    <tr>
+                                      <th className="p-2">Tanggal</th>
+                                      <th className="p-2">No. Surat Jalan</th>
+                                      <th className="p-2">Driver / Sopir</th>
+                                      <th className="p-2 text-center">Kuantitas</th>
+                                      <th className="p-2 text-right">Biaya Kirim</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                                    {sel.driverSummary.daftarPengiriman.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={5} className="p-4 text-center text-slate-400 font-sans italic">
+                                          Belum ada pengiriman armada pabrik ke konsumen ini.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      sel.driverSummary.daftarPengiriman.map((dItem, idx) => (
+                                        <tr key={dItem.idDistribusi || idx} className="hover:bg-slate-50">
+                                          <td className="p-2 text-slate-600">{formatDateDDMMYYYY(dItem.tanggal)}</td>
+                                          <td className="p-2 font-bold text-blue-700">{dItem.noSuratJalan}</td>
+                                          <td className="p-2 font-sans font-semibold text-slate-800">{dItem.namaDriver}</td>
+                                          <td className="p-2 text-center font-bold text-slate-800">{dItem.totalDus.toLocaleString('id-ID')} Dus</td>
+                                          <td className="p-2 text-right font-bold text-slate-800 tabular-nums">Rp {dItem.estimasiBiaya.toLocaleString('id-ID')}</td>
+                                        </tr>
+                                      ))
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })() : (
@@ -3077,7 +3640,23 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                 <tr key={c.namaPelanggan} className="hover:bg-slate-50/70">
                                   <td className="p-3 font-sans">
                                     <div className="font-bold text-slate-900">{c.namaPelanggan}</div>
-                                    <div className="text-[10px] text-slate-400 font-mono">{c.idPelanggan}</div>
+                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                                      <span>{c.idPelanggan}</span>
+                                      {c.ambilSendiriSummary.totalDus > 0 && (
+                                        <span className="text-slate-500 font-sans">• Ambil Sendiri: {c.ambilSendiriSummary.totalDus} dus</span>
+                                      )}
+                                      {c.driverSummary.totalDus > 0 && (
+                                        <span className="text-slate-500 font-sans">• Kirim Driver: {c.driverSummary.totalDus} dus</span>
+                                      )}
+                                    </div>
+                                    {c.ambilSendiriSummary.potonganBelumDicairkan > 0 && (
+                                      <div className="mt-1">
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                          <Coins size={10} className="text-amber-600" />
+                                          <span>Pending Ongkir: Rp {c.ambilSendiriSummary.potonganBelumDicairkan.toLocaleString('id-ID')}</span>
+                                        </span>
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="p-3 font-sans">
                                     <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
