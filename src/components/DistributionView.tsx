@@ -17,7 +17,6 @@ import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
 } from '../services/pdfService';
-import { KopSuratBanner, OfficialStampWithSignature } from './InvoiceOfficialAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
 import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
@@ -1051,7 +1050,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
       // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000/dus jika Ambil Sendiri).
       // Pengurangan potongan Rp 1.000/dus dicairkan melalui Buku Piutang Konsumen di Keuangan.
-      distRecord.Total_Tagihan = Math.max(0, totalTagihanAwal);
+      const grandTotal = Math.max(0, totalTagihanAwal);
+      distRecord.Total_Tagihan = grandTotal;
 
       let updatedDistList: DistributionItem[] = [];
       let updatedItemsList: DistributionProductDetail[] = [];
@@ -1643,6 +1643,77 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
   // State for Image 1 "Buka" Detail Drawer/Modal
   const [openDetailDist, setOpenDetailDist] = useState<DistributionItem | null>(null);
+
+  // Helper deduplikasi dan normalisasi produk detail untuk dokumen Invoice & Surat Jalan (Anti-Duplikasi)
+  const getCleanDocItems = (dist: DistributionItem, rawItems: DistributionProductDetail[]): DistributionProductDetail[] => {
+    const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
+    const itemsMap = new Map<string, DistributionProductDetail>();
+
+    (rawItems || []).forEach(it => {
+      if (!it || Number(it.Qty) <= 0) return;
+      const prod = products.find(p => 
+        p.ID_Produk === it.ID_Produk || 
+        getProductShortCode(p) === it.ID_Produk || 
+        (p.Nama_Produk && it.Nama_Produk && p.Nama_Produk.toLowerCase() === it.Nama_Produk.toLowerCase())
+      );
+      const pId = prod?.ID_Produk || it.ID_Produk;
+      const pName = prod?.Nama_Produk || it.Nama_Produk || pId;
+      const key = pId.toLowerCase();
+
+      const rawP = Number(it.Harga_Satuan) || 0;
+      let finalPrice = rawP;
+      if (finalPrice <= 0 || DUMMY_OLD_PRICES.includes(finalPrice)) {
+        const cP = getProductPriceForCustomer(pId, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+        if (cP > 0) finalPrice = cP;
+      }
+
+      if (!itemsMap.has(key)) {
+        itemsMap.set(key, {
+          ...it,
+          ID_Produk: pId,
+          Nama_Produk: pName,
+          Qty: Number(it.Qty),
+          Harga_Satuan: finalPrice,
+          Subtotal: Number(it.Qty) * finalPrice
+        });
+      } else {
+        // Jika sudah ada item untuk produk ini (duplikasi), ambil Qty yang cocok dengan kolom direct
+        const colQty = prod ? getDistProductQty(dist, prod) : 0;
+        if (colQty > 0 && Number(it.Qty) === colQty) {
+          itemsMap.set(key, {
+            ...it,
+            ID_Produk: pId,
+            Nama_Produk: pName,
+            Qty: Number(it.Qty),
+            Harga_Satuan: finalPrice,
+            Subtotal: Number(it.Qty) * finalPrice
+          });
+        }
+      }
+    });
+
+    // Jika itemsMap masih kosong, rekonstruksi dari kolom direct produk (C120, C220, B330, B600, G19)
+    if (itemsMap.size === 0) {
+      products.forEach(p => {
+        const q = getDistProductQty(dist, p);
+        if (q > 0) {
+          const cP = getProductPriceForCustomer(p.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal) || p.Harga_Distributor || 0;
+          itemsMap.set(p.ID_Produk.toLowerCase(), {
+            ID_Detail: `${dist.ID_Distribusi}-${getProductShortCode(p)}`,
+            ID_Distribusi: dist.ID_Distribusi,
+            ID_Produk: p.ID_Produk,
+            Nama_Produk: p.Nama_Produk,
+            Qty: q,
+            Harga_Satuan: cP,
+            Subtotal: q * cP,
+            Satuan: p.Satuan || 'Dus'
+          });
+        }
+      });
+    }
+
+    return Array.from(itemsMap.values());
+  };
 
   // Helper to format date as standard DD-MM-YYYY (e.g. 15-10-2026)
   const formatDisplayDate = (dateStr?: string): string => {
@@ -2750,18 +2821,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <button
                       onClick={() => {
                         setOpenDetailDist(null);
-                        const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
-                        const normalizedItems = items.map(it => {
-                          const rawP = Number(it.Harga_Satuan) || 0;
-                          if (rawP <= 0 || DUMMY_OLD_PRICES.includes(rawP)) {
-                            const cP = getProductPriceForCustomer(it.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
-                            if (cP > 0) {
-                              return { ...it, Harga_Satuan: cP, Subtotal: (Number(it.Qty) || 0) * cP };
-                            }
-                          }
-                          return it;
-                        });
-                        setViewDocModal({ dist, items: normalizedItems, docType: 'inv' });
+                        const cleanItems = getCleanDocItems(dist, items);
+                        setViewDocModal({ dist, items: cleanItems, docType: 'inv' });
                       }}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                       title="Buka Preview Invoice, Cetak, atau Download PDF"
@@ -2772,18 +2833,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <button
                       onClick={() => {
                         setOpenDetailDist(null);
-                        const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
-                        const normalizedItems = items.map(it => {
-                          const rawP = Number(it.Harga_Satuan) || 0;
-                          if (rawP <= 0 || DUMMY_OLD_PRICES.includes(rawP)) {
-                            const cP = getProductPriceForCustomer(it.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
-                            if (cP > 0) {
-                              return { ...it, Harga_Satuan: cP, Subtotal: (Number(it.Qty) || 0) * cP };
-                            }
-                          }
-                          return it;
-                        });
-                        setViewDocModal({ dist, items: normalizedItems, docType: 'sj' });
+                        const cleanItems = getCleanDocItems(dist, items);
+                        setViewDocModal({ dist, items: cleanItems, docType: 'sj' });
                       }}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                       title="Buka Preview Surat Jalan, Cetak, atau Download PDF"
@@ -4248,12 +4299,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
             {/* A4 Paper Canvas */}
             <div className="p-6 sm:p-8 lg:p-10 font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content" style={{ minHeight: '650px' }}>
-              {viewDocModal.docType === 'inv' ? (
+              {viewDocModal.docType === 'inv' ? (() => {
+                const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
+                return (
                 /* ============================================================== */
                 /* EXACT REPLICA OF THE UPLOADED INVOICE TEMPLATE                 */
                 /* ============================================================== */
                 <div className="space-y-3.5 max-w-2xl mx-auto">
-                  {/* Kop Surat Header (Custom upload or official banner) */}
+                  {/* Kop Surat Header (Custom upload image atau Kop Teks Resmi yang Rapi) */}
                   {docSettings.useCustomKopImage && docSettings.customKopImage ? (
                     <img 
                       src={docSettings.customKopImage} 
@@ -4261,7 +4314,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       className="w-full h-auto max-h-24 object-contain mb-1" 
                     />
                   ) : (
-                    <KopSuratBanner className="w-full mb-1" />
+                    <div className="text-center pb-2.5 border-b-2 border-slate-900 mb-2">
+                      <h1 className="text-xl font-black tracking-wide text-slate-950 uppercase">
+                        {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
+                      </h1>
+                      <p className="text-xs text-slate-600 font-semibold">
+                        {docSettings.subNamaPerusahaan || 'Produsen Air Minum Dalam Kemasan (AMDK) As-Shofaa'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} {docSettings.kontakPerusahaan ? `| Telp: ${docSettings.kontakPerusahaan}` : ''}
+                      </p>
+                    </div>
                   )}
 
                   {/* Document Title: INVOICE with Blue Underline spanning across */}
@@ -4331,7 +4394,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-black font-sans text-xs">
-                        {viewDocModal.items.map((item, idx) => {
+                        {cleanDocItems.map((item, idx) => {
                           const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
                           const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
                           return (
@@ -4361,8 +4424,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
                   {/* Summary Section (JUMLAH TAGIHAN, TOTAL, POTONGAN) */}
                   {(() => {
-                    const subtotal = viewDocModal.items.reduce((sum, it) => sum + it.Subtotal, 0);
-                    const totalQty = viewDocModal.items.reduce((sum, it) => sum + it.Qty, 0);
+                    const subtotal = cleanDocItems.reduce((sum, it) => sum + it.Subtotal, 0);
+                    const totalQty = cleanDocItems.reduce((sum, it) => sum + it.Qty, 0);
                     const discount = viewDocModal.dist.Metode_Kirim === 'Ambil Sendiri' ? totalQty * 1000 : 0;
                     const grandTotal = Math.max(0, subtotal - discount);
 
@@ -4425,37 +4488,24 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           <div className="text-center w-56 relative">
                             <p className="text-xs text-slate-800 mb-1">Hormat Kami,</p>
 
-                            {/* Stamp & Signature Overlay */}
+                            {/* Stamp & Signature Overlay: HANYA TAMPIL JIKA USER UPLOAD SENDIRI */}
                             <div className="flex items-center justify-center my-0.5 select-none pointer-events-none relative h-20">
-                              {/* Cap / Stempel */}
-                              {docSettings.showCap && (
-                                docSettings.useCustomCapImage && docSettings.customCapImage ? (
-                                  <img 
-                                    src={docSettings.customCapImage} 
-                                    alt="Cap Stempel" 
-                                    className="absolute left-4 top-0 w-20 h-20 object-contain" 
-                                  />
-                                ) : (
-                                  <div className="absolute left-2 top-0 scale-90 origin-top-left">
-                                    <OfficialStampWithSignature />
-                                  </div>
-                                )
+                              {/* Cap / Stempel: Hanya tampil jika diaktifkan dan ada gambar custom */}
+                              {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
+                                <img 
+                                  src={docSettings.customCapImage} 
+                                  alt="Cap Stempel" 
+                                  className="absolute left-4 top-0 w-20 h-20 object-contain z-0" 
+                                />
                               )}
 
-                              {/* TTD Custom jika ada */}
+                              {/* TTD Custom: Hanya tampil jika diaktifkan dan ada gambar custom */}
                               {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
                                 <img 
                                   src={docSettings.customTtdImage} 
                                   alt="Tanda Tangan" 
                                   className="absolute left-10 -top-1 w-28 h-20 object-contain z-10" 
                                 />
-                              )}
-
-                              {/* TTD Default jika cap dimatikan tapi ttd aktif */}
-                              {!docSettings.showCap && docSettings.showTtd && !docSettings.useCustomTtdImage && (
-                                <div className="absolute left-10 -top-1 scale-90">
-                                  <OfficialStampWithSignature />
-                                </div>
                               )}
                             </div>
 
@@ -4471,7 +4521,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     );
                   })()}
                 </div>
-              ) : (
+                );
+              })() : (() => {
+                const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
+                return (
                 /* ============================================================== */
                 /* SURAT JALAN PENGIRIMAN TEMPLATE                                */
                 /* ============================================================== */
@@ -4528,7 +4581,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {viewDocModal.items.map((item, idx) => {
+                      {cleanDocItems.map((item, idx) => {
                         const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
                         const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
                         return (
@@ -4566,7 +4619,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </div>
                   </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>

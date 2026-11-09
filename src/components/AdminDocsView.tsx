@@ -17,7 +17,6 @@ import {
   parseExcelFile, downloadExcelTemplate, ExcelTemplateType 
 } from '../services/excelService';
 import { generateOfficialLetterPDF, generateInvoicePDF, generatePurchaseOrderPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen } from '../services/pdfService';
-import { KopSuratBanner, OfficialStampWithSignature, OfficialCapStamp, OfficialTtdMarko } from './InvoiceOfficialAssets';
 import { showToast as showToastGlobal } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
 import { formatDateDDMMYYYY } from '../services/formatters';
@@ -3685,29 +3684,17 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
 
                           {/* 2. Area Tanda Tangan & Cap (Tinggi Seragam h-24) */}
                           <div className="h-24 relative flex items-center justify-center my-1 select-none pointer-events-none">
-                            {/* Cap Stempel (pada yang pertama jika aktif) */}
-                            {idx === 0 && effShowCap && (
-                              effCapImg ? (
-                                <img src={effCapImg} alt="Cap" style={{ width: `${effCapW}px`, height: `${effCapH}px` }} className="absolute left-2 top-0 object-contain" />
-                              ) : (
-                                <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `scale(${(effCapW / 90).toFixed(2)})` }}>
-                                  <OfficialCapStamp />
-                                </div>
-                              )
+                            {/* Cap Stempel (hanya jika ada gambar cap custom) */}
+                            {idx === 0 && effShowCap && effCapImg && (
+                              <img src={effCapImg} alt="Cap" style={{ width: `${effCapW}px`, height: `${effCapH}px` }} className="absolute left-2 top-0 object-contain" />
                             )}
 
-                            {/* TTD (jika ada gambar TTD custom atau default pada yang pertama jika aktif) */}
+                            {/* TTD (hanya jika ada gambar TTD custom) */}
                             {effShowTtd && (
                               sig.useCustomTtdImage && sig.customTtdImage ? (
                                 <img src={sig.customTtdImage} alt="TTD" style={{ width: `${effTtdW}px`, height: `${effTtdH}px` }} className="absolute left-10 -top-1 object-contain z-10" />
-                              ) : (idx === 0 && !sig.useCustomTtdImage) ? (
-                                effTtdImg ? (
-                                  <img src={effTtdImg} alt="TTD" style={{ width: `${effTtdW}px`, height: `${effTtdH}px` }} className="absolute left-10 -top-1 object-contain z-10" />
-                                ) : (
-                                  <div className="absolute left-8 -top-1 origin-top-left z-10" style={{ transform: `scale(${(effTtdW / 110).toFixed(2)})` }}>
-                                    <OfficialTtdMarko />
-                                  </div>
-                                )
+                              ) : (idx === 0 && !sig.useCustomTtdImage && effTtdImg) ? (
+                                <img src={effTtdImg} alt="TTD" style={{ width: `${effTtdW}px`, height: `${effTtdH}px` }} className="absolute left-10 -top-1 object-contain z-10" />
                               ) : null
                             )}
                           </div>
@@ -4012,20 +3999,18 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                       }}
                     />
                   </div>
-                ) : (poSettings.namaPerusahaan && poSettings.namaPerusahaan.trim().toUpperCase() !== 'PT. ANUGERAH ILLAHI RABBI') ? (
-                  <div className="pb-3 border-b-2 border-blue-900">
+                ) : (
+                  <div className="pb-3 border-b-2 border-slate-900">
                     <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">
-                      {poSettings.namaPerusahaan}
+                      {poSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
                     </h3>
                     {poSettings.subNamaPerusahaan && (
                       <p className="text-xs text-slate-600 font-semibold">{poSettings.subNamaPerusahaan}</p>
                     )}
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      {poSettings.alamatPerusahaan || 'Klaten, Jawa Tengah'} • Kontak: {poSettings.kontakPerusahaan || '0856 4000 1926'}
+                      {poSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} • Kontak: {poSettings.kontakPerusahaan || '0856 4000 1926'}
                     </p>
                   </div>
-                ) : (
-                  <KopSuratBanner className="w-full" />
                 )}
               </div>
 
@@ -4148,23 +4133,17 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                         </div>
 
                         <div className="my-1 relative flex items-center justify-center select-none pointer-events-none min-h-[95px] w-[190px]">
-                          {/* Cap Stempel jika aktif */}
-                          {showCap && (
-                            capImg ? (
-                              <img
-                                src={capImg}
-                                alt="Cap Stempel"
-                                style={{ width: `${capW}px`, height: `${capW}px` }}
-                                className="absolute left-1 top-0 object-contain"
-                              />
-                            ) : (
-                              <div className="absolute left-1 top-0 origin-top-left" style={{ transform: `scale(${((capW) / 110).toFixed(2)})` }}>
-                                <OfficialCapStamp size={110} />
-                              </div>
-                            )
+                          {/* Cap Stempel jika aktif dan ada gambar custom */}
+                          {showCap && capImg && (
+                            <img
+                              src={capImg}
+                              alt="Cap Stempel"
+                              style={{ width: `${capW}px`, height: `${capW}px` }}
+                              className="absolute left-1 top-0 object-contain"
+                            />
                           )}
 
-                          {/* TTD: Custom upload, atau TTD Marko jika nama Marko, atau ruang kosong basah */}
+                          {/* TTD: Custom upload atau ruang kosong tanda tangan basah */}
                           {hasCustomTtd && sig.customTtdImage ? (
                             <img
                               src={sig.customTtdImage}
@@ -4172,10 +4151,6 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                               style={{ maxHeight: '75px', maxWidth: '140px' }}
                               className="object-contain z-10"
                             />
-                          ) : isMarko && sig.useCustomTtdImage !== false ? (
-                            <div className="absolute -top-3 left-8 z-10">
-                              <OfficialTtdMarko width={160} height={100} />
-                            </div>
                           ) : (
                             <div className="h-16 flex items-center justify-center text-[10px] text-slate-300 italic">
                               [ Tanda Tangan Basah ]
@@ -4215,19 +4190,13 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                             </div>
 
                             <div className="h-24 relative flex items-center justify-center my-1 select-none pointer-events-none">
-                              {isInternal && showCap && (
-                                capImg ? (
-                                  <img
-                                    src={capImg}
-                                    alt="Cap Stempel"
-                                    style={{ width: `${capW}px`, height: `${capW}px` }}
-                                    className="absolute left-1 top-0 object-contain"
-                                  />
-                                ) : (
-                                  <div className="absolute left-1 top-0 origin-top-left" style={{ transform: `scale(${((capW) / 110).toFixed(2)})` }}>
-                                    <OfficialCapStamp size={110} />
-                                  </div>
-                                )
+                              {isInternal && showCap && capImg && (
+                                <img
+                                  src={capImg}
+                                  alt="Cap Stempel"
+                                  style={{ width: `${capW}px`, height: `${capW}px` }}
+                                  className="absolute left-1 top-0 object-contain"
+                                />
                               )}
 
                               {hasCustomTtd && sig.customTtdImage ? (
@@ -4237,10 +4206,6 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                                   style={{ maxHeight: '75px', maxWidth: '120px' }}
                                   className="object-contain z-10"
                                 />
-                              ) : isMarko && sig.useCustomTtdImage !== false ? (
-                                <div className="absolute -top-2 left-4 z-10">
-                                  <OfficialTtdMarko width={140} height={90} />
-                                </div>
                               ) : (
                                 <div className="h-16 flex items-center justify-center text-[10px] text-slate-300 italic">
                                   [ Tanda Tangan Basah ]
@@ -4784,7 +4749,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
             {/* Printable Document Area: EXACT REPLICA OF THE UPLOADED DISTRIBUTION INVOICE TEMPLATE */}
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 lg:p-10 font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content printable-scroll-area" style={{ minHeight: '650px' }}>
               <div className="space-y-3.5 max-w-2xl mx-auto">
-                {/* Kop Surat Header (Custom upload or official banner) */}
+                {/* Kop Surat Header (Custom upload atau Kop Teks Resmi yang Rapi) */}
                 {docSettings.useCustomKopImage && docSettings.customKopImage ? (
                   <div className="flex justify-center mb-1">
                     <img 
@@ -4798,7 +4763,17 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                     />
                   </div>
                 ) : (
-                  <KopSuratBanner className="w-full mb-1" />
+                  <div className="text-center pb-2.5 border-b-2 border-slate-900 mb-2">
+                    <h1 className="text-xl font-black tracking-wide text-slate-950 uppercase">
+                      {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
+                    </h1>
+                    <p className="text-xs text-slate-600 font-semibold">
+                      {docSettings.subNamaPerusahaan || 'Produsen Air Minum Dalam Kemasan (AMDK) As-Shofaa'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} {docSettings.kontakPerusahaan ? `| Telp: ${docSettings.kontakPerusahaan}` : ''}
+                    </p>
+                  </div>
                 )}
 
                 {/* Document Title: INVOICE (Clean centered, no blue underline) */}
@@ -5020,29 +4995,20 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
 
                           {/* Stamp & Signature Overlay */}
                           <div className="flex items-center justify-center my-0.5 select-none pointer-events-none relative h-20">
-                            {/* Cap / Stempel */}
-                            {docSettings.showCap && (
-                              docSettings.useCustomCapImage && docSettings.customCapImage ? (
-                                <img 
-                                  src={docSettings.customCapImage} 
-                                  alt="Cap Stempel" 
-                                  style={{
-                                    width: `${docSettings.capWidth ?? 80}px`,
-                                    height: `${docSettings.capHeight ?? 80}px`
-                                  }}
-                                  className="absolute left-4 top-0 object-contain" 
-                                />
-                              ) : (
-                                <div 
-                                  className="absolute left-2 top-0 origin-top-left"
-                                  style={{ transform: `scale(${((docSettings.capWidth ?? 80) / 90).toFixed(2)})` }}
-                                >
-                                  <OfficialStampWithSignature />
-                                </div>
-                              )
+                            {/* Cap / Stempel: Hanya tampil jika diaktifkan dan ada gambar kustom */}
+                            {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
+                              <img 
+                                src={docSettings.customCapImage} 
+                                alt="Cap Stempel" 
+                                style={{
+                                  width: `${docSettings.capWidth ?? 80}px`,
+                                  height: `${docSettings.capHeight ?? 80}px`
+                                }}
+                                className="absolute left-4 top-0 object-contain" 
+                              />
                             )}
 
-                            {/* TTD Custom jika ada */}
+                            {/* TTD Custom: Hanya tampil jika diaktifkan dan ada gambar kustom */}
                             {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
                               <img 
                                 src={docSettings.customTtdImage} 
@@ -5053,16 +5019,6 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                                 }}
                                 className="absolute left-10 -top-1 object-contain z-10" 
                               />
-                            )}
-
-                            {/* TTD Default jika cap dimatikan tapi ttd aktif */}
-                            {!docSettings.showCap && docSettings.showTtd && !docSettings.useCustomTtdImage && (
-                              <div 
-                                className="absolute left-10 -top-1 origin-top-left"
-                                style={{ transform: `scale(${((docSettings.ttdWidth ?? 110) / 110).toFixed(2)})` }}
-                              >
-                                <OfficialStampWithSignature />
-                              </div>
                             )}
                           </div>
 
@@ -6388,25 +6344,23 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                       {tempPOSettings.showCap !== false ? 'Cap Aktif (Akan Dicetak)' : 'Cap Nonaktif (Tanpa Stempel)'}
                     </span>
                   </div>
-                  {tempPOSettings.showCap !== false ? (
+                  {tempPOSettings.showCap !== false && tempPOSettings.useCustomCapImage && tempPOSettings.customCapImage ? (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded flex items-center justify-center min-h-[90px]">
-                      {tempPOSettings.useCustomCapImage && tempPOSettings.customCapImage ? (
-                        <img
-                          src={tempPOSettings.customCapImage}
-                          alt="Cap Stempel PO"
-                          style={{
-                            width: `${tempPOSettings.capWidth ?? 80}px`,
-                            height: `${tempPOSettings.capHeight ?? 80}px`,
-                            objectFit: 'contain'
-                          }}
-                        />
-                      ) : (
-                        <OfficialCapStamp size={tempPOSettings.capWidth ?? 85} />
-                      )}
+                      <img
+                        src={tempPOSettings.customCapImage}
+                        alt="Cap Stempel PO"
+                        style={{
+                          width: `${tempPOSettings.capWidth ?? 80}px`,
+                          height: `${tempPOSettings.capHeight ?? 80}px`,
+                          objectFit: 'contain'
+                        }}
+                      />
                     </div>
                   ) : (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded text-center text-slate-400 text-xs italic">
-                      Dokumen PO akan dicetak bersih tanpa cap stempel (tanda tangan polos)
+                      {tempPOSettings.showCap !== false 
+                        ? 'Belum ada gambar cap kustom yang diunggah (dokumen dicetak bersih tanpa gambar stempel tiruan).'
+                        : 'Dokumen PO akan dicetak bersih tanpa cap stempel (tanda tangan polos)'}
                     </div>
                   )}
                 </div>

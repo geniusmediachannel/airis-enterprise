@@ -261,31 +261,11 @@ export async function generateInvoicePDF(params: {
   const marginX = 15;
   const contentWidth = pageWidth - (marginX * 2);
 
-  // Pre-fetch authentic branding images (Kop, Cap, TTD)
-  let kopPng = '';
-  let capPng = '';
-  let ttdPng = '';
-  try {
-    [kopPng, capPng, ttdPng] = await Promise.all([
-      getKopSuratPng(),
-      getCapStampPng(),
-      getTtdMarkoPng()
-    ]);
-  } catch (e) {
-    console.error('Error prefetching authentic branding images:', e);
-  }
-
-  // Override with custom settings if configured
+  // Branding images (HANYA MENGGUNAKAN GAMBAR KUSTOM YANG DIUNGGAH USER)
   const cs = params.customSettings;
-  if (cs?.useCustomKopImage && cs?.customKopImage) {
-    kopPng = cs.customKopImage;
-  }
-  if (cs?.useCustomCapImage && cs?.customCapImage) {
-    capPng = cs.customCapImage;
-  }
-  if (cs?.useCustomTtdImage && cs?.customTtdImage) {
-    ttdPng = cs.customTtdImage;
-  }
+  const kopPng = (cs?.useCustomKopImage && cs?.customKopImage) ? cs.customKopImage : '';
+  const capPng = (cs?.showCap && cs?.useCustomCapImage && cs?.customCapImage) ? cs.customCapImage : '';
+  const ttdPng = (cs?.showTtd && cs?.useCustomTtdImage && cs?.customTtdImage) ? cs.customTtdImage : '';
 
   // ==============================================================
   // 1. KOP SURAT / HEADER RESMI
@@ -295,13 +275,28 @@ export async function generateInvoicePDF(params: {
     doc.addImage(kopPng, 'PNG', marginX, 8, contentWidth, kopHeight, undefined, 'FAST');
   } else {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.setTextColor(20, 20, 20);
-    doc.text(cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI', pageWidth / 2, 14, { align: 'center' });
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI', pageWidth / 2, 13, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan, Kec. Klaten Utara, Kab. Klaten, 57438', pageWidth / 2, 19, { align: 'center' });
-    doc.text(cs?.kontakPerusahaan || '0856 4000 1926 | anugerahillahirabbi@gmail.com', pageWidth / 2, 23, { align: 'center' });
+    doc.setTextColor(71, 85, 105);
+    if (cs?.subNamaPerusahaan) {
+      doc.text(cs.subNamaPerusahaan, pageWidth / 2, 17.5, { align: 'center' });
+    }
+    doc.text(
+      `${cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Belangwetan, Klaten Utara'} | Telp: ${cs?.kontakPerusahaan || '0856 4000 1926'}`,
+      pageWidth / 2,
+      cs?.subNamaPerusahaan ? 21.5 : 18,
+      { align: 'center' }
+    );
+    // Garis pembatas resmi
+    const lineY = cs?.subNamaPerusahaan ? 25 : 22;
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.6);
+    doc.line(marginX, lineY, marginX + contentWidth, lineY);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, lineY + 0.8, marginX + contentWidth, lineY + 0.8);
   }
 
   // ==============================================================
@@ -626,16 +621,14 @@ export async function generateInvoicePDF(params: {
   const shouldShowCap = cs?.showCap !== false;
   const shouldShowTtd = cs?.showTtd !== false;
 
-  // Draw stamp & signature
+  // Draw stamp & signature: HANYA GAMBAR CUSTOM USER
   if (capPng && ttdPng && shouldShowCap && shouldShowTtd) {
     doc.addImage(capPng, 'PNG', sigX - 10, footerY + 1, 26, 26, undefined, 'FAST');
     doc.addImage(ttdPng, 'PNG', sigX + 1, footerY, 36, 26, undefined, 'FAST');
-  } else if (capPng && shouldShowCap && !shouldShowTtd) {
+  } else if (capPng && shouldShowCap) {
     doc.addImage(capPng, 'PNG', sigX - 4, footerY + 1, 26, 26, undefined, 'FAST');
-  } else if (ttdPng && shouldShowTtd && !shouldShowCap) {
+  } else if (ttdPng && shouldShowTtd) {
     doc.addImage(ttdPng, 'PNG', sigX + 1, footerY, 36, 26, undefined, 'FAST');
-  } else if (shouldShowCap || shouldShowTtd) {
-    drawInvoiceOfficialStampAndSig(doc, sigX - 4, footerY + 1);
   }
 
   // Signer Name Underlined
@@ -2126,70 +2119,46 @@ export async function generatePurchaseOrderPDF(params: {
   const marginX = 15;
   const contentWidth = pageWidth - (marginX * 2);
 
-  // Pre-fetch authentic branding images (Kop, Cap, TTD)
-  let kopPng = '';
-  let capPng = '';
-  let ttdPng = '';
-  try {
-    [kopPng, capPng, ttdPng] = await Promise.all([
-      getKopSuratPng(),
-      getCapStampPng(),
-      getTtdMarkoPng()
-    ]);
-  } catch (e) {
-    console.error('Error prefetching authentic branding images for PO:', e);
-  }
-
+  // Branding images (HANYA MENGGUNAKAN GAMBAR KUSTOM YANG DIUNGGAH USER)
   const cs = params.customSettings;
   const useCustomKop = Boolean(cs?.useCustomKopImage && cs?.customKopImage);
-  if (useCustomKop) {
-    kopPng = cs!.customKopImage!;
-  }
+  const kopPng = useCustomKop ? cs!.customKopImage! : '';
   const useCustomCap = Boolean(cs?.useCustomCapImage && cs?.customCapImage);
-  if (useCustomCap) {
-    capPng = cs!.customCapImage!;
-  }
+  const capPng = useCustomCap ? cs!.customCapImage! : '';
 
   // 1. KOP SURAT
   const customNama = cs?.namaPerusahaan?.trim();
-  const isDefaultNama = !customNama || customNama.toUpperCase() === 'PT. ANUGERAH ILLAHI RABBI';
 
-  if (useCustomKop) {
+  if (useCustomKop && kopPng) {
     // Gunakan custom image yang di-upload user
     const userKopW = Math.min(cs?.kopWidth ?? 100, 100);
     const userKopH = Math.min(Math.max((cs?.kopHeight ?? 90) * 0.264583, 15), 45); // px ke mm
     const finalW = (contentWidth * userKopW) / 100;
     const finalX = marginX + (contentWidth - finalW) / 2;
     doc.addImage(kopPng, 'PNG', finalX, 8, finalW, userKopH, undefined, 'FAST');
-  } else if (isDefaultNama && kopPng) {
-    // Gunakan Kop Resmi Banner AIR
-    const kopHeight = contentWidth * (155 / 1000); // ~27.9 mm
-    doc.addImage(kopPng, 'PNG', marginX, 8, contentWidth, kopHeight, undefined, 'FAST');
   } else {
-    // Mode Kop Teks (sesuai input nama & alamat di setting PO)
+    // Mode Kop Teks Resmi (Rapi, Tajam & Elegan)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42);
-    doc.text(customNama || 'PT. ANUGERAH ILLAHI RABBI', marginX, 15);
+    doc.text(customNama || 'PT. ANUGERAH ILLAHI RABBI', marginX, 14);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
     if (cs?.subNamaPerusahaan) {
-      doc.text(cs.subNamaPerusahaan, marginX, 19.5);
+      doc.text(cs.subNamaPerusahaan, marginX, 18);
     }
-    const alm = cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Belangwetan, Klaten Utara, Klaten';
-    const ktk = cs?.kontakPerusahaan || '0856 4000 1926 | anugerahillahirabbi@gmail.com';
-    doc.text(`${alm} • Kontak: ${ktk}`, marginX, cs?.subNamaPerusahaan ? 24 : 20.5);
+    const infoAlamat = `${cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} • Kontak: ${cs?.kontakPerusahaan || '0856 4000 1926'}`;
+    doc.text(infoAlamat, marginX, cs?.subNamaPerusahaan ? 22 : 18.5);
 
-    // Garis pembatas bawah kop
-    const lineY = cs?.subNamaPerusahaan ? 27 : 24;
-    doc.setDrawColor(0, 150, 199);
-    doc.setLineWidth(0.8);
+    // Garis pembatas resmi
+    const lineY = cs?.subNamaPerusahaan ? 25 : 21.5;
+    doc.setDrawColor(30, 41, 59);
+    doc.setLineWidth(0.6);
     doc.line(marginX, lineY, marginX + contentWidth, lineY);
-    doc.setDrawColor(2, 48, 71);
-    doc.setLineWidth(0.3);
-    doc.line(marginX, lineY + 1, marginX + contentWidth, lineY + 1);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, lineY + 0.8, marginX + contentWidth, lineY + 0.8);
   }
 
   // 2. PURCHASE ORDER TITLE & METADATA (Di sisi kanan)
@@ -2393,22 +2362,15 @@ export async function generatePurchaseOrderPDF(params: {
 
     // Cap Stempel & TTD
     sigY += 2;
-    if (showCap) {
-      if (capPng) {
-        doc.addImage(capPng, 'PNG', sigX - (userCapMm * 0.65), sigY, userCapMm, userCapMm, undefined, 'FAST');
-      } else {
-        drawOfficialCompanyStamp(doc, sigX, sigY + 12, 12);
-      }
+    if (showCap && capPng) {
+      doc.addImage(capPng, 'PNG', sigX - (userCapMm * 0.65), sigY, userCapMm, userCapMm, undefined, 'FAST');
     }
 
-    // Render TTD: custom jika ada, atau official Marko jika nama Marko, atau kosong jika tanda tangan basah
+    // Render TTD: HANYA jika custom upload dari user, jika tidak: ruang kosong tanda tangan basah
     const hasCustomTtd = Boolean(sig.customTtdImage && sig.customTtdImage.trim().length > 30);
-    const isMarko = sig.nama.toLowerCase().includes('marko');
     if (hasCustomTtd && sig.customTtdImage) {
       const imgFormat = sig.customTtdImage.includes('image/jpeg') ? 'JPEG' : 'PNG';
       doc.addImage(sig.customTtdImage, imgFormat, sigX - 16, sigY - 1, 32, 20, undefined, 'FAST');
-    } else if (isMarko && sig.useCustomTtdImage !== false && ttdPng) {
-      doc.addImage(ttdPng, 'PNG', sigX - 14, sigY - 2, 34, 21, undefined, 'FAST');
     }
 
     sigY += 23;
@@ -2439,24 +2401,17 @@ export async function generatePurchaseOrderPDF(params: {
       doc.text(sig.keterangan || (idx === 0 ? 'Diterima Vendor,' : 'Hormat Kami,'), centerX, sY, { align: 'center' });
 
       sY += 3;
-      // Cap Stempel (muncul pada penandatangan internal kedua / terakhir jika showCap aktif)
+      // Cap Stempel (muncul pada penandatangan internal jika showCap aktif dan ada cap custom)
       const isInternalSig = (idx === 1 || (idx === numSigs - 1 && numSigs > 1));
-      if (showCap && isInternalSig) {
-        if (capPng) {
-          doc.addImage(capPng, 'PNG', centerX - (userCapMm * 0.65), sY, userCapMm, userCapMm, undefined, 'FAST');
-        } else {
-          drawOfficialCompanyStamp(doc, centerX, sY + 10, 10);
-        }
+      if (showCap && isInternalSig && capPng) {
+        doc.addImage(capPng, 'PNG', centerX - (userCapMm * 0.65), sY, userCapMm, userCapMm, undefined, 'FAST');
       }
 
-      // Tanda Tangan
+      // Tanda Tangan: HANYA tampil jika user mengunggah custom ttd
       const hasCustomTtd = Boolean(sig.customTtdImage && sig.customTtdImage.trim().length > 30);
-      const isMarko = sig.nama.toLowerCase().includes('marko');
       if (hasCustomTtd && sig.customTtdImage) {
         const imgFormat = sig.customTtdImage.includes('image/jpeg') ? 'JPEG' : 'PNG';
         doc.addImage(sig.customTtdImage, imgFormat, centerX - 15, sY, 30, 18, undefined, 'FAST');
-      } else if (isMarko && sig.useCustomTtdImage !== false && ttdPng) {
-        doc.addImage(ttdPng, 'PNG', centerX - 14, sY - 1, 32, 19, undefined, 'FAST');
       }
 
       sY += 21;
