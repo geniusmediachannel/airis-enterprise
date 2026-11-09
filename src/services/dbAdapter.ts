@@ -338,7 +338,8 @@ export const TABLE_PRIMARY_KEYS: Record<string, string> = {
   Admin_PO: 'ID_PO',
   Admin_PO_Detail: 'ID_Detail',
   Data_Pembayaran_Pelanggan: 'ID_Pembayaran',
-  Data_Invoice_Custom: 'ID_Invoice'
+  Data_Invoice_Custom: 'ID_Invoice',
+  Pencairan_Biaya_Distribusi: 'ID_Pencairan'
 };
 
 export function setTableData<T>(tableName: string, data: T[], options?: { skipCloudSync?: boolean }): void {
@@ -534,7 +535,8 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status'],
   Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Produk', 'Spesifikasi', 'Qty', 'Harga_Satuan', 'Total_Harga'],
   Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Keterangan', 'Items', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
-  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'ID_Distribusi', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Metode_Bayar', 'No_Referensi', 'Keterangan']
+  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'ID_Distribusi', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Metode_Bayar', 'No_Referensi', 'Keterangan'],
+  Pencairan_Biaya_Distribusi: ['ID_Pencairan', 'Tanggal', 'Nama_Driver', 'Tarif_Per_Dus', 'Total_Dus', 'Total_Biaya', 'Jumlah_Pengiriman', 'ID_Distribusi_List', 'No_Surat_Jalan_List', 'Akun_Kas', 'Nama_Akun_Kas', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input']
 };
 
 /**
@@ -1438,7 +1440,8 @@ export const ALL_DATABASE_TABLES = [
   'Admin_PO',
   'Admin_PO_Detail',
   'Data_Custom_Invoice',
-  'Data_Pembayaran_Pelanggan'
+  'Data_Pembayaran_Pelanggan',
+  'Pencairan_Biaya_Distribusi'
 ];
 
 /**

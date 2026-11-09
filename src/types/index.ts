@@ -719,3 +719,32 @@ export interface CustomInvoiceItem {
   Dibuat_Oleh?: string;
   Waktu_Input?: string;
 }
+
+export interface DriverSettlementDetail {
+  ID_Distribusi: string;
+  No_Surat_Jalan: string;
+  Tanggal: string;
+  Pelanggan: string;
+  Tujuan: string;
+  Dus: number;
+  Tarif: number;
+  Biaya: number;
+}
+
+export interface DriverSettlementItem {
+  ID_Pencairan: string;
+  Tanggal: string;
+  Nama_Driver: string;
+  Tarif_Per_Dus: number;
+  Total_Dus: number;
+  Total_Biaya: number;
+  Jumlah_Pengiriman: number;
+  ID_Distribusi_List: string[];
+  No_Surat_Jalan_List: string[];
+  Akun_Kas: string;
+  Nama_Akun_Kas?: string;
+  Keterangan?: string;
+  Dibuat_Oleh?: string;
+  Waktu_Input?: string;
+  Items_Detail?: DriverSettlementDetail[];
+}
