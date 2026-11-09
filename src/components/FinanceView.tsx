@@ -5,7 +5,7 @@ import {
   Calculator, Check, X, Building2, AlertTriangle, RefreshCw,
   Edit2, Trash2, FileSpreadsheet, Save, FileDown, Users, History, CreditCard, Search,
   ChevronRight, ArrowLeft, ArrowUpRight, ArrowDownLeft, Eye, ShoppingBag, Banknote, ShieldCheck,
-  ArrowUpDown, ArrowUp, ArrowDown, Truck, Coins, PackageCheck, CheckSquare, Square, RotateCcw, Filter, ExternalLink
+  ArrowUpDown, ArrowUp, ArrowDown, Truck, Coins, PackageCheck, CheckSquare, Square, RotateCcw, Filter, ExternalLink, Clock
 } from 'lucide-react';
 import { 
   COAItem, GeneralJournalItem, DraftJournalItem, CashTransactionItem, 
@@ -172,10 +172,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   }[]>([]);
 
   // Quick Notification Toast
-  const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const showToast = (type: 'success' | 'error', text: string) => {
+  const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'warning' | 'error' | 'info'; text: string } | null>(null);
+  const showToast = (type: 'success' | 'warning' | 'error' | 'info', text: string) => {
     setToastMsg({ type, text });
-    showToastGlobal(type === 'success' ? 'Sukses' : 'Pemberitahuan', text, type);
+    showToastGlobal(type === 'success' ? 'Sukses' : type === 'warning' ? 'Peringatan' : type === 'info' ? 'Informasi' : 'Pemberitahuan', text, type);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
