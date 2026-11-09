@@ -12,7 +12,10 @@ import {
   ShipmentGroup, TextStyleSettings, LetterSignatory, LetterDocumentSettings, POSignatory, PODocumentSettings
 } from '../types';
 import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
-import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
+import { 
+  exportDataToExcel, exportPOUnifiedToExcel, importUnifiedPORows, 
+  parseExcelFile, downloadExcelTemplate, ExcelTemplateType 
+} from '../services/excelService';
 import { generateOfficialLetterPDF, generateInvoicePDF, generatePurchaseOrderPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen } from '../services/pdfService';
 import { KopSuratBanner, OfficialStampWithSignature, OfficialCapStamp, OfficialTtdMarko } from './InvoiceOfficialAssets';
 import { showToast as showToastGlobal } from './ToastContainer';
@@ -154,6 +157,36 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   const [poItems, setPoItems] = useState<{ Nama_Produk: string; Spesifikasi: string; Qty: number; Harga_Satuan: number }[]>([
     { Nama_Produk: '', Spesifikasi: '', Qty: '' as any, Harga_Satuan: '' as any }
   ]);
+  const poFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportPOFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = await parseExcelFile(file);
+      if (!parsed.success || !parsed.data) {
+        showToastGlobal('Gagal membaca file Excel PO', 'error');
+        return;
+      }
+      const res = importUnifiedPORows(parsed.data);
+      if (res.success) {
+        setPoHeaders(getTableData<AdminPOHeader>('Admin_PO', []));
+        setPoDetails(getTableData<AdminPODetail>('Admin_PO_Detail', []));
+        onRefresh();
+        showToastGlobal(
+          'Import PO Berhasil!',
+          `Berhasil mengimpor ${res.totalHeaders} surat PO dan ${res.totalDetails} rincian item barang ke sistem.`,
+          'success'
+        );
+      } else {
+        showToastGlobal(res.error || 'Gagal mengimpor data PO', 'error');
+      }
+    } catch (err: any) {
+      showToastGlobal(`Error import: ${err.message}`, 'error');
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // Modals and State for Custom Invoice
   const [showCustomInvoiceModal, setShowCustomInvoiceModal] = useState<boolean>(false);
@@ -2344,25 +2377,54 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
               <h3 className="text-sm font-bold text-slate-900">Daftar Purchase Order (PO) Pemasok</h3>
               <p className="text-xs text-slate-500">Seluruh dokumen pesanan pembelian dapat dicetak, diedit, atau dihapus.</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="file"
+                ref={poFileInputRef}
+                onChange={handleImportPOFile}
+                accept=".xlsx,.xls"
+                className="hidden"
+              />
               <button
-                onClick={handleOpenPOSettings}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-                title="Pengaturan Format Kop, Cap, & Penandatangan Purchase Order (PO)"
+                type="button"
+                onClick={() => downloadExcelTemplate('po')}
+                className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Download Template Excel PO & Detail 1 Baris"
               >
-                <Settings size={14} className="text-slate-500" />
-                <span>Setting Format & TTD PO</span>
+                <Download size={13} className="text-slate-500" />
+                <span>Template Excel</span>
               </button>
               <button
-                onClick={() => exportDataToExcel(filteredPoHeaders, 'Purchase_Order', 'AIRIS_PO_Supplier', 'DAFTAR PURCHASE ORDER (PO) PEMASOK & VENDOR')}
-                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                type="button"
+                onClick={() => poFileInputRef.current?.click()}
+                className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Impor File Excel Purchase Order (Format 1 Baris)"
               >
-                <Download size={14} />
+                <FileSpreadsheet size={13} />
+                <span>Import Excel PO</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportPOUnifiedToExcel(filteredPoHeaders, poDetails, 'AIRIS_PO_Supplier_1Baris')}
+                className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Export seluruh data PO beserta detail barangnya menjadi 1 baris Excel"
+              >
+                <Download size={13} />
                 <span>Export Excel</span>
               </button>
               <button
+                type="button"
+                onClick={handleOpenPOSettings}
+                className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Pengaturan Format Kop, Cap, & Penandatangan Purchase Order (PO)"
+              >
+                <Settings size={13} className="text-slate-500" />
+                <span>Setting Format & TTD</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleOpenAddPO}
-                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus size={14} />
                 <span>Buat PO Baru</span>

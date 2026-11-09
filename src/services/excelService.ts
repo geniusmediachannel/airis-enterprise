@@ -248,11 +248,51 @@ export const EXCEL_TEMPLATES: Record<ExcelTemplateType, TemplateDefinition> = {
   },
   po: {
     type: 'po',
-    title: 'Purchase Order (PO)',
-    filename: 'Template_AIRIS_Purchase_Order.xlsx',
-    headers: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status'],
+    title: 'Purchase Order (PO) & Detail Barang (1 Baris)',
+    filename: 'Template_AIRIS_Purchase_Order_1Baris.xlsx',
+    headers: [
+      'No_PO',
+      'Tanggal_PO',
+      'Order_Ke',
+      'Alamat_Supplier',
+      'Syarat_Ketentuan',
+      'Nama_Produk',
+      'Spesifikasi',
+      'Qty',
+      'Satuan',
+      'Harga_Satuan',
+      'Total_Harga',
+      'Status'
+    ],
     sampleRows: [
-      ['PO-001', '2026-10-15', '001-PO-X-26', 'PT. Sumber Plastik Nusantara', 'Solo Baru', 'Tempo 14 hari', 5200000, 'Terkirim ke Pemasok']
+      [
+        '201-PO-XI-26',
+        '2026-11-09',
+        'PT RAJAWALI SINERGI CEMERLANG',
+        'Candirejo, RT.23/RW.09, Jelobo, Wonosari, Klaten',
+        'Kirim Tanggal 16 November 2026',
+        'KARTON AS-SHOFAA\' BOTOL 600 ML',
+        '392 x 262 x 227 K150/M125/K150 C/FLUTE',
+        3000,
+        'Pcs',
+        4750,
+        14250000,
+        'Terkirim ke Pemasok'
+      ],
+      [
+        '001-PO-X-26',
+        '2026-10-10',
+        'PT. Sumber Plastik Nusantara',
+        'Solo Baru, Sukoharjo',
+        'Pengiriman 3 hari kerja, tempo 14 hari',
+        'Cup Plastik 220ml Printing',
+        'Food Grade PP 3.8g',
+        20000,
+        'Pcs',
+        110,
+        2200000,
+        'Terkirim ke Pemasok'
+      ]
     ]
   },
   presensi: {
@@ -889,4 +929,258 @@ export async function restoreAllDatabaseFromJSON(file: File): Promise<{
   } catch (err: any) {
     return { success: false, restoredTables: [], totalRows: 0, message: err.message || 'File cadangan JSON tidak valid atau rusak.' };
   }
+}
+
+/**
+ * Import PO & Detail Barang dari format Excel 1 Baris (Unified Row)
+ * Mengelompokkan baris berdasarkan No_PO atau ID_PO, menghitung Grand_Total otomatis,
+ * dan menyimpan ke tabel Admin_PO (header) dan Admin_PO_Detail (detail barang) secara terintegrasi.
+ */
+export function importUnifiedPORows(parsedRows: any[]): {
+  success: boolean;
+  totalHeaders: number;
+  totalDetails: number;
+  error?: string;
+} {
+  if (!Array.isArray(parsedRows) || parsedRows.length === 0) {
+    return { success: false, totalHeaders: 0, totalDetails: 0, error: 'File Excel tidak memiliki baris data yang valid.' };
+  }
+
+  // Load existing headers and details
+  const existingHeaders = getTableData<any>('Admin_PO', []);
+  const existingDetails = getTableData<any>('Admin_PO_Detail', []);
+
+  // Map existing PO by No_PO / ID_PO to allow updates or additions
+  const headerMap = new Map<string, any>();
+  existingHeaders.forEach(h => {
+    if (!h) return;
+    const noPoKey = String(h.No_PO || h.ID_PO || '').trim().toLowerCase();
+    const idKey = String(h.ID_PO || '').trim().toLowerCase();
+    if (noPoKey) headerMap.set(noPoKey, h);
+    if (idKey) headerMap.set(idKey, h);
+  });
+
+  // Group incoming rows by PO Key
+  interface POGroup {
+    header: any;
+    details: any[];
+  }
+  const poGroups = new Map<string, POGroup>();
+
+  let autoIdCounter = 1;
+
+  for (let idx = 0; idx < parsedRows.length; idx++) {
+    const r = parsedRows[idx];
+    if (!r || typeof r !== 'object') continue;
+
+    // Ambil No_PO atau alternatifnya
+    const rawNoPO = r.No_PO ?? r.No ?? r.Nomor_PO ?? r['No PO'] ?? r['Nomor PO'] ?? r['No. PO'] ?? r.ID_PO;
+    const rawTanggal = r.Tanggal_PO ?? r.Tanggal ?? r['Tanggal PO'] ?? r.Tgl_PO ?? r.Tgl;
+    const rawSupplier = r.Order_Ke ?? r.Nama_Supplier ?? r.Supplier ?? r['Order Ke'] ?? r['Nama Supplier'] ?? r['Pemasok'] ?? r['Vendor'] ?? '';
+    const rawAlamat = r.Alamat_Supplier ?? r.Alamat ?? r['Alamat Supplier'] ?? '';
+    const rawSyarat = r.Syarat_Ketentuan ?? r.Syarat ?? r.Keterangan ?? r['Syarat Ketentuan'] ?? r['Syarat & Ketentuan'] ?? '';
+    const rawStatus = r.Status ?? r['Status'] ?? 'Terkirim ke Pemasok';
+
+    // Item Detail Fields
+    const rawNamaProduk = r.Nama_Produk ?? r.Nama_Barang ?? r.Barang ?? r.Produk ?? r.Item ?? r['Nama Produk'] ?? r['Nama Barang'] ?? r['Nama Item'];
+    const rawSpek = r.Spesifikasi ?? r.Spek ?? r['Spesifikasi'] ?? '';
+    const rawQty = Number(r.Qty ?? r.Jumlah ?? r.Quantity ?? r['Qty'] ?? r['Jumlah'] ?? 0);
+    const rawSatuan = String(r.Satuan ?? r['Satuan'] ?? 'Pcs').trim();
+    const rawHargaSatuan = Number(r.Harga_Satuan ?? r.Harga ?? r['Harga Satuan'] ?? r['Harga'] ?? 0);
+    const rawTotalHarga = Number(r.Total_Harga ?? r.Subtotal ?? r['Total Harga'] ?? r['Subtotal'] ?? (rawQty * rawHargaSatuan));
+
+    // Jika baris benar-benar kosong, abaikan
+    if (!rawNoPO && !rawSupplier && !rawNamaProduk) continue;
+
+    // Normalisasi Tanggal
+    let tglIso = '';
+    if (rawTanggal) {
+      if (typeof rawTanggal === 'number' && rawTanggal > 1000) {
+        // Excel serial date
+        const d = new Date(Date.UTC(1899, 11, 30) + rawTanggal * 86400000);
+        tglIso = d.toISOString().slice(0, 10);
+      } else {
+        const str = String(rawTanggal).trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+          tglIso = str.slice(0, 10);
+        } else {
+          const dmy = str.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
+          if (dmy) {
+            let yr = parseInt(dmy[3], 10);
+            if (yr < 100) yr += 2000;
+            tglIso = `${yr}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+          } else {
+            tglIso = new Date().toISOString().slice(0, 10);
+          }
+        }
+      }
+    } else {
+      tglIso = new Date().toISOString().slice(0, 10);
+    }
+
+    // Tentukan group key
+    const groupKey = String(rawNoPO || `AUTO-PO-${rawSupplier}-${tglIso}`).trim().toLowerCase();
+
+    if (!poGroups.has(groupKey)) {
+      // Cek apakah PO sudah pernah ada di database sebelumnya
+      const existing = headerMap.get(groupKey);
+      const poId = existing?.ID_PO || r.ID_PO || `PO-${Date.now().toString().slice(-5)}${autoIdCounter++}`;
+      const poNo = String(rawNoPO || existing?.No_PO || `${String(existingHeaders.length + autoIdCounter).padStart(3, '0')}-PO-XI-${new Date(tglIso).getFullYear().toString().slice(-2)}`).trim();
+
+      poGroups.set(groupKey, {
+        header: {
+          ID_PO: poId,
+          No_PO: poNo,
+          Tanggal_PO: tglIso,
+          Tanggal: tglIso,
+          Order_Ke: String(rawSupplier || existing?.Order_Ke || existing?.Nama_Supplier || '-').trim(),
+          Nama_Supplier: String(rawSupplier || existing?.Order_Ke || existing?.Nama_Supplier || '-').trim(),
+          ID_Supplier: String(rawSupplier || existing?.Order_Ke || existing?.Nama_Supplier || '-').trim(),
+          Alamat_Supplier: String(rawAlamat || existing?.Alamat_Supplier || '').trim(),
+          Syarat_Ketentuan: String(rawSyarat || existing?.Syarat_Ketentuan || '').trim(),
+          Grand_Total: 0,
+          Total_Nilai: 0,
+          Status: String(rawStatus || existing?.Status || 'Terkirim ke Pemasok').trim()
+        },
+        details: []
+      });
+    }
+
+    const group = poGroups.get(groupKey)!;
+
+    // Jika ada item produk di baris ini, masukkan ke details
+    if (rawNamaProduk || rawQty > 0 || rawHargaSatuan > 0) {
+      const detailIdx = group.details.length + 1;
+      const subtotal = rawTotalHarga > 0 ? rawTotalHarga : (rawQty * rawHargaSatuan);
+
+      group.details.push({
+        ID_Detail: `${group.header.ID_PO}-D${detailIdx}`,
+        ID_PO: group.header.ID_PO,
+        Nama_Produk: String(rawNamaProduk || 'Item PO').trim(),
+        Nama_Barang: String(rawNamaProduk || 'Item PO').trim(),
+        Spesifikasi: String(rawSpek || '').trim(),
+        Qty: rawQty,
+        Satuan: rawSatuan || 'Pcs',
+        Harga_Satuan: rawHargaSatuan,
+        Total_Harga: subtotal,
+        Subtotal: subtotal
+      });
+
+      group.header.Grand_Total += subtotal;
+      group.header.Total_Nilai += subtotal;
+    }
+  }
+
+  // Jika setelah kalkulasi Grand_Total masih 0 dan user mengisi Grand_Total di Excel, ambil nilainya
+  poGroups.forEach(g => {
+    if (g.header.Grand_Total === 0 && g.details.length === 0) {
+      const firstRow = parsedRows.find(r => String(r.No_PO ?? r.No ?? '').trim().toLowerCase() === g.header.No_PO.toLowerCase());
+      if (firstRow) {
+        const fallbackTotal = Number(firstRow.Grand_Total || firstRow.Total_Nilai || 0);
+        g.header.Grand_Total = fallbackTotal;
+        g.header.Total_Nilai = fallbackTotal;
+      }
+    }
+  });
+
+  // Gabungkan ke master header dan detail
+  const importedHeaders = Array.from(poGroups.values()).map(g => g.header);
+  const importedDetails = Array.from(poGroups.values()).flatMap(g => g.details);
+
+  if (importedHeaders.length === 0) {
+    return { success: false, totalHeaders: 0, totalDetails: 0, error: 'Tidak ditemukan data Purchase Order yang dapat diproses dari file Excel.' };
+  }
+
+  const importedHeaderIds = new Set(importedHeaders.map(h => h.ID_PO.toLowerCase()));
+  const importedPoNos = new Set(importedHeaders.map(h => h.No_PO.toLowerCase()));
+
+  // Filter existing agar data lama yang di-update terganti
+  const retainedHeaders = existingHeaders.filter(h => 
+    !importedHeaderIds.has(String(h.ID_PO || '').toLowerCase()) &&
+    !importedPoNos.has(String(h.No_PO || '').toLowerCase())
+  );
+  const retainedDetails = existingDetails.filter(d => 
+    !importedHeaderIds.has(String(d.ID_PO || '').toLowerCase())
+  );
+
+  const finalHeaders = [...retainedHeaders, ...importedHeaders];
+  const finalDetails = [...retainedDetails, ...importedDetails];
+
+  // Simpan ke database
+  setTableData('Admin_PO', finalHeaders);
+  setTableData('Admin_PO_Detail', finalDetails);
+
+  return {
+    success: true,
+    totalHeaders: importedHeaders.length,
+    totalDetails: importedDetails.length
+  };
+}
+
+/**
+ * Export data Purchase Order beserta detail barangnya menjadi 1 baris per item (Unified Format)
+ */
+export function exportPOUnifiedToExcel(
+  headers: any[],
+  details: any[],
+  filename: string = 'AIRIS_Purchase_Order_Unified.xlsx'
+) {
+  const flatRows: any[] = [];
+
+  headers.forEach(h => {
+    const poItems = details.filter(d => String(d.ID_PO || '').trim() === String(h.ID_PO || '').trim());
+    if (poItems.length > 0) {
+      poItems.forEach(item => {
+        flatRows.push({
+          'No_PO': h.No_PO || h.ID_PO,
+          'Tanggal_PO': h.Tanggal_PO || h.Tanggal,
+          'Order_Ke': h.Order_Ke || h.Nama_Supplier,
+          'Alamat_Supplier': h.Alamat_Supplier || '',
+          'Syarat_Ketentuan': h.Syarat_Ketentuan || '',
+          'Nama_Produk': item.Nama_Produk || item.Nama_Barang,
+          'Spesifikasi': item.Spesifikasi || '',
+          'Qty': Number(item.Qty || 0),
+          'Satuan': item.Satuan || 'Pcs',
+          'Harga_Satuan': Number(item.Harga_Satuan || 0),
+          'Total_Harga': Number(item.Total_Harga ?? item.Subtotal ?? 0),
+          'Status': h.Status || 'Terkirim ke Pemasok'
+        });
+      });
+    } else {
+      flatRows.push({
+        'No_PO': h.No_PO || h.ID_PO,
+        'Tanggal_PO': h.Tanggal_PO || h.Tanggal,
+        'Order_Ke': h.Order_Ke || h.Nama_Supplier,
+        'Alamat_Supplier': h.Alamat_Supplier || '',
+        'Syarat_Ketentuan': h.Syarat_Ketentuan || '',
+        'Nama_Produk': '-',
+        'Spesifikasi': '-',
+        'Qty': 0,
+        'Satuan': 'Pcs',
+        'Harga_Satuan': 0,
+        'Total_Harga': Number(h.Grand_Total ?? h.Total_Nilai ?? 0),
+        'Status': h.Status || 'Draf'
+      });
+    }
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(flatRows);
+  worksheet['!cols'] = [
+    { wch: 18 }, // No_PO
+    { wch: 14 }, // Tanggal_PO
+    { wch: 32 }, // Order_Ke
+    { wch: 36 }, // Alamat_Supplier
+    { wch: 28 }, // Syarat_Ketentuan
+    { wch: 32 }, // Nama_Produk
+    { wch: 28 }, // Spesifikasi
+    { wch: 10 }, // Qty
+    { wch: 10 }, // Satuan
+    { wch: 14 }, // Harga_Satuan
+    { wch: 16 }, // Total_Harga
+    { wch: 20 }  // Status
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Purchase_Order');
+  XLSX.writeFile(workbook, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
 }

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { 
   EXCEL_TEMPLATES, ExcelTemplateType, downloadExcelTemplate, 
-  parseExcelFile 
+  parseExcelFile, importUnifiedPORows 
 } from '../services/excelService';
 import { 
   saveTableData, getTableData, normalizeTableRows, 
@@ -176,6 +176,26 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         setStatusMessage({
           type: 'success',
           text: `Data Distribusi berhasil diimpor (${distRes.totalRows} pengiriman).`,
+        });
+        notifyImportDone();
+        setTimeout(() => {
+          onClose();
+        }, 600);
+        return;
+      } else if (selectedModule === 'po') {
+        const poRes = importUnifiedPORows(parsedRows);
+        setImporting(false);
+        if (!poRes.success) {
+          throw new Error(poRes.error || 'Gagal memproses file Purchase Order.');
+        }
+        showToast(
+          'Import PO Berhasil!',
+          `Data Purchase Order & ${poRes.totalDetails} rincian item (${poRes.totalHeaders} surat PO) berhasil diimpor & disimpan ke sistem.`,
+          'success'
+        );
+        setStatusMessage({
+          type: 'success',
+          text: `Data PO berhasil diimpor (${poRes.totalHeaders} surat PO, ${poRes.totalDetails} rincian item).`,
         });
         notifyImportDone();
         setTimeout(() => {
