@@ -979,17 +979,61 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     setDriverSettlements(updated);
 
     if (claimForm.Catat_Ke_Jurnal) {
+      // 1. Catat langsung ke Jurnal Umum (Double-Entry Seimbang)
+      const currentJournals = getTableData<GeneralJournalItem>('Jurnal_Umum', []);
+      const tgl = claimForm.Tanggal || new Date().toISOString().slice(0, 10);
+      const periode = tgl.slice(0, 7);
+      const yy = periode.slice(2, 4);
+      const mm = periode.slice(5, 7);
+      const prefix = `JUR-${yy}${mm}-`;
+
+      let maxSeq = 0;
+      currentJournals.forEach(j => {
+        if (j.ID_JURNAL?.startsWith(prefix)) {
+          const num = parseInt(j.ID_JURNAL.replace(prefix, ''), 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        }
+      });
+      const nextId = prefix + String(maxSeq + 1).padStart(3, '0');
+
+      const debitRow: GeneralJournalItem = {
+        ID_JURNAL: nextId,
+        TANGGAL: tgl,
+        PERIODE: periode,
+        REFERENSI: newId,
+        KETERANGAN: newSettlement.Keterangan || `Pencairan Biaya Distribusi: ${claimModalDriver}`,
+        KODE_AKUN: '611-30', // Beban BBM & Uang Jalan Armada
+        DEBIT: totalBiaya,
+        KREDIT: 0,
+        PEMBUAT: 'Admin Finance'
+      };
+
+      const creditRow: GeneralJournalItem = {
+        ID_JURNAL: nextId,
+        TANGGAL: tgl,
+        PERIODE: periode,
+        REFERENSI: newId,
+        KETERANGAN: newSettlement.Keterangan || `Pencairan Biaya Distribusi: ${claimModalDriver}`,
+        KODE_AKUN: claimForm.Akun_Kas,
+        DEBIT: 0,
+        KREDIT: totalBiaya,
+        PEMBUAT: 'Admin Finance'
+      };
+
+      setTableData('Jurnal_Umum', [...currentJournals, debitRow, creditRow]);
+
+      // 2. Catat juga ke Draf Jurnal dengan status 'Disetujui'
       const currentDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
       const newDraft: DraftJournalItem = {
         ID_Draf: `DRF-DST-${Date.now().toString().slice(-6)}`,
         Sumber: 'Distribusi',
-        Tanggal: claimForm.Tanggal,
-        Referensi: `${newId} / ${claimModalDriver}`,
-        Keterangan: `Pencairan Biaya Distribusi: ${claimModalDriver} (${selectedItems.length} Pengiriman, ${totalDus} Dus)`,
+        Tanggal: tgl,
+        Referensi: newId,
+        Keterangan: newSettlement.Keterangan || `Pencairan Biaya Distribusi: ${claimModalDriver}`,
         Kode_Debit: '611-30',
         Kode_Kredit: claimForm.Akun_Kas,
         Nominal: totalBiaya,
-        Status: 'Menunggu Verifikasi',
+        Status: 'Disetujui',
         Waktu_Dibuat: new Date().toISOString()
       };
       setTableData('Draf_Jurnal', [newDraft, ...currentDrafts]);
@@ -1024,6 +1068,21 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     const updated = current.filter(item => item.ID_Pencairan !== settlementId);
     setTableData('Pencairan_Biaya_Distribusi', updated);
     setDriverSettlements(updated);
+
+    // Hapus jurnal terkait jika ada
+    const currentJournals = getTableData<GeneralJournalItem>('Jurnal_Umum', []);
+    const updatedJournals = currentJournals.filter(j => j.REFERENSI !== settlementId && !j.REFERENSI?.startsWith(settlementId));
+    if (updatedJournals.length !== currentJournals.length) {
+      setTableData('Jurnal_Umum', updatedJournals);
+    }
+
+    // Hapus draf jurnal terkait jika ada
+    const currentDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
+    const updatedDrafts = currentDrafts.filter(d => d.Referensi !== settlementId && !d.Referensi?.includes(settlementId));
+    if (updatedDrafts.length !== currentDrafts.length) {
+      setTableData('Draf_Jurnal', updatedDrafts);
+    }
+
     showToast('success', `Pencairan ${settlementId} berhasil dibatalkan.`);
     onRefresh();
   };

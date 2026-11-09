@@ -23,7 +23,8 @@ import {
   ReceivablePayableItem, 
   BOMItem, 
   RawMaterialItem,
-  ProductItem
+  ProductItem,
+  DriverSettlementItem
 } from '../types';
 
 export interface FinanceSyncResult {
@@ -34,6 +35,7 @@ export interface FinanceSyncResult {
   syncedPayrolls: number;
   syncedKasbons: number;
   syncedPayments: number;
+  syncedSettlements?: number;
   totalJournalsAdded: number;
   message: string;
 }
@@ -78,6 +80,7 @@ export function syncAllModulesToFinance(options?: {
     const rawBoms = getTableData<BOMItem>('MD_BOM', []) || [];
     const rawRawMaterials = getTableData<RawMaterialItem>('MD_BahanPenolong', []) || [];
     const rawProducts = getTableData<ProductItem>('MD_Produk', []) || [];
+    const rawSettlements = getTableData<DriverSettlementItem>('Pencairan_Biaya_Distribusi', []) || [];
 
     const distributions = (Array.isArray(rawDistributions) ? rawDistributions : []).filter(d => d && typeof d === 'object');
     const distItems = (Array.isArray(rawDistItems) ? rawDistItems : []).filter(di => di && typeof di === 'object');
@@ -86,11 +89,12 @@ export function syncAllModulesToFinance(options?: {
     const payrolls = (Array.isArray(rawPayrolls) ? rawPayrolls : []).filter(pa => pa && typeof pa === 'object');
     const kasbons = (Array.isArray(rawKasbons) ? rawKasbons : []).filter(k => k && typeof k === 'object');
     const customerPayments = (Array.isArray(rawCustomerPayments) ? rawCustomerPayments : []).filter(cp => cp && typeof cp === 'object');
+    const settlements = (Array.isArray(rawSettlements) ? rawSettlements : []).filter(s => s && typeof s === 'object');
     const boms = (Array.isArray(rawBoms) ? rawBoms : []).filter(b => b && typeof b === 'object');
     const rawMaterials = (Array.isArray(rawRawMaterials) ? rawRawMaterials : []).filter(rm => rm && typeof rm === 'object');
     const products = (Array.isArray(rawProducts) ? rawProducts : []).filter(p => p && typeof p === 'object');
 
-    const hasAnyOperationalData = distributions.length > 0 || productions.length > 0 || purchases.length > 0 || payrolls.length > 0 || kasbons.length > 0 || customerPayments.length > 0;
+    const hasAnyOperationalData = distributions.length > 0 || productions.length > 0 || purchases.length > 0 || payrolls.length > 0 || kasbons.length > 0 || customerPayments.length > 0 || settlements.length > 0;
 
     if (!hasAnyOperationalData) {
       // Jika data operasional kosong total (misal pasca reset database)
@@ -699,6 +703,81 @@ export function syncAllModulesToFinance(options?: {
     }
   });
 
+  // =========================================================================
+  // 7. SINKRONISASI PENCAIRAN BIAYA DISTRIBUSI (Uang Jalan Armada & Kas/Bank)
+  // =========================================================================
+  let countSettlements = 0;
+  settlements.forEach(s => {
+    const sId = (s.ID_Pencairan || '').trim();
+    if (!sId) return;
+
+    const refKey = sId;
+    const cleanDate = s.Tanggal && /^\d{4}-\d{2}-\d{2}/.test(s.Tanggal) ? s.Tanggal : new Date().toISOString().slice(0, 10);
+    const periode = cleanDate.slice(0, 7);
+    const nominal = Number(s.Total_Biaya) || 0;
+    if (nominal <= 0) return;
+
+    const alreadyInJournal = existingJournalRefs.has(refKey) ||
+      journals.some(j => (j?.REFERENSI || '').trim() === refKey || (j?.REFERENSI || '').trim().startsWith(refKey));
+
+    if (!alreadyInJournal && autoPost) {
+      const jId = getNextJournalId(cleanDate);
+      const cashAccount = s.Akun_Kas || '111-10';
+      const desc = s.Keterangan || `Pencairan Biaya Distribusi: ${s.Nama_Driver || 'Driver'} (${s.Total_Dus || 0} Dus, ${s.Jumlah_Pengiriman || 0} Pengiriman)`;
+
+      // 1. Debit: Beban Bahan Bakar (BBM) & Uang Jalan Armada (611-30)
+      journals.push({
+        ID_JURNAL: jId,
+        TANGGAL: cleanDate,
+        PERIODE: periode,
+        REFERENSI: refKey,
+        KETERANGAN: desc,
+        KODE_AKUN: '611-30',
+        DEBIT: nominal,
+        KREDIT: 0,
+        PEMBUAT: 'Auto Sync Biaya Distribusi'
+      });
+      countJournalsAdded++;
+
+      // 2. Kredit: Kas / Bank
+      journals.push({
+        ID_JURNAL: jId,
+        TANGGAL: cleanDate,
+        PERIODE: periode,
+        REFERENSI: refKey,
+        KETERANGAN: desc,
+        KODE_AKUN: cashAccount,
+        DEBIT: 0,
+        KREDIT: nominal,
+        PEMBUAT: 'Auto Sync Biaya Distribusi'
+      });
+      countJournalsAdded++;
+
+      existingJournalRefs.add(refKey);
+      countSettlements++;
+    }
+
+    // Pastikan di Draf_Jurnal tercatat dengan status 'Disetujui'
+    const draftIdx = drafts.findIndex(dr => dr?.Referensi === refKey || (dr?.Referensi && dr.Referensi.includes(sId)));
+    if (draftIdx !== -1) {
+      drafts[draftIdx].Status = 'Disetujui';
+    } else {
+      drafts.push({
+        ID_Draf: `DRF-DST-${sId.slice(-6)}`,
+        Sumber: 'Distribusi',
+        Tanggal: cleanDate,
+        Referensi: refKey,
+        Keterangan: s.Keterangan || `Pencairan Biaya Distribusi: ${s.Nama_Driver || 'Driver'} (${s.Total_Dus || 0} Dus)`,
+        Kode_Debit: '611-30',
+        Kode_Kredit: s.Akun_Kas || '111-10',
+        Nominal: nominal,
+        Status: 'Disetujui',
+        Waktu_Dibuat: s.Waktu_Input || new Date().toISOString()
+      });
+      existingDraftRefs.add(refKey);
+    }
+  });
+
   // Auto-reconcile any historical journal imbalance (e.g. from previous discount calculations)
   const groupedJournals: Record<string, GeneralJournalItem[]> = {};
   journals.forEach(j => {
@@ -726,7 +805,7 @@ export function syncAllModulesToFinance(options?: {
   });
 
   // Save changes if new journals or records created or journals auto-healed
-  if (countJournalsAdded > 0 || countDist > 0 || countProd > 0 || autoHealedCount > 0) {
+  if (countJournalsAdded > 0 || countDist > 0 || countProd > 0 || countSettlements > 0 || autoHealedCount > 0) {
     // Sanitasi dan deduplikasi draf sebelum disimpan ke storage
     const seenDraftIds = new Set<string>();
     const seenDraftComposites = new Set<string>();
@@ -758,6 +837,7 @@ export function syncAllModulesToFinance(options?: {
   if (countPayroll > 0) msgParts.push(`${countPayroll} periode gaji`);
   if (countKasbon > 0) msgParts.push(`${countKasbon} kasbon`);
   if (countPayments > 0) msgParts.push(`${countPayments} pembayaran piutang`);
+  if (countSettlements > 0) msgParts.push(`${countSettlements} pencairan biaya distribusi`);
   if (autoHealedCount > 0) msgParts.push(`${autoHealedCount} jurnal diselaraskan seimbang`);
 
   const summary = msgParts.length > 0 
@@ -772,6 +852,7 @@ export function syncAllModulesToFinance(options?: {
       syncedPayrolls: countPayroll,
       syncedKasbons: countKasbon,
       syncedPayments: countPayments,
+      syncedSettlements: countSettlements,
       totalJournalsAdded: countJournalsAdded,
       message: summary
     };
