@@ -82,8 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   const isTursoActive = Boolean(tursoConfig.isConnected);
-  const isSupabaseActive = Boolean(supabaseConfig.isConnected);
-  const isCloudConnected = isTursoActive || isSupabaseActive;
+  const isCloudConnected = isTursoActive;
 
   const viewInfo = VIEW_TITLES[currentView] || { title: 'Enterprise', subtitle: 'PT. Anugerah Illahi Rabbi' };
   const isWritable = canEditModule(currentUser, currentView);
@@ -99,23 +98,14 @@ export const Header: React.FC<HeaderProps> = ({
       // Untuk role staf non-SuperAdmin: sinkronkan data instan tanpa membuka dialog konfigurasi kredensial
       setIsSyncingCloud(true);
       try {
-        if (isTursoActive) {
-          const res = await pullAllTablesFromTurso();
-          if (res.success) {
-            showToast('Data Cloud Diselaraskan', 'Seluruh data berhasil disinkronkan dengan Turso Database.', 'success');
-          } else {
-            showToast('Sinkronisasi', res.message || 'Gagal menyelaraskan data Turso.', 'warning');
-          }
+        const res = await pullAllTablesFromTurso();
+        if (res.success) {
+          showToast('Data Cloud Diselaraskan', 'Seluruh data berhasil disinkronkan dengan Turso Database.', 'success');
         } else {
-          const res = await syncAllTablesFromSupabase();
-          if (res.success) {
-            showToast('Data Cloud Diselaraskan', 'Seluruh data operasional pabrik berhasil disinkronkan dengan Supabase Cloud.', 'success');
-          } else {
-            showToast('Sinkronisasi', res.message || 'Gagal menyelaraskan data cloud.', 'warning');
-          }
+          showToast('Sinkronisasi', res.message || 'Gagal menyelaraskan data Turso.', 'warning');
         }
       } catch (err: any) {
-        showToast('Sinkronisasi', err?.message || 'Terjadi kesalahan saat sinkronisasi cloud.', 'error');
+        showToast('Sinkronisasi', err?.message || 'Terjadi kesalahan saat sinkronisasi Turso.', 'error');
       } finally {
         setIsSyncingCloud(false);
       }
@@ -228,16 +218,16 @@ export const Header: React.FC<HeaderProps> = ({
           title={
             canManageDb
               ? (isTursoActive 
-                  ? 'Turso Cloud Terhubung (Bebas Limit Egress • Klik untuk pengaturan & sinkronisasi)' 
-                  : (isSupabaseActive ? 'Supabase Cloud Terhubung (Klik untuk pengaturan & sinkronisasi)' : 'Database Offline (Klik untuk konfigurasi)'))
+                  ? 'Turso Cloud Terhubung (Klik untuk pengaturan & sinkronisasi)' 
+                  : 'Database Offline (Klik untuk konfigurasi Turso)')
               : (isTursoActive 
                   ? 'Turso Cloud Terhubung (Klik untuk menyelaraskan data terkini)' 
-                  : (isSupabaseActive ? 'Supabase Cloud Terhubung (Klik untuk menyelaraskan data terkini)' : 'Database Offline'))
+                  : 'Database Offline')
           }
         >
           <Database size={14} className={`${isSyncingCloud ? 'animate-spin' : ''} ${isCloudConnected ? 'text-emerald-600' : 'text-amber-600'}`} />
           <span className="hidden md:inline">
-            {isSyncingCloud ? 'Menyelaraskan...' : (isTursoActive ? 'Turso Aktif' : (isSupabaseActive ? 'Cloud Aktif' : 'Cloud Offline'))}
+            {isSyncingCloud ? 'Menyelaraskan...' : (isTursoActive ? 'Turso Aktif' : 'Turso Offline')}
           </span>
           <span className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
         </button>
@@ -360,7 +350,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2 cursor-pointer"
                   >
                     <Database size={14} className="text-slate-500" />
-                    <span>Koneksi Supabase Cloud</span>
+                    <span>Pengaturan Database Turso Cloud</span>
                   </button>
 
                   <button

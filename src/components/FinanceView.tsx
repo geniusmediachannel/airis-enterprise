@@ -1533,7 +1533,52 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     // Hapus seluruh baris dengan ID_JURNAL yang sama agar saldo tetap seimbang!
     const updated = journals.filter(j => j.ID_JURNAL !== item.ID_JURNAL);
     setTableData('Jurnal_Umum', updated);
-    showToast('success', `Seluruh transaksi jurnal ${item.ID_JURNAL} telah dihapus.`);
+
+    // 1. Sinkronkan pembatalan ke Pencairan Biaya Distribusi (agar status pengiriman kembali ke 'Belum Dicairkan' dan tidak ter-sinkron ulang)
+    const currentSettlements = getTableData<DriverSettlementItem>('Pencairan_Biaya_Distribusi', []);
+    const refStr = String(item.REFERENSI || '').trim();
+    const ketStr = String(item.KETERANGAN || '').trim().toLowerCase();
+    const matchedSettlement = currentSettlements.find(s => {
+      const sId = String(s.ID_Pencairan || '').trim();
+      if (!sId) return false;
+      if (refStr && (refStr === sId || refStr.includes(sId) || sId.includes(refStr))) return true;
+      if (ketStr && ketStr.includes(sId.toLowerCase())) return true;
+      if (s.No_Surat_Jalan_List && s.No_Surat_Jalan_List.some(sj => ketStr.includes(String(sj).toLowerCase()))) return true;
+      if (s.Keterangan && s.Keterangan.trim().toLowerCase() === ketStr) return true;
+      return false;
+    });
+
+    if (matchedSettlement) {
+      const cleanSettlements = currentSettlements.filter(s => s.ID_Pencairan !== matchedSettlement.ID_Pencairan);
+      setTableData('Pencairan_Biaya_Distribusi', cleanSettlements);
+      setDriverSettlements(cleanSettlements);
+    }
+
+    // 2. Sinkronkan pembatalan ke Draf Jurnal
+    const currentDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
+    const cleanDrafts = currentDrafts.filter(d => {
+      if (!d) return false;
+      if (d.ID_Draf === item.ID_JURNAL) return false;
+      if (refStr && d.Referensi === refStr) return false;
+      if (matchedSettlement && (d.Referensi === matchedSettlement.ID_Pencairan || (d.Referensi && d.Referensi.includes(matchedSettlement.ID_Pencairan)))) return false;
+      return true;
+    });
+    if (cleanDrafts.length !== currentDrafts.length) {
+      setTableData('Draf_Jurnal', cleanDrafts);
+    }
+
+    // 3. Jika jurnal pembayaran piutang (PAY-), sinkronkan penghapusan ke Data_Pembayaran_Pelanggan
+    if (refStr.startsWith('PAY-')) {
+      const payId = refStr.replace('PAY-', '');
+      const currentPays = getTableData<any>('Data_Pembayaran_Pelanggan', []);
+      const cleanPays = currentPays.filter((p: any) => p.ID_Pembayaran !== payId && p.ID_Bayar !== payId && p.ID_Pembayaran !== refStr);
+      if (cleanPays.length !== currentPays.length) {
+        setTableData('Data_Pembayaran_Pelanggan', cleanPays);
+        setCustomerPayments(cleanPays);
+      }
+    }
+
+    showToast('success', `Seluruh transaksi jurnal ${item.ID_JURNAL} telah dihapus.${matchedSettlement ? ' Status biaya distribusi armada telah dikembalikan ke Belum Dicairkan.' : ''}`);
     onRefresh();
   };
 

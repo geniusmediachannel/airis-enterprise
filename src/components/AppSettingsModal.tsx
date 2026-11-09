@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 import { SupabaseConfig, UserAccount } from '../types';
 import { 
-  getTableData, resetAllDatabase, syncAllTablesFromSupabase,
-  getSupabaseConfig, syncTableToSupabaseExplicit,
+  getTableData, resetAllDatabase,
   OPERATIONAL_PURGE_MODULES, previewOperationalPurge, executeOperationalPurge
 } from '../services/dbAdapter';
+import { getTursoConfig, pullAllTablesFromTurso } from '../services/tursoAdapter';
 import { isSuperAdmin } from '../services/permissionService';
 import { DEFAULT_ACCOUNTS } from '../services/supabaseAuth';
 import { 
@@ -107,27 +107,26 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
   const [isProcessingPurge, setIsProcessingPurge] = useState<boolean>(false);
   const [purgeTick, setPurgeTick] = useState<number>(0);
 
-  // Sanitasi & Perbaikan Database Distribusi (Galon, Surat Jalan, Supabase Sync)
+  // Sanitasi & Perbaikan Database Distribusi (Galon, Surat Jalan, Turso Sync)
   const [isRepairingDist, setIsRepairingDist] = useState<boolean>(false);
   const handleRepairDistributionData = async () => {
     setIsRepairingDist(true);
     try {
       const res = sanitizeAndRepairDistributionDatabase();
       
-      // Sinkronisasikan secara eksplisit ke Supabase Cloud jika aktif
+      // Sinkronisasikan secara eksplisit ke Turso Cloud jika aktif
       let cloudMsg = '';
-      const cfg = getSupabaseConfig();
-      if (cfg.isConnected && cfg.url && cfg.anonKey) {
+      const tursoCfg = getTursoConfig();
+      if (tursoCfg.isConnected) {
         try {
-          await syncTableToSupabaseExplicit('MD_Produk');
-          await syncTableToSupabaseExplicit('MD_Pelanggan');
-          const distSync = await syncTableToSupabaseExplicit('Distribusi');
-          const itemSync = await syncTableToSupabaseExplicit('Distribusi_Item');
-          if (distSync.success && itemSync.success) {
-            cloudMsg = ` & ${distSync.count} baris distribusi + ${itemSync.count} detail produk (Galon) berhasil diunggah ke Supabase Cloud!`;
-          }
+          const { syncTableToTurso } = await import('../services/tursoAdapter');
+          await syncTableToTurso('MD_Produk', getTableData('MD_Produk', []));
+          await syncTableToTurso('MD_Pelanggan', getTableData('MD_Pelanggan', []));
+          await syncTableToTurso('Distribusi', getTableData('Distribusi', []));
+          await syncTableToTurso('Distribusi_Item', getTableData('Distribusi_Item', []));
+          cloudMsg = ' & data perbaikan berhasil disinkronkan ke Turso Database Cloud!';
         } catch (cErr: any) {
-          console.warn('Supabase sync during repair error:', cErr);
+          console.warn('Turso sync during repair error:', cErr);
         }
       }
 
@@ -512,7 +511,7 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const tabs: { id: SettingsTab; label: string; icon: any; desc: string }[] = [
-    { id: 'database', label: 'Database & Cloud', icon: Database, desc: 'Supabase & Penyimpanan Lokal' },
+    { id: 'database', label: 'Database & Cloud', icon: Database, desc: 'Turso Cloud & Penyimpanan Lokal' },
     { id: 'excel', label: 'Import Data Excel', icon: FileSpreadsheet, desc: 'Migrasi & Unggah Massal' },
     { id: 'notif', label: 'Notifikasi & Push', icon: Bell, desc: 'Web Push & Audio Alert' },
     { id: 'tema', label: 'Tampilan & Tema', icon: Sun, desc: 'Mode Terang, Gelap & Kerapatan' },
@@ -611,72 +610,78 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                     <span>Database &amp; Penyimpanan Sistem</span>
                   </h3>
                   <p className="text-slate-500 text-[11px] mt-0.5">
-                    Kelola integrasi basis data cloud Supabase atau penyimpanan lokal browser.
+                    Kelola integrasi basis data cloud Turso SQLite atau penyimpanan lokal browser.
                   </p>
                 </div>
 
                 {/* Status Database Card */}
-                <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                  supabaseConfig.isConnected 
-                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' 
-                    : 'bg-amber-50/70 border-amber-200 text-amber-900'
-                }`}>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${supabaseConfig.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                      <span className="font-bold text-xs uppercase tracking-wide">
-                        {supabaseConfig.isConnected ? 'Tersambung ke Supabase Cloud' : 'Mode Database Lokal (Offline Aktif)'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-600">
-                      {supabaseConfig.isConnected
-                        ? `Project Cloud: ${supabaseConfig.url || 'Supabase Enterprise'}`
-                        : 'Data tersimpan otomatis dan persisten di memori browser (IndexedDB & LocalStorage).'}
-                    </p>
-                    {!isSuperAdmin(currentUser) && (
-                      <p className="text-[10px] text-slate-500 italic mt-0.5">
-                        * Kredensial URL &amp; API Key dikelola terpusat oleh Super Admin / Hyper Admin demi keamanan sistem.
-                      </p>
-                    )}
-                  </div>
+                {(() => {
+                  const turso = getTursoConfig();
+                  const isTursoConnected = Boolean(turso.isConnected);
+                  return (
+                    <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      isTursoConnected 
+                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' 
+                        : 'bg-amber-50/70 border-amber-200 text-amber-900'
+                    }`}>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${isTursoConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                          <span className="font-bold text-xs uppercase tracking-wide">
+                            {isTursoConnected ? 'Tersambung ke Database Cloud Turso' : 'Mode Database Lokal (Offline Aktif)'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600">
+                          {isTursoConnected
+                            ? `Database URL: ${turso.url || 'Turso Cloud Enterprise'}`
+                            : 'Data tersimpan otomatis dan persisten di memori browser (IndexedDB & LocalStorage).'}
+                        </p>
+                        {!isSuperAdmin(currentUser) && (
+                          <p className="text-[10px] text-slate-500 italic mt-0.5">
+                            * Kredensial URL &amp; Auth Token dikelola terpusat oleh Super Admin / Hyper Admin demi keamanan sistem.
+                          </p>
+                        )}
+                      </div>
 
-                  {isSuperAdmin(currentUser) ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenSupabaseModal();
-                        onClose();
-                      }}
-                      className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs ${
-                        supabaseConfig.isConnected
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                          : 'bg-amber-600 hover:bg-amber-700 text-white'
-                      }`}
-                    >
-                      Konfigurasi Supabase
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await syncAllTablesFromSupabase();
-                          if (res.success) {
-                            showToast('Data Cloud Diselaraskan', 'Seluruh data berhasil disinkronkan dengan Supabase Cloud.', 'success');
-                          } else {
-                            showToast('Sinkronisasi', res.message || 'Gagal sinkronisasi data.', 'warning');
-                          }
-                        } catch (err: any) {
-                          showToast('Sinkronisasi', err?.message || 'Gagal sinkronisasi.', 'error');
-                        }
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-                    >
-                      <RefreshCw size={13} />
-                      <span>Sinkronkan Data Cloud</span>
-                    </button>
-                  )}
-                </div>
+                      {isSuperAdmin(currentUser) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenSupabaseModal();
+                            onClose();
+                          }}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs ${
+                            isTursoConnected
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : 'bg-amber-600 hover:bg-amber-700 text-white'
+                          }`}
+                        >
+                          Konfigurasi Turso
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await pullAllTablesFromTurso();
+                              if (res.success) {
+                                showToast('Data Cloud Diselaraskan', 'Seluruh data berhasil disinkronkan dengan Turso Cloud.', 'success');
+                              } else {
+                                showToast('Sinkronisasi', res.message || 'Gagal sinkronisasi data.', 'warning');
+                              }
+                            } catch (err: any) {
+                              showToast('Sinkronisasi', err?.message || 'Gagal sinkronisasi.', 'error');
+                            }
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Sinkronkan Data Turso</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Section Header */}
                 <div className="flex items-center justify-between pt-1">

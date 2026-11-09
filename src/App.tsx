@@ -63,11 +63,11 @@ export default function App() {
   const [currentView, setCurrentView] = useState<string>('dashboard');
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
     const hashRes = checkAndApplyUrlHashConfig();
-    if (hashRes.applied && hashRes.config) {
+    if (hashRes.applied) {
       setTimeout(() => {
-        showToast('Koneksi Cloud Berhasil', 'Perangkat ini berhasil terhubung ke Database Supabase secara otomatis!', 'success');
+        showToast('Koneksi Cloud Berhasil', 'Perangkat ini berhasil terhubung ke Database Turso Cloud secara otomatis!', 'success');
       }, 600);
-      return hashRes.config;
+      return hashRes.config || getSupabaseConfig();
     }
     return getSupabaseConfig();
   });

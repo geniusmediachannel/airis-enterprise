@@ -58,6 +58,22 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     return Array.isArray(data) ? data : [];
   });
 
+  // Reaktif terhadap perubahan database lokal / Turso
+  useEffect(() => {
+    const handleDbChange = () => {
+      setLetters(getTableData<OfficialLetterItem>('Data_Surat', []));
+      setPoHeaders(getTableData<AdminPOHeader>('Admin_PO', []));
+      setPoDetails(getTableData<AdminPODetail>('Admin_PO_Detail', []));
+      setCustomInvoices(getTableData<CustomInvoiceItem>('Data_Custom_Invoice', []));
+    };
+    window.addEventListener('airis_db_updated', handleDbChange);
+    window.addEventListener('storage', handleDbChange);
+    return () => {
+      window.removeEventListener('airis_db_updated', handleDbChange);
+      window.removeEventListener('storage', handleDbChange);
+    };
+  }, []);
+
   // Search Queries for Admin Modules
   const [letterSearchQuery, setLetterSearchQuery] = useState<string>('');
   const [poSearchQuery, setPoSearchQuery] = useState<string>('');

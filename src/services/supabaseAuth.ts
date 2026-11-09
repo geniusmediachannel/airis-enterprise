@@ -117,66 +117,7 @@ export async function signIn(identifier: string, password: string): Promise<{ su
     }
   }
 
-  const supabase = getSupabaseClient();
-  const cfg = getSupabaseConfig();
-
-  // 1. If Supabase is connected, attempt Supabase Auth first
-  if (cfg.isConnected && supabase && identifier.includes('@')) {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: identifier,
-        password: password
-      });
-
-      if (!error && data.user) {
-        // Query user profile role
-        const { data: profile } = await supabase
-          .from('MD_UserAkses')
-          .select('*')
-          .eq('Email', data.user.email)
-          .single();
-
-        const userAccount: UserAccount = {
-          ID_User: profile?.ID_User || `USR-${data.user.id.slice(0, 5)}`,
-          Username: profile?.Username || data.user.email?.split('@')[0] || 'User',
-          Email: data.user.email,
-          Role: (profile?.Role as UserRole) || 'SuperAdmin',
-          Roles: profile?.Roles || [(profile?.Role as UserRole) || 'SuperAdmin'],
-          ID_Karyawan: profile?.ID_Karyawan || 'KAR-0001',
-          Status_Akun: profile?.Status_Akun || 'Aktif'
-        };
-
-        // Pengecekan masa aktif aplikasi (Lisensi)
-        const license = checkLicenseStatus();
-        const isUserHyper = userAccount.Role === 'HyperAdmin' || userAccount.Roles?.includes('HyperAdmin');
-        if (license.isExpired && !isUserHyper) {
-          recordAccessLog({
-            username: userAccount.Username,
-            user: userAccount,
-            aktivitas: 'Login Ditolak',
-            status: 'Peringatan',
-            keterangan: 'Aplikasi terkunci karena masa aktif telah kedaluwarsa'
-          });
-          return {
-            success: false,
-            message: `Masa aktif aplikasi telah berakhir pada ${license.expiryDateFormatted}. Aplikasi saat ini terkunci dan hanya dapat diakses oleh Hyper Admin. Silakan kirim email bukti transfer ke ${license.billingEmail} untuk memperpanjang masa aktif.`
-          };
-        }
-
-        const session: AuthSession = {
-          user: userAccount,
-          isAuthenticated: true,
-          isSupabaseAuth: true
-        };
-        saveStoredSession(session);
-        return { success: true, message: `Login Supabase berhasil sebagai ${userAccount.Role}!`, session };
-      }
-    } catch (err: any) {
-      console.warn('Supabase auth attempt failed, checking local users', err);
-    }
-  }
-
-  // 2. Check Local Database Users / Default Accounts
+  // Check Local Database Users / Default Accounts (Tersinkronisasi dengan Turso Database)
   const localUsers = getTableData<UserAccount>('MD_UserAkses', DEFAULT_ACCOUNTS);
   const found = localUsers.find(u => 
     (u.Username.toLowerCase() === cleanId || (u.Email && u.Email.toLowerCase() === cleanId))
@@ -299,37 +240,7 @@ export async function signIn(identifier: string, password: string): Promise<{ su
  * Sign up new user
  */
 export async function signUp(username: string, email: string, password: string, role: UserRole, idKaryawan: string): Promise<{ success: boolean; message: string }> {
-  const supabase = getSupabaseClient();
-  const cfg = getSupabaseConfig();
-
-  // If Supabase is connected
-  if (cfg.isConnected && supabase) {
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password
-      });
-      if (error) {
-        return { success: false, message: error.message };
-      }
-      // Insert to MD_UserAkses in Supabase
-      if (data.user) {
-        const newUserObj: UserAccount = {
-          ID_User: `USR-${Date.now().toString().slice(-4)}`,
-          Username: username,
-          Email: email,
-          Role: role,
-          ID_Karyawan: idKaryawan,
-          Status_Akun: 'Aktif'
-        };
-        await supabase.from('MD_UserAkses').insert([newUserObj]);
-      }
-    } catch (e: any) {
-      console.warn('Supabase sign up error:', e);
-    }
-  }
-
-  // Also save locally
+  // Simpan ke MD_UserAkses (Tersinkronisasi otomatis dengan Turso Database)
   const localUsers = getTableData<UserAccount>('MD_UserAkses', DEFAULT_ACCOUNTS);
   if (localUsers.some(u => u.Username.toLowerCase() === username.toLowerCase())) {
     return { success: false, message: 'Username sudah digunakan!' };
@@ -462,15 +373,6 @@ export function rejectUserAccount(idUser: string, approverUsername: string = 'ad
  * Sign out
  */
 export async function signOut(user?: UserAccount | null): Promise<void> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Supabase sign out error', e);
-    }
-  }
-
   if (user) {
     recordAccessLog({
       username: user.Username,

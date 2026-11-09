@@ -378,14 +378,6 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
 
   if (options?.skipCloudSync) return;
 
-  const cfg = getSupabaseConfig();
-  const client = getSupabaseClient();
-  if (cfg.isConnected && client && cfg.autoSync) {
-    syncToSupabaseTable(tableName, safeData, previousData).catch(err => {
-      console.warn(`Supabase background sync for ${tableName} failed`, err);
-    });
-  }
-
   // Sinkronisasi otomatis ke Turso Database jika aktif
   try {
     import('./tursoAdapter').then(({ getTursoConfig, syncTableToTurso, markTableWritten }) => {
@@ -403,7 +395,7 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
 export const saveTableData = setTableData;
 
 /**
- * Menghapus satu atau beberapa baris secara eksplisit dari memori lokal dan cloud Supabase
+ * Menghapus satu atau beberapa baris secara eksplisit dari memori lokal dan database cloud Turso
  */
 export async function deleteTableRow(
   tableName: string, 
@@ -420,62 +412,23 @@ export async function deleteTableRow(
       targetIds.forEach(id => recordDeletedDistributionId(id));
     }
 
-    let cloudDeleted = false;
-    let cloudErrorMsg: string | undefined = undefined;
-
-    // 1. Eksekusi Hapus Langsung di Supabase Cloud jika terhubung (Direct Awaited Cloud Delete)
-    const client = getSupabaseClient();
-    const cfg = getSupabaseConfig();
-    if (client && cfg.isConnected) {
-      try {
-        // Hapus child foreign key terlebih dahulu jika ada dependensi relasi
-        if (tableName === 'Distribusi') {
-          await client.from('Distribusi_Item').delete().in('ID_Distribusi', targetIds).catch(() => {});
-        } else if (tableName === 'Data_QC') {
-          await client.from('Data_QC_Detail').delete().in('ID_QC', targetIds).catch(() => {});
-        } else if (tableName === 'Admin_PO') {
-          await client.from('Admin_PO_Detail').delete().in('ID_PO', targetIds).catch(() => {});
-        }
-
-        // Hapus dari tabel utama
-        for (const singleId of targetIds) {
-          // Lapis A: Coba dengan pk asli (e.g. ID_SPK)
-          let { error: err1 } = await client.from(tableName).delete().eq(pk, singleId);
-          if (err1) {
-            // Lapis B: Coba dengan lowercase column name (e.g. id_spk)
-            const lowerPk = pk.toLowerCase();
-            let { error: err2 } = await client.from(tableName).delete().eq(lowerPk, singleId);
-            if (err2) {
-              // Lapis C: Coba dengan .in
-              let { error: err3 } = await client.from(tableName).delete().in(pk, [singleId]);
-              if (err3) {
-                cloudErrorMsg = err3.message;
-              } else {
-                cloudDeleted = true;
-              }
-            } else {
-              cloudDeleted = true;
-            }
-          } else {
-            cloudDeleted = true;
-          }
-        }
-      } catch (cErr: any) {
-        console.warn(`[deleteTableRow] Cloud delete exception on ${tableName}:`, cErr);
-        cloudErrorMsg = cErr?.message || 'Gagal menghapus di cloud database.';
-      }
-    }
-
     // Eksekusi hapus di Turso Database jika terhubung
     try {
-      import('./tursoAdapter').then(({ getTursoConfig, deleteRowFromTurso }) => {
-        const tursoCfg = getTursoConfig();
-        if (tursoCfg.isConnected) {
-          for (const singleId of targetIds) {
-            deleteRowFromTurso(tableName, singleId, pk).catch(() => {});
+      const { getTursoConfig, deleteRowFromTurso } = await import('./tursoAdapter');
+      const tursoCfg = getTursoConfig();
+      if (tursoCfg.isConnected) {
+        for (const singleId of targetIds) {
+          await deleteRowFromTurso(tableName, singleId, pk).catch(() => {});
+          // Hapus child foreign key terkait jika ada
+          if (tableName === 'Distribusi') {
+            await deleteRowFromTurso('Distribusi_Item', singleId, 'ID_Distribusi').catch(() => {});
+          } else if (tableName === 'Data_QC') {
+            await deleteRowFromTurso('Data_QC_Detail', singleId, 'ID_QC').catch(() => {});
+          } else if (tableName === 'Admin_PO') {
+            await deleteRowFromTurso('Admin_PO_Detail', singleId, 'ID_PO').catch(() => {});
           }
         }
-      }).catch(() => {});
+      }
     } catch (e) {}
 
     // 2. Hapus dari memori lokal & LocalStorage

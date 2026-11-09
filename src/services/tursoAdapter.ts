@@ -216,31 +216,32 @@ export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
   MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Tgl_Update_Harga', 'Minimum_Stock'],
   MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
   MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
-  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun'],
+  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
   MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
+  Histori_Perubahan_Harga: ['ID_Histori', 'Tanggal_Berlaku', 'Tipe_Item', 'ID_Item', 'Nama_Item', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input', 'Detail_Harga'],
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
   Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
   Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
   Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
-  Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Tipe', 'Qty', 'Keterangan'],
+  Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Tipe', 'Qty', 'Keterangan'],
   Data_QC: ['ID_QC', 'Tanggal', 'Bulan_Tahun', 'Produk', 'Petugas_QC', 'Kesimpulan', 'Status_Data', 'ID_Produksi'],
   Data_QC_Detail: ['ID_Detail', 'ID_QC', 'Siklus', 'Baku_pH', 'Baku_TDS', 'Baku_Kekeruhan', 'Baku_Bau', 'Baku_Coliform', 'Proses_pH', 'Proses_TDS', 'Proses_Kekeruhan', 'Proses_Bau', 'Proses_Rasa', 'Proses_Ozon', 'Jadi_pH', 'Jadi_TDS', 'Jadi_Kekeruhan', 'Jadi_Bau', 'Jadi_Rasa', 'Jadi_Ozon', 'Jadi_ALT_Awal', 'Jadi_ALT_Akhir', 'Jadi_Coliform'],
-  Data_Presensi: ['ID_Presensi', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Status_Kehadiran', 'Jam_Masuk', 'Jam_Pulang', 'Keterangan'],
-  Data_Lembur: ['ID_Lembur', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Durasi_Jam', 'Keterangan'],
-  Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Status', 'Keterangan'],
-  Histori_Penggajian: ['ID_Histori', 'Periode', 'Tanggal_Bayar', 'ID_Karyawan', 'Nama_Karyawan', 'Gaji_Pokok', 'Tunjangan', 'Lembur', 'Potongan_Kasbon', 'Total_Diterima', 'Status'],
+  Data_Presensi: ['ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_H', 'Total_T', 'Total_I', 'Total_S', 'Total_C', 'Total_A', 'Tanggal', 'Status_Kehadiran', 'Jam_Masuk', 'Jam_Pulang', 'Keterangan'],
+  Data_Lembur: ['ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_Jam_Lembur', 'Tanggal', 'Durasi_Jam', 'Keterangan'],
+  Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Tenor', 'Cicilan_Per_Bulan', 'Status', 'Keterangan'],
+  Histori_Penggajian: ['ID_Histori', 'ID_Gaji', 'Bulan_Tahun', 'Periode', 'Tanggal_Bayar', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Total_Lembur_Nominal', 'Potongan_Kasbon', 'Potongan_Alpha', 'Gaji_Bersih', 'Total_Diterima', 'Tanggal_Cetak', 'Status_Bayar', 'Status'],
   Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SUB_KATEGORI', 'SALDO_NORMAL', 'SALDO_AWAL', 'STATUS'],
   Jurnal_Umum: ['ID_Entry', 'ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT', 'ID_Transaksi', 'Tanggal', 'Kode_Akun', 'Nama_Akun', 'Keterangan', 'Debit', 'Kredit'],
   Draf_Jurnal: ['ID_Draf', 'Sumber', 'Tanggal', 'Referensi', 'Keterangan', 'Kode_Debit', 'Kode_Kredit', 'Nominal', 'Status', 'Waktu_Dibuat', 'Kategori', 'Akun_Debit', 'Akun_Kredit'],
-  Data_Piutang_Utang: ['ID_DOKUMEN', 'TIPE', 'TANGGAL', 'JATUH_TEMPO', 'ENTITAS', 'DESKRIPSI', 'TOTAL_TAGIHAN', 'SISA_TAGIHAN', 'STATUS', 'KETERANGAN'],
-  Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'KATEGORI', 'TGL_PEROLEHAN', 'HARGA_PEROLEHAN', 'NILAI_SISA', 'MASA_MANFAAT', 'METODE_PENYUSUTAN'],
-  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Lampiran', 'Kepada', 'Alamat_Tujuan', 'Isi_Surat', 'Penandatangan_Nama'],
-  Admin_PO: ['ID_PO', 'No_PO', 'Tanggal', 'ID_Supplier', 'Nama_Supplier', 'Perihal', 'Total_Nilai', 'Status'],
-  Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Barang', 'Spesifikasi', 'Qty', 'Satuan', 'Harga_Satuan', 'Subtotal'],
-  Data_Custom_Invoice: ['ID_Invoice', 'Nomor_Invoice', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Total_Tagihan', 'Status'],
-  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Nominal', 'Metode', 'Catatan'],
+  Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status', 'KETERANGAN', 'Keterangan'],
+  Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN', 'KATEGORI', 'TGL_PEROLEHAN', 'HARGA_PEROLEHAN', 'NILAI_SISA', 'MASA_MANFAAT', 'METODE_PENYUSUTAN'],
+  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Lampiran', 'Kepada', 'Alamat_Tujuan', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Tembusan', 'Dibuat_Oleh', 'Isi_Surat_HTML', 'LetterDocSettings', 'Penandatangan_List'],
+  Admin_PO: ['ID_PO', 'No_PO', 'Tanggal_PO', 'Tanggal', 'ID_Supplier', 'Nama_Supplier', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Perihal', 'Grand_Total', 'Total_Nilai', 'Status'],
+  Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Barang', 'Nama_Produk', 'Spesifikasi', 'Qty', 'Satuan', 'Harga_Satuan', 'Total_Harga', 'Subtotal'],
+  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Nomor_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Keterangan', 'Items', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Total_Tagihan', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
+  Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'Tanggal', 'ID_Distribusi', 'ID_Pelanggan', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Nominal', 'Metode_Bayar', 'Metode', 'No_Referensi', 'Catatan', 'Keterangan', 'Waktu_Input'],
   Pencairan_Biaya_Distribusi: ['ID_Pencairan', 'Tanggal', 'Nama_Driver', 'Tarif_Per_Dus', 'Total_Dus', 'Total_Biaya', 'Jumlah_Pengiriman', 'ID_Distribusi_List', 'No_Surat_Jalan_List', 'Akun_Kas', 'Nama_Akun_Kas', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input']
 };
 
@@ -487,6 +488,22 @@ export async function pullAllTablesFromTurso(options?: {
           if (Array.isArray(localSettlements) && localSettlements.length > 0) {
             const remoteIds = new Set(cleanedRows.map((r: any) => String(r.ID_Pencairan || '').trim()));
             const unsynced = localSettlements.filter(ls => !remoteIds.has(String(ls.ID_Pencairan || '').trim()));
+            if (unsynced.length > 0) {
+              cleanedRows = [...cleanedRows, ...unsynced];
+            }
+          }
+        }
+
+        // Proteksi merge universal untuk seluruh tabel agar data lokal baru tidak pernah tertimpa saat pull cloud
+        const pk = TABLE_PRIMARY_KEYS[table] || 'id';
+        if (pk && table !== 'Distribusi' && table !== 'Jurnal_Umum' && table !== 'Pencairan_Biaya_Distribusi') {
+          const localRows = getTableData<any>(table, []);
+          if (Array.isArray(localRows) && localRows.length > 0) {
+            const remoteKeys = new Set(cleanedRows.map((r: any) => String(r[pk] ?? '').trim().toLowerCase()));
+            const unsynced = localRows.filter(lr => {
+              const key = String(lr[pk] ?? '').trim().toLowerCase();
+              return key && !remoteKeys.has(key);
+            });
             if (unsynced.length > 0) {
               cleanedRows = [...cleanedRows, ...unsynced];
             }
