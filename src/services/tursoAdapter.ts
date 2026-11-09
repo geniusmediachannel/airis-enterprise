@@ -283,6 +283,58 @@ export function getSanitizedColumns(tableName: string, rows: any[]): string[] {
 }
 
 /**
+ * Normalisasi data baris tabel agar selaras dengan skema Turso SQLite
+ * Mencegah ketidakcocokan nama kolom lama/baru (misal: Order_Ke vs Nama_Supplier, Grand_Total vs Total_Nilai)
+ */
+export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  if (table === 'Admin_PO') {
+    return rows.map(r => ({
+      ...r,
+      No_PO: r.No_PO || '',
+      Tanggal_PO: r.Tanggal_PO || r.Tanggal || '',
+      Tanggal: r.Tanggal || r.Tanggal_PO || '',
+      Order_Ke: r.Order_Ke || r.Nama_Supplier || '',
+      Nama_Supplier: r.Nama_Supplier || r.Order_Ke || '',
+      ID_Supplier: r.ID_Supplier || r.Order_Ke || '',
+      Alamat_Supplier: r.Alamat_Supplier || '',
+      Syarat_Ketentuan: r.Syarat_Ketentuan || '',
+      Perihal: r.Perihal || '',
+      Grand_Total: Number(r.Grand_Total ?? r.Total_Nilai ?? 0),
+      Total_Nilai: Number(r.Total_Nilai ?? r.Grand_Total ?? 0),
+      Status: r.Status || 'Draf'
+    }));
+  }
+  if (table === 'Admin_PO_Detail') {
+    return rows.map(r => ({
+      ...r,
+      Nama_Produk: r.Nama_Produk || r.Nama_Barang || '',
+      Nama_Barang: r.Nama_Barang || r.Nama_Produk || '',
+      Spesifikasi: r.Spesifikasi || '',
+      Qty: Number(r.Qty || 0),
+      Satuan: r.Satuan || 'Pcs',
+      Harga_Satuan: Number(r.Harga_Satuan || 0),
+      Total_Harga: Number(r.Total_Harga ?? r.Subtotal ?? 0),
+      Subtotal: Number(r.Subtotal ?? r.Total_Harga ?? 0)
+    }));
+  }
+  if (table === 'Data_Custom_Invoice') {
+    return rows.map(r => ({
+      ...r,
+      No_Invoice: r.No_Invoice || r.Nomor_Invoice || '',
+      Nomor_Invoice: r.Nomor_Invoice || r.No_Invoice || '',
+      Tanggal: r.Tanggal || '',
+      Nama_Pelanggan: r.Nama_Pelanggan || '',
+      Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
+      Grand_Total: Number(r.Grand_Total ?? r.Total_Tagihan ?? 0),
+      Items: typeof r.Items === 'string' ? r.Items : JSON.stringify(r.Items || []),
+      Status: r.Status || 'Draf'
+    }));
+  }
+  return rows;
+}
+
+/**
  * Eksekusi Batch Query untuk insert banyak data sekaligus secara cepat
  */
 export async function executeTursoBatch(
@@ -357,7 +409,8 @@ export async function pushAllTablesToTurso(options?: {
   for (const table of ALL_DATABASE_TABLES) {
     try {
       options?.onProgress?.(`Mengunggah tabel ${table}...`);
-      const rows = getTableData<any>(table, []);
+      const rawRows = getTableData<any>(table, []);
+      const rows = normalizeRowsForTurso(table, rawRows);
 
       if (rows.length === 0) {
         // Hapus seluruh baris jika tabel lokal kosong
@@ -492,6 +545,38 @@ export async function pullAllTablesFromTurso(options?: {
               cleanedRows = [...cleanedRows, ...unsynced];
             }
           }
+        } else if (table === 'Admin_PO') {
+          cleanedRows = res.rows.map((r: any) => ({
+            ...r,
+            Tanggal_PO: r.Tanggal_PO || r.Tanggal || '',
+            Tanggal: r.Tanggal || r.Tanggal_PO || '',
+            Order_Ke: r.Order_Ke || r.Nama_Supplier || '',
+            Nama_Supplier: r.Nama_Supplier || r.Order_Ke || '',
+            ID_Supplier: r.ID_Supplier || r.Order_Ke || '',
+            Grand_Total: Number(r.Grand_Total ?? r.Total_Nilai ?? 0),
+            Total_Nilai: Number(r.Total_Nilai ?? r.Grand_Total ?? 0),
+            Status: r.Status || 'Draf'
+          }));
+        } else if (table === 'Admin_PO_Detail') {
+          cleanedRows = res.rows.map((r: any) => ({
+            ...r,
+            Nama_Produk: r.Nama_Produk || r.Nama_Barang || '',
+            Nama_Barang: r.Nama_Barang || r.Nama_Produk || '',
+            Total_Harga: Number(r.Total_Harga ?? r.Subtotal ?? 0),
+            Subtotal: Number(r.Subtotal ?? r.Total_Harga ?? 0),
+            Qty: Number(r.Qty || 0),
+            Satuan: r.Satuan || 'Pcs',
+            Harga_Satuan: Number(r.Harga_Satuan || 0)
+          }));
+        } else if (table === 'Data_Custom_Invoice') {
+          cleanedRows = res.rows.map((r: any) => ({
+            ...r,
+            No_Invoice: r.No_Invoice || r.Nomor_Invoice || '',
+            Nomor_Invoice: r.Nomor_Invoice || r.No_Invoice || '',
+            Grand_Total: Number(r.Grand_Total ?? r.Total_Tagihan ?? 0),
+            Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
+            Items: typeof r.Items === 'string' ? (() => { try { return JSON.parse(r.Items); } catch { return []; } })() : (r.Items || [])
+          }));
         }
 
         // Proteksi merge universal untuk seluruh tabel agar data lokal baru tidak pernah tertimpa saat pull cloud
@@ -506,6 +591,10 @@ export async function pullAllTablesFromTurso(options?: {
             });
             if (unsynced.length > 0) {
               cleanedRows = [...cleanedRows, ...unsynced];
+              // Auto-push baris lokal yang belum ada di Turso agar segera sinkron ke server & perangkat lain
+              setTimeout(() => {
+                syncTableToTurso(table, cleanedRows).catch(() => {});
+              }, 400);
             }
           }
         }
@@ -542,6 +631,9 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
   const cfg = getTursoConfig();
   if (!cfg.isConnected || !cfg.autoSync) return;
 
+  const normalizedData = normalizeRowsForTurso(tableName, data);
+  const normalizedPrev = previousData ? normalizeRowsForTurso(tableName, previousData) : undefined;
+
   const pk = TABLE_PRIMARY_KEYS[tableName] || 'id';
 
   activeTableSyncs.add(tableName);
@@ -549,15 +641,15 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
 
   try {
     // 1. Kasus A: Tabel dikosongkan
-    if (data.length === 0) {
+    if (normalizedData.length === 0) {
       await executeTursoQuery(`DELETE FROM "${tableName}"`, [], cfg).catch(() => {});
       return;
     }
 
     // 2. Kasus B: Baris tertentu dihapus
-    if (pk && previousData && Array.isArray(previousData) && previousData.length > data.length) {
-      const currentKeySet = new Set(data.map(r => String(r[pk] ?? '').trim().toLowerCase()));
-      const deletedKeys = previousData
+    if (pk && normalizedPrev && Array.isArray(normalizedPrev) && normalizedPrev.length > normalizedData.length) {
+      const currentKeySet = new Set(normalizedData.map(r => String(r[pk] ?? '').trim().toLowerCase()));
+      const deletedKeys = normalizedPrev
         .map(r => r[pk])
         .filter(k => k !== undefined && k !== null && !currentKeySet.has(String(k).trim().toLowerCase()));
 
@@ -568,19 +660,19 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
     }
 
     // 3. Kasus C: Upsert baris aktif (Optimasi Diffing Cepat: prioritaskan baris yang baru atau berubah)
-    const columns = getSanitizedColumns(tableName, data);
+    const columns = getSanitizedColumns(tableName, normalizedData);
     if (columns.length === 0) return;
 
-    let rowsToUpsert = data;
-    if (pk && previousData && Array.isArray(previousData) && previousData.length > 0) {
+    let rowsToUpsert = normalizedData;
+    if (pk && normalizedPrev && Array.isArray(normalizedPrev) && normalizedPrev.length > 0) {
       const prevMap = new Map<string, any>();
-      previousData.forEach(r => {
+      normalizedPrev.forEach(r => {
         if (!r) return;
         const key = String(r[pk] ?? '').trim().toLowerCase();
         if (key) prevMap.set(key, r);
       });
 
-      const changedOrNewRows = data.filter(r => {
+      const changedOrNewRows = normalizedData.filter(r => {
         if (!r) return false;
         const key = String(r[pk] ?? '').trim().toLowerCase();
         const prev = prevMap.get(key);
@@ -590,7 +682,7 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
 
       if (changedOrNewRows.length > 0) {
         rowsToUpsert = changedOrNewRows;
-      } else if (previousData.length <= data.length) {
+      } else if (normalizedPrev.length <= normalizedData.length) {
         // Tidak ada baris yang berubah maupun dihapus
         return;
       }

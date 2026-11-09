@@ -1449,22 +1449,29 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
         ID_Detail: `${poId}-D${idx + 1}`,
         ID_PO: poId,
         Nama_Produk: item.Nama_Produk,
-        Spesifikasi: item.Spesifikasi,
+        Nama_Barang: item.Nama_Produk,
+        Spesifikasi: item.Spesifikasi || '',
         Qty: Number(item.Qty) || 0,
+        Satuan: 'Pcs',
         Harga_Satuan: Number(item.Harga_Satuan) || 0,
-        Total_Harga: sub
-      };
+        Total_Harga: sub,
+        Subtotal: sub
+      } as any;
     });
 
     if (editingPO) {
       const updatedH = poHeaders.map(h => h.ID_PO === editingPO.ID_PO ? {
         ...h,
         Tanggal_PO: poForm.Tanggal_PO,
+        Tanggal: poForm.Tanggal_PO,
         No_PO: poNo,
         Order_Ke: poForm.Order_Ke,
+        Nama_Supplier: poForm.Order_Ke,
+        ID_Supplier: poForm.Order_Ke,
         Alamat_Supplier: poForm.Alamat_Supplier,
         Syarat_Ketentuan: poForm.Syarat_Ketentuan,
         Grand_Total: grandTotal,
+        Total_Nilai: grandTotal,
         Status: poForm.Status
       } : h);
       const otherDetails = poDetails.filter(d => d.ID_PO !== editingPO.ID_PO);
@@ -1477,13 +1484,17 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
       const newHeader: AdminPOHeader = {
         ID_PO: poId,
         Tanggal_PO: poForm.Tanggal_PO,
+        Tanggal: poForm.Tanggal_PO,
         No_PO: poNo,
         Order_Ke: poForm.Order_Ke,
+        Nama_Supplier: poForm.Order_Ke,
+        ID_Supplier: poForm.Order_Ke,
         Alamat_Supplier: poForm.Alamat_Supplier,
         Syarat_Ketentuan: poForm.Syarat_Ketentuan,
         Grand_Total: grandTotal,
+        Total_Nilai: grandTotal,
         Status: poForm.Status
-      };
+      } as any;
       const updatedH = [...poHeaders, newHeader];
       const updatedD = [...poDetails, ...detailsToAdd];
       setTableData('Admin_PO', updatedH);
