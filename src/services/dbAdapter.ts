@@ -442,6 +442,21 @@ export async function deleteTableRow(
     // Perbarui cache & storage lokal tanpa memicu sinkronisasi duplikat
     setTableData(tableName, remaining, { skipCloudSync: true });
 
+    // Hapus child data lokal jika ada
+    if (tableName === 'Admin_PO') {
+      const allPODetails = getTableData<any>('Admin_PO_Detail', []);
+      const remainingDetails = allPODetails.filter(d => !targetIdSet.has(String(d.ID_PO || '').trim().toLowerCase()));
+      setTableData('Admin_PO_Detail', remainingDetails, { skipCloudSync: true });
+    } else if (tableName === 'Distribusi') {
+      const allDistItems = getTableData<any>('Distribusi_Item', []);
+      const remainingItems = allDistItems.filter(d => !targetIdSet.has(String(d.ID_Distribusi || '').trim().toLowerCase()));
+      setTableData('Distribusi_Item', remainingItems, { skipCloudSync: true });
+    } else if (tableName === 'Data_QC') {
+      const allQCDetails = getTableData<any>('Data_QC_Detail', []);
+      const remainingQC = allQCDetails.filter(d => !targetIdSet.has(String(d.ID_QC || '').trim().toLowerCase()));
+      setTableData('Data_QC_Detail', remainingQC, { skipCloudSync: true });
+    }
+
     return {
       success: true,
       deletedCount: deletedCount > 0 ? deletedCount : targetIds.length,

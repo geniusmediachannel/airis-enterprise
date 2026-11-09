@@ -484,6 +484,24 @@ export async function pullAllTablesFromTurso(options?: {
     localStorage.removeItem('airis_deleted_distribution_ids');
   } catch (e) {}
 
+  // 1. Ambil daftar Deleted_Records dari Turso Cloud untuk sinkronisasi penghapusan multi-device
+  const deletedRecordsMap = new Map<string, Set<string>>();
+  try {
+    const delRes = await executeTursoQuery(`SELECT table_name, record_id FROM "Deleted_Records"`, [], cfg);
+    if (delRes.success && Array.isArray(delRes.rows)) {
+      delRes.rows.forEach((r: any) => {
+        const tbl = String(r.table_name || '').trim();
+        const rid = String(r.record_id || '').trim().toLowerCase();
+        if (tbl && rid) {
+          if (!deletedRecordsMap.has(tbl)) {
+            deletedRecordsMap.set(tbl, new Set<string>());
+          }
+          deletedRecordsMap.get(tbl)!.add(rid);
+        }
+      });
+    }
+  } catch (e) {}
+
   let pulledTables = 0;
   let totalRows = 0;
 
@@ -504,8 +522,16 @@ export async function pullAllTablesFromTurso(options?: {
 
       if (res.success && Array.isArray(res.rows)) {
         let cleanedRows = res.rows;
+        const pk = TABLE_PRIMARY_KEYS[table] || 'id';
+
+        // Singkirkan baris yang sudah dihapus secara resmi
+        const tableDeletedIds = deletedRecordsMap.get(table);
+        if (tableDeletedIds && tableDeletedIds.size > 0 && pk) {
+          cleanedRows = cleanedRows.filter((r: any) => !tableDeletedIds.has(String(r[pk] ?? '').trim().toLowerCase()));
+        }
+
         if (table === 'Distribusi') {
-          cleanedRows = res.rows.map((r: any) => ({
+          cleanedRows = cleanedRows.map((r: any) => ({
             ...r,
             C120: Number(r.C120) || 0,
             C220: Number(r.C220) || 0,
@@ -516,7 +542,7 @@ export async function pullAllTablesFromTurso(options?: {
             Total_Tagihan: Number(r.Total_Tagihan) || 0
           }));
         } else if (table === 'Jurnal_Umum') {
-          cleanedRows = res.rows.map((r: any) => ({
+          cleanedRows = cleanedRows.map((r: any) => ({
             ID_JURNAL: r.ID_JURNAL || r.ID_Entry || r.ID_Transaksi || '',
             TANGGAL: r.TANGGAL || r.Tanggal || '',
             PERIODE: r.PERIODE || (r.TANGGAL || r.Tanggal || '').slice(0, 7),
@@ -527,26 +553,16 @@ export async function pullAllTablesFromTurso(options?: {
             KREDIT: Number(r.KREDIT ?? r.Kredit ?? 0),
             PEMBUAT: r.PEMBUAT || r.Pembuat || 'Admin Finance'
           }));
-
-          const localJournals = getTableData<any>('Jurnal_Umum', []);
-          if (Array.isArray(localJournals) && localJournals.length > 0) {
-            const remoteKeys = new Set(cleanedRows.map((r: any) => `${r.ID_JURNAL}|${r.KODE_AKUN}|${r.REFERENSI}`));
-            const unsynced = localJournals.filter(lj => !remoteKeys.has(`${lj.ID_JURNAL}|${lj.KODE_AKUN}|${lj.REFERENSI}`));
-            if (unsynced.length > 0) {
-              cleanedRows = [...cleanedRows, ...unsynced];
-            }
-          }
         } else if (table === 'Pencairan_Biaya_Distribusi') {
-          const localSettlements = getTableData<any>('Pencairan_Biaya_Distribusi', []);
-          if (Array.isArray(localSettlements) && localSettlements.length > 0) {
-            const remoteIds = new Set(cleanedRows.map((r: any) => String(r.ID_Pencairan || '').trim()));
-            const unsynced = localSettlements.filter(ls => !remoteIds.has(String(ls.ID_Pencairan || '').trim()));
-            if (unsynced.length > 0) {
-              cleanedRows = [...cleanedRows, ...unsynced];
-            }
-          }
+          cleanedRows = cleanedRows.map((r: any) => ({
+            ...r,
+            Tarif_Per_Dus: Number(r.Tarif_Per_Dus || 1000),
+            Total_Dus: Number(r.Total_Dus || 0),
+            Total_Biaya: Number(r.Total_Biaya || 0),
+            Jumlah_Pengiriman: Number(r.Jumlah_Pengiriman || 0)
+          }));
         } else if (table === 'Admin_PO') {
-          cleanedRows = res.rows.map((r: any) => ({
+          cleanedRows = cleanedRows.map((r: any) => ({
             ...r,
             Tanggal_PO: r.Tanggal_PO || r.Tanggal || '',
             Tanggal: r.Tanggal || r.Tanggal_PO || '',
@@ -558,7 +574,7 @@ export async function pullAllTablesFromTurso(options?: {
             Status: r.Status || 'Draf'
           }));
         } else if (table === 'Admin_PO_Detail') {
-          cleanedRows = res.rows.map((r: any) => ({
+          cleanedRows = cleanedRows.map((r: any) => ({
             ...r,
             Nama_Produk: r.Nama_Produk || r.Nama_Barang || '',
             Nama_Barang: r.Nama_Barang || r.Nama_Produk || '',
@@ -569,7 +585,7 @@ export async function pullAllTablesFromTurso(options?: {
             Harga_Satuan: Number(r.Harga_Satuan || 0)
           }));
         } else if (table === 'Data_Custom_Invoice') {
-          cleanedRows = res.rows.map((r: any) => ({
+          cleanedRows = cleanedRows.map((r: any) => ({
             ...r,
             No_Invoice: r.No_Invoice || r.Nomor_Invoice || '',
             Nomor_Invoice: r.Nomor_Invoice || r.No_Invoice || '',
@@ -577,26 +593,6 @@ export async function pullAllTablesFromTurso(options?: {
             Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
             Items: typeof r.Items === 'string' ? (() => { try { return JSON.parse(r.Items); } catch { return []; } })() : (r.Items || [])
           }));
-        }
-
-        // Proteksi merge universal untuk seluruh tabel agar data lokal baru tidak pernah tertimpa saat pull cloud
-        const pk = TABLE_PRIMARY_KEYS[table] || 'id';
-        if (pk && table !== 'Distribusi' && table !== 'Jurnal_Umum' && table !== 'Pencairan_Biaya_Distribusi') {
-          const localRows = getTableData<any>(table, []);
-          if (Array.isArray(localRows) && localRows.length > 0) {
-            const remoteKeys = new Set(cleanedRows.map((r: any) => String(r[pk] ?? '').trim().toLowerCase()));
-            const unsynced = localRows.filter(lr => {
-              const key = String(lr[pk] ?? '').trim().toLowerCase();
-              return key && !remoteKeys.has(key);
-            });
-            if (unsynced.length > 0) {
-              cleanedRows = [...cleanedRows, ...unsynced];
-              // Auto-push baris lokal yang belum ada di Turso agar segera sinkron ke server & perangkat lain
-              setTimeout(() => {
-                syncTableToTurso(table, cleanedRows).catch(() => {});
-              }, 400);
-            }
-          }
         }
 
         memoryTableCache[table] = cleanedRows;
@@ -656,6 +652,13 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
       if (deletedKeys.length > 0) {
         const placeholders = deletedKeys.map(() => '?').join(', ');
         await executeTursoQuery(`DELETE FROM "${tableName}" WHERE "${pk}" IN (${placeholders})`, deletedKeys, cfg).catch(() => {});
+        for (const dk of deletedKeys) {
+          await executeTursoQuery(
+            `INSERT OR REPLACE INTO "Deleted_Records" ("table_name", "record_id", "deleted_at") VALUES (?, ?, datetime('now', 'localtime'))`,
+            [tableName, String(dk).trim()],
+            cfg
+          ).catch(() => {});
+        }
       }
     }
 
@@ -688,6 +691,15 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
       }
     }
 
+    // Jika record disimpan/dibuat kembali, hapus dari Deleted_Records
+    if (pk && rowsToUpsert.length > 0) {
+      const activeIds = rowsToUpsert.map(r => String(r[pk] ?? '').trim()).filter(Boolean);
+      if (activeIds.length > 0) {
+        const placeholders = activeIds.map(() => '?').join(', ');
+        await executeTursoQuery(`DELETE FROM "Deleted_Records" WHERE "table_name" = ? AND "record_id" IN (${placeholders})`, [tableName, ...activeIds], cfg).catch(() => {});
+      }
+    }
+
     const quotedCols = columns.map(c => `"${c}"`).join(', ');
     const placeholders = columns.map(() => '?').join(', ');
     const sql = `INSERT OR REPLACE INTO "${tableName}" (${quotedCols}) VALUES (${placeholders})`;
@@ -714,13 +726,30 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
 }
 
 /**
- * Hapus satu baris eksplisit dari Turso Cloud
+ * Hapus satu baris eksplisit dari Turso Cloud dan catat ke Deleted_Records
  */
 export async function deleteRowFromTurso(tableName: string, id: string | number, pkField?: string) {
   const cfg = getTursoConfig();
   if (!cfg.isConnected) return;
   const pk = pkField || TABLE_PRIMARY_KEYS[tableName] || 'id';
-  await executeTursoQuery(`DELETE FROM "${tableName}" WHERE "${pk}" = ?`, [id], cfg).catch(() => {});
+  const cleanId = String(id).trim();
+
+  // 1. Eksekusi DELETE dari tabel utama di Turso SQLite
+  await executeTursoQuery(`DELETE FROM "${tableName}" WHERE "${pk}" = ?`, [cleanId], cfg).catch(() => {});
+
+  // 2. Pastikan tabel Deleted_Records ada di Turso
+  await executeTursoQuery(
+    `CREATE TABLE IF NOT EXISTS "Deleted_Records" ("table_name" TEXT, "record_id" TEXT, "deleted_at" TEXT, PRIMARY KEY("table_name", "record_id"))`,
+    [],
+    cfg
+  ).catch(() => {});
+
+  // 3. Catat tombstone permanen ke Deleted_Records agar HP & semua perangkat lain otomatis menghapusnya
+  await executeTursoQuery(
+    `INSERT OR REPLACE INTO "Deleted_Records" ("table_name", "record_id", "deleted_at") VALUES (?, ?, datetime('now', 'localtime'))`,
+    [tableName, cleanId],
+    cfg
+  ).catch(() => {});
 }
 
 /**

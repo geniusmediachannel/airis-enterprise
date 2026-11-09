@@ -11,7 +11,7 @@ import {
   ProductItem, CustomInvoiceItem, CustomInvoiceDetailItem, DocumentTemplateSettings,
   ShipmentGroup, TextStyleSettings, LetterSignatory, LetterDocumentSettings, POSignatory, PODocumentSettings
 } from '../types';
-import { getTableData, setTableData } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateOfficialLetterPDF, generateInvoicePDF, generatePurchaseOrderPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen } from '../services/pdfService';
 import { KopSuratBanner, OfficialStampWithSignature, OfficialCapStamp, OfficialTtdMarko } from './InvoiceOfficialAssets';
@@ -1232,12 +1232,11 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     });
     if (!ok) return;
 
-    const currentList = getTableData<OfficialLetterItem>('Data_Surat', []);
-    const updated = currentList.filter(l => l.ID_Surat !== id);
-    setTableData('Data_Surat', updated);
+    await deleteTableRow('Data_Surat', id);
+    const updated = letters.filter(l => l.ID_Surat !== id);
     setLetters(updated);
     onRefresh();
-    showToastGlobal('Surat Resmi Dihapus', `Surat ${id} berhasil dihapus dari arsip.`, 'success');
+    showToastGlobal('Surat Resmi Dihapus', `Surat ${id} berhasil dihapus dari arsip dan cloud.`, 'success');
   };
 
   const handleSaveLetter = () => {
@@ -1346,20 +1345,21 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
       type: 'danger',
       itemDetails: {
         'No. PO': id,
-        'Supplier': po?.Supplier || '-',
-        'Tanggal': po?.Tanggal || '-'
+        'Supplier': po?.Supplier || (po as any)?.Order_Ke || (po as any)?.Nama_Supplier || '-',
+        'Tanggal': po?.Tanggal || (po as any)?.Tanggal_PO || '-'
       }
     });
     if (!ok) return;
 
+    await deleteTableRow('Admin_PO', id);
+    await deleteTableRow('Admin_PO_Detail', id, 'ID_PO');
+
     const updatedH = poHeaders.filter(h => h.ID_PO !== id);
     const updatedD = poDetails.filter(d => d.ID_PO !== id);
-    setTableData('Admin_PO', updatedH);
-    setTableData('Admin_PO_Detail', updatedD);
     setPoHeaders(updatedH);
     setPoDetails(updatedD);
     onRefresh();
-    showToastGlobal('PO Dihapus', `Purchase Order ${id} berhasil dihapus.`, 'success');
+    showToastGlobal('PO Dihapus', `Purchase Order ${id} berhasil dihapus dari semua perangkat.`, 'success');
   };
 
   const formatDateIndonesia = (dateStr: string): string => {
@@ -1622,9 +1622,9 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     });
     if (!isConfirmed) return;
 
+    await deleteTableRow('Data_Custom_Invoice', id);
     const filtered = customInvoices.filter(i => i.ID_Invoice !== id);
     setCustomInvoices(filtered);
-    setTableData('Data_Custom_Invoice', filtered);
     showToastGlobal('Invoice Custom berhasil dihapus', 'success');
     onRefresh();
   };
