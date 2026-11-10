@@ -5,7 +5,7 @@ import {
   Edit2, Trash2, Upload, FileDown, CheckCircle2,
   Clock, ArrowRight, BarChart2, PackageCheck, Send, FolderOpen,
   Settings, Image, RotateCcw, TrendingUp, Sparkles, Search,
-  ArrowUpDown, ArrowUp, ArrowDown
+  ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet
 } from 'lucide-react';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
@@ -2137,102 +2137,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* Background Main Page (Otomatis disembunyikan saat mencetak dokumen modal) */}
       <div className={`space-y-6 ${isDistModalPrinting ? 'print:hidden' : ''}`}>
         {/* Top Header */}
+      {/* Header Strip Bersih */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <Truck className="text-blue-600" size={24} />
-            Distribusi & Logistik Armada
+            Distribusi &amp; Logistik Armada
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Rencana pesanan kirim, penerbitan Surat Jalan, invoice resmi, dan laporan per konsumen/tahunan.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Working Print Button */}
-          <button
-            onClick={() => window.print()}
-            className="p-2 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
-            title="Cetak Halaman (Print)"
-          >
-            <Printer size={16} />
-          </button>
-
-          {/* New Laporan Distribusi Button */}
-          <button
-            onClick={() => {
-              if (filterMonth && filterMonth !== 'all') {
-                setDistReportMonth(filterMonth);
-                const yr = filterMonth.split('-')[0];
-                if (yr) setDistReportYear(yr);
-              }
-              setShowDistReportModal(true);
-            }}
-            className="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-          >
-            <BarChart2 size={14} />
-            <span>Laporan Distribusi</span>
-          </button>
-
-          {/* Filter Periode Bulan (Tampil Lengkap 1 Sheet) */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold text-slate-600 hidden sm:inline">Periode:</span>
-
-            {/* Dropdown Seluruh Periode yang Ada Datanya di Database */}
-            {availablePeriods.length > 0 && (
-              <select
-                value={filterMonth}
-                onChange={e => setFilterMonth(e.target.value)}
-                className="px-2.5 py-1.5 text-xs font-bold border border-blue-300 rounded-lg outline-none bg-blue-50/60 text-blue-900 focus:ring-2 focus:ring-blue-500 shadow-2xs cursor-pointer max-w-[210px]"
-                title="Pilih Bulan dari Riwayat Database"
-              >
-                <option value="all">Semua Periode ({distributions.length} Data)</option>
-                {availablePeriods.map(p => (
-                  <option key={p.period} value={p.period}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <input
-              type="month"
-              value={filterMonth === 'all' ? '' : filterMonth}
-              onChange={e => setFilterMonth(e.target.value || 'all')}
-              className="px-2 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-white focus:ring-1 focus:ring-blue-500 shadow-2xs"
-              title="Pilih Bulan Spesifik untuk Ditampilkan Lengkap dalam 1 Sheet"
-            />
-            {filterMonth !== currentMonth && (
-              <button
-                type="button"
-                onClick={() => setFilterMonth(currentMonth)}
-                className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer shadow-2xs"
-                title="Tampilkan Data Bulan Berjalan"
-              >
-                Bulan Ini
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setFilterMonth(filterMonth === 'all' ? currentMonth : 'all')}
-              className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition cursor-pointer flex items-center gap-1 ${
-                filterMonth === 'all' 
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-              }`}
-              title={filterMonth === 'all' ? 'Kembali ke Bulan Ini' : 'Tampilkan Seluruh Data Semua Periode'}
-            >
-              {filterMonth === 'all' ? '✓ Semua Periode' : 'Semua Periode'}
-            </button>
-          </div>
-
-          <button
-            onClick={handleOpenAddDist}
-            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Plus size={14} />
-            <span>Kirim Barang Baru</span>
-          </button>
         </div>
       </div>
 
@@ -2350,7 +2264,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* Fleksibel dinamis sesuai Master Produk                          */}
       {/* ============================================================== */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span>Data Distribusi Terkirim</span>
@@ -2365,26 +2279,86 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               Seluruh data distribusi periode {filterMonth === 'all' ? 'semua bulan' : formatMonthName(filterMonth)} ditampilkan lengkap dalam 1 sheet.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Tombol Laporan Distribusi */}
+            <button
+              onClick={() => {
+                if (filterMonth && filterMonth !== 'all') {
+                  setDistReportMonth(filterMonth);
+                  const yr = filterMonth.split('-')[0];
+                  if (yr) setDistReportYear(yr);
+                }
+                setShowDistReportModal(true);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            >
+              <BarChart2 size={14} />
+              <span>Laporan Distribusi</span>
+            </button>
+
+            {/* Filter Bulan Input */}
+            <input
+              type="month"
+              value={filterMonth === 'all' ? '' : filterMonth}
+              onChange={e => setFilterMonth(e.target.value || 'all')}
+              className="px-2.5 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-white focus:ring-1 focus:ring-blue-500 shadow-2xs cursor-pointer"
+              title="Pilih Bulan Spesifik untuk Ditampilkan Lengkap dalam 1 Sheet"
+            />
+
+            {/* Tombol Semua Periode */}
+            <button
+              type="button"
+              onClick={() => setFilterMonth(filterMonth === 'all' ? currentMonth : 'all')}
+              className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition cursor-pointer flex items-center gap-1 ${
+                filterMonth === 'all' 
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-2xs'
+              }`}
+              title={filterMonth === 'all' ? 'Kembali ke Bulan Ini' : 'Tampilkan Seluruh Data Semua Periode'}
+            >
+              {filterMonth === 'all' ? '✓ Semua Periode' : 'Semua Periode'}
+            </button>
+
+            {/* Tombol Kirim Barang Baru */}
+            <button
+              onClick={handleOpenAddDist}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Kirim Barang Baru</span>
+            </button>
+
+            {/* Tombol Print Icon */}
+            <button
+              onClick={() => window.print()}
+              className="p-1.5 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
+              title="Cetak Halaman (Print)"
+            >
+              <Printer size={15} />
+            </button>
+
+            {/* Tombol Export Excel Icon */}
+            <button
+              onClick={handleExportDistributionExcel}
+              className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+              title="Unduh Data Distribusi format Excel standar AMDK"
+            >
+              <FileSpreadsheet size={15} />
+            </button>
+
+            {/* Tombol Bersihkan Data Qty 0 jika ada */}
             {zeroQtyDists.length > 0 && (
               <button
                 type="button"
                 onClick={handlePurgeZeroQtyDists}
-                className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                className="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg flex items-center gap-1 cursor-pointer shadow-xs transition-colors"
                 title={`Hapus ${zeroQtyDists.length} data pengiriman tanpa produk (seluruh Qty = 0) secara permanen`}
               >
                 <Trash2 size={13} />
-                <span>Bersihkan {zeroQtyDists.length} Data Qty 0</span>
+                <span>Bersihkan ({zeroQtyDists.length})</span>
               </button>
             )}
-            <button
-              onClick={handleExportDistributionExcel}
-              className="px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-              title="Unduh Data Distribusi format Excel standar AMDK"
-            >
-              <Download size={14} />
-              <span>Export Excel</span>
-            </button>
           </div>
         </div>
 

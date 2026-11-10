@@ -734,62 +734,18 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     <div className="space-y-6">
       {/* Background Main Content (Otomatis disembunyikan saat mencetak laporan modal) */}
       <div className={`space-y-6 ${isProdModalPrinting ? 'print:hidden' : ''}`}>
-        {/* Header Strip */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <Factory className="text-blue-600" size={24} />
-            Manajemen Produksi & SPK
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Penerbitan SPK, eksekusi batch produksi, pemotongan stok bahan penolong otomatis, dan laporan komprehensif.
-          </p>
+        {/* Header Strip Bersih */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              <Factory className="text-blue-600" size={24} />
+              Manajemen Produksi &amp; SPK
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Penerbitan SPK, eksekusi batch produksi, pemotongan stok bahan penolong otomatis, dan laporan komprehensif.
+            </p>
+          </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Working Print Button */}
-          <button
-            onClick={() => window.print()}
-            className="p-2 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
-            title="Cetak Halaman"
-          >
-            <Printer size={16} />
-          </button>
-
-          {/* New Laporan Produksi Button */}
-          <button
-            onClick={() => setShowReportModal(true)}
-            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-          >
-            <BarChart2 size={14} />
-            <span>Laporan Produksi</span>
-          </button>
-
-          <input
-            type="month"
-            value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
-            className="px-3 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none"
-          />
-
-          <button
-            onClick={() => handleOpenDirectProd()}
-            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Catat dan input hasil produksi secara langsung tanpa harus melalui alur bertahap SPK"
-          >
-            <Plus size={14} />
-            <span>Input Langsung</span>
-          </button>
-
-          <button
-            onClick={handleOpenAddSpk}
-            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Plus size={14} />
-            <span>Terbitkan SPK</span>
-          </button>
-        </div>
-      </div>
 
       {/* Row 1: Rencana Produksi (SPK) Aktif */}
       <div>
@@ -947,20 +903,60 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
             </div>
             <p className="text-xs text-slate-500">Stok produk jadi otomatis bertambah dan bahan penolong terpotong.</p>
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
+            {/* Tombol Laporan Produksi */}
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            >
+              <BarChart2 size={14} />
+              <span>Laporan Produksi</span>
+            </button>
+
+            {/* Filter Bulan Input */}
+            <input
+              type="month"
+              value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}
+              className="px-2.5 py-1.5 text-xs font-mono font-semibold border border-slate-300 rounded-lg outline-none bg-white focus:ring-1 focus:ring-blue-500 shadow-2xs cursor-pointer"
+            />
+
+            {/* Tombol Input Langsung */}
             <button
               onClick={() => handleOpenDirectProd()}
-              className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Catat dan input hasil produksi secara langsung tanpa harus melalui alur bertahap SPK"
             >
               <Plus size={14} />
-              <span>Input Hasil Langsung</span>
+              <span>Input Langsung</span>
             </button>
+
+            {/* Tombol Terbitkan SPK */}
+            <button
+              onClick={handleOpenAddSpk}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Terbitkan SPK</span>
+            </button>
+
+            {/* Tombol Print Icon */}
+            <button
+              onClick={() => window.print()}
+              className="p-1.5 text-slate-700 bg-white hover:bg-slate-100 active:bg-slate-200 border border-slate-300 rounded-lg shadow-xs transition-colors flex items-center justify-center cursor-pointer"
+              title="Cetak Halaman (Print)"
+            >
+              <Printer size={15} />
+            </button>
+
+            {/* Tombol Export Excel Icon */}
             <button
               onClick={() => exportDataToExcel(filteredProductions, 'Produksi', `AIRIS_Produksi_${filterMonth}`, `LAPORAN HASIL PRODUKSI AMDK - PERIODE ${filterMonth}`)}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+              title="Ekspor Data Hasil Produksi ke Excel"
             >
-              <Download size={14} />
-              <span>Export Excel</span>
+              <FileSpreadsheet size={15} />
             </button>
           </div>
         </div>
