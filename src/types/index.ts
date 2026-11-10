@@ -290,6 +290,7 @@ export interface QCHeader {
 }
 
 export interface QCDetailCycle {
+  ID_Detail?: number | string;
   ID_QC: string;
   Siklus: number;
   // Air Baku: pH, TDS, Kekeruhan, Bau, Coliform

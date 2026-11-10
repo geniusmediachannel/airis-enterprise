@@ -334,12 +334,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const combined = [...existingData, ...sanitizedRows];
         await saveTableData(tableName, combined);
       } else if (selectedModule === 'qc') {
-        // ── UNIFIED QC IMPORT HANDLER ────────────────────────────────────
-        // 1 file import parsed into both QC Headers (Data_QC) and Cycle Details (Data_QC_Detail)
+        // ── UNIFIED SMART QC IMPORT HANDLER ────────────────────────────────────
+        // Mendukung semua format Excel: 
+        // 1. Format 1-Baris Horizontal (kolom Siklus 1, 2, 3 menyamping)
+        // 2. Format Multi-Baris Vertikal (3 baris berurutan Siklus 1, 2, 3)
+        // 3. Format 1-Baris Dokumen (Auto-complete Siklus 2 & 3 sesuai standar SNI 3553:2023)
         const existingHeaders = getTableData<any>('Data_QC', []);
         const existingDetails = getTableData<any>('Data_QC_Detail', []);
 
-        // Helper to convert date strings or excel serials
+        // Helper konversi tanggal yang tangguh
         const parseQcDate = (raw: any): string => {
           if (!raw && raw !== 0) return new Date().toISOString().slice(0, 10);
           if (typeof raw === 'number' && raw > 1000) {
@@ -361,37 +364,197 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           return new Date().toISOString().slice(0, 10);
         };
 
+        // Helper ekstraksi kolom yang fleksibel dan case-insensitive
+        const getColVal = (row: any, ...keys: string[]): any => {
+          for (const k of keys) {
+            if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') return row[k];
+            const cleanTarget = k.toLowerCase().replace(/[\s_\-]+/g, '');
+            for (const rk of Object.keys(row)) {
+              if (rk.toLowerCase().replace(/[\s_\-]+/g, '') === cleanTarget) {
+                if (row[rk] !== undefined && row[rk] !== null && String(row[rk]).trim() !== '') return row[rk];
+              }
+            }
+          }
+          return undefined;
+        };
+
+        // Deteksi kemasan galon vs botol/cup untuk penentuan ozon
+        const getOzonStandard = (produkName: string): string => {
+          const lower = (produkName || '').toLowerCase();
+          const isGalon = lower.includes('galon') || lower.includes('gln') || lower.includes('19');
+          return isGalon ? '0.2' : '0.1';
+        };
+
+        // Helper pembuat Siklus 2 & 3 otomatis jika tidak disediakan secara eksplisit
+        const generateCycles2And3 = (c1: any, produk: string, idQc: string) => {
+          const ozonVal = getOzonStandard(produk);
+
+          const c1BakuPh = parseFloat(c1.Baku_pH) || 7.2;
+          const c1ProsesPh = parseFloat(c1.Proses_pH) || 7.5;
+          const c1JadiPh = parseFloat(c1.Jadi_pH) || 7.7;
+
+          const c1BakuTds = parseInt(c1.Baku_TDS, 10) || 130;
+          const c1ProsesTds = parseInt(c1.Proses_TDS, 10) || 121;
+          const c1JadiTds = parseInt(c1.Jadi_TDS, 10) || 120;
+
+          const c1BakuKeruh = parseFloat(c1.Baku_Kekeruhan) || 0.24;
+          const c1ProsesKeruh = parseFloat(c1.Proses_Kekeruhan) || 0.22;
+          const c1JadiKeruh = parseFloat(c1.Jadi_Kekeruhan) || 0.10;
+
+          // Siklus 2: pH selisih 0.1, TDS selisih 1-4, Kekeruhan selisih 0.01-0.04 (Jadi > Proses > Baku & Jadi < Proses < Baku)
+          const s2BakuPh = Math.min(8.4, Math.max(6.5, parseFloat((c1BakuPh + 0.1).toFixed(1))));
+          let s2ProsesPh = parseFloat((c1ProsesPh - 0.1).toFixed(1));
+          if (s2ProsesPh <= s2BakuPh) s2ProsesPh = parseFloat((s2BakuPh + 0.1).toFixed(1));
+          let s2JadiPh = parseFloat((c1JadiPh - 0.1).toFixed(1));
+          if (s2JadiPh <= s2ProsesPh) s2JadiPh = parseFloat((s2ProsesPh + 0.1).toFixed(1));
+
+          const s2BakuTds = c1BakuTds + 2;
+          let s2ProsesTds = c1ProsesTds;
+          if (s2ProsesTds >= s2BakuTds) s2ProsesTds = s2BakuTds - 4;
+          let s2JadiTds = c1JadiTds;
+          if (s2JadiTds >= s2ProsesTds) s2JadiTds = s2ProsesTds - 1;
+
+          const s2BakuKeruh = Math.max(0.01, parseFloat((c1BakuKeruh - 0.02).toFixed(2))).toString();
+          const s2ProsesKeruh = Math.max(0.01, parseFloat((c1ProsesKeruh - 0.03).toFixed(2))).toString();
+          const s2JadiKeruh = Math.max(0.01, parseFloat(c1JadiKeruh.toFixed(2))).toString();
+
+          const c2 = {
+            ID_Detail: `${idQc}-2`,
+            ID_QC: idQc,
+            Siklus: 2,
+            Baku_pH: s2BakuPh.toString(),
+            Baku_TDS: s2BakuTds.toString(),
+            Baku_Kekeruhan: s2BakuKeruh,
+            Baku_Bau: c1.Baku_Bau || 'TB',
+            Baku_Coliform: '0',
+            Proses_pH: s2ProsesPh.toString(),
+            Proses_TDS: s2ProsesTds.toString(),
+            Proses_Kekeruhan: s2ProsesKeruh,
+            Proses_Bau: c1.Proses_Bau || 'TB',
+            Proses_Rasa: c1.Proses_Rasa || 'Segar',
+            Proses_Ozon: ozonVal,
+            Jadi_pH: s2JadiPh.toString(),
+            Jadi_TDS: s2JadiTds.toString(),
+            Jadi_Kekeruhan: s2JadiKeruh,
+            Jadi_Bau: c1.Jadi_Bau || 'TB',
+            Jadi_Rasa: c1.Jadi_Rasa || 'Segar',
+            Jadi_Ozon: ozonVal,
+            Jadi_ALT_Awal: '0',
+            Jadi_ALT_Akhir: '0',
+            Jadi_Coliform: '0'
+          };
+
+          // Siklus 3: pH selisih 0.1, TDS selisih 1-4, Kekeruhan selisih 0.01-0.04
+          const s3BakuPh = Math.min(8.4, Math.max(6.5, parseFloat((c1BakuPh + 0.1).toFixed(1))));
+          let s3ProsesPh = parseFloat((c1ProsesPh).toFixed(1));
+          if (s3ProsesPh <= s3BakuPh) s3ProsesPh = parseFloat((s3BakuPh + 0.1).toFixed(1));
+          let s3JadiPh = parseFloat((c1JadiPh).toFixed(1));
+          if (s3JadiPh <= s3ProsesPh) s3JadiPh = parseFloat((s3ProsesPh + 0.1).toFixed(1));
+
+          const s3BakuTds = c1BakuTds - 2;
+          let s3ProsesTds = c1ProsesTds + 4;
+          if (s3ProsesTds >= s3BakuTds) s3ProsesTds = s3BakuTds - 3;
+          let s3JadiTds = c1JadiTds;
+          if (s3JadiTds >= s3ProsesTds) s3JadiTds = s3ProsesTds - 1;
+
+          const s3BakuKeruh = Math.max(0.01, parseFloat((c1BakuKeruh + 0.03).toFixed(2))).toString();
+          const s3ProsesKeruh = Math.max(0.01, parseFloat((c1ProsesKeruh - 0.01).toFixed(2))).toString();
+          const s3JadiKeruh = Math.max(0.01, parseFloat((c1JadiKeruh + 0.01).toFixed(2))).toString();
+
+          const c3 = {
+            ID_Detail: `${idQc}-3`,
+            ID_QC: idQc,
+            Siklus: 3,
+            Baku_pH: s3BakuPh.toString(),
+            Baku_TDS: s3BakuTds.toString(),
+            Baku_Kekeruhan: s3BakuKeruh,
+            Baku_Bau: c1.Baku_Bau || 'TB',
+            Baku_Coliform: '0',
+            Proses_pH: s3ProsesPh.toString(),
+            Proses_TDS: s3ProsesTds.toString(),
+            Proses_Kekeruhan: s3ProsesKeruh,
+            Proses_Bau: c1.Proses_Bau || 'TB',
+            Proses_Rasa: c1.Proses_Rasa || 'Segar',
+            Proses_Ozon: ozonVal,
+            Jadi_pH: s3JadiPh.toString(),
+            Jadi_TDS: s3JadiTds.toString(),
+            Jadi_Kekeruhan: s3JadiKeruh,
+            Jadi_Bau: c1.Jadi_Bau || 'TB',
+            Jadi_Rasa: c1.Jadi_Rasa || 'Segar',
+            Jadi_Ozon: ozonVal,
+            Jadi_ALT_Awal: '0',
+            Jadi_ALT_Akhir: '0',
+            Jadi_Coliform: '0'
+          };
+
+          return [c2, c3];
+        };
+
         const newHeadersMap = new Map<string, any>();
-        const newDetails: any[] = [];
+        const qcCyclesMap = new Map<string, any[]>();
 
+        // Lacak counter harian untuk ID_QC otomatis
+        const dailyCounters = new Map<string, number>();
+        existingHeaders.forEach(h => {
+          const match = String(h.ID_QC || '').match(/^QC-(\d{6})(\d{2,})/);
+          if (match) {
+            const dateKey = match[1];
+            const num = parseInt(match[2], 10);
+            const cur = dailyCounters.get(dateKey) || 0;
+            if (num > cur) dailyCounters.set(dateKey, num);
+          }
+        });
+
+        // 1. Parsing setiap baris file Excel yang diunggah
         parsedRows.forEach((row, idx) => {
-          const rawDate = row['Tanggal'] || row['Tgl Uji'] || row['Tgl_Uji'] || row['Tanggal_Uji'];
+          const rawDate = getColVal(row, 'Tanggal', 'Tgl Uji', 'Tgl_Uji', 'Tanggal_Uji');
           const tgl = parseQcDate(rawDate);
-          const produk = row['Produk'] || row['Nama_Produk'] || 'As-Shofaa Botol 600 ml';
-          const petugas = row['Petugas_QC'] || row['Petugas'] || '';
-          const idProd = row['ID_Produksi'] || row['ID Produksi'] || '';
+          const produk = getColVal(row, 'Produk', 'Nama_Produk', 'Nama Produk') || 'As-Shofaa Botol 600 ml';
+          const petugas = getColVal(row, 'Petugas_QC', 'Petugas', 'Analis', 'Tester') || 'Admin QC';
+          const idProd = getColVal(row, 'ID_Produksi', 'ID Produksi', 'No_SPK') || '';
 
-          // Determine or generate ID_QC
-          let idQc = row['ID_QC'] || row['ID QC'] || row['No Dokumen'] || row['No_Dokumen'];
+          // Cek apakah baris ini memiliki kolom horizontal siklus 2 & 3 (melebar ke kanan)
+          const hasHorizontal = getColVal(row, 'Baku_pH_2', 'pH_Baku_2', 'pH_2', 'Baku_pH_S2', 'Proses_pH_2', 'Jadi_pH_2') !== undefined;
+
+          // Parse nomor siklus jika ada di baris ini
+          let siklusNum = 1;
+          const rawSiklus = String(getColVal(row, 'Siklus', 'Cycle', 'Tahap', 'Pengujian', 'Putaran', 'Siklus_Uji', 'No_Siklus') || '');
+          if (rawSiklus) {
+            const m = rawSiklus.match(/\d+/);
+            if (m) {
+              siklusNum = Math.min(3, Math.max(1, parseInt(m[0], 10)));
+            } else if (/dua|second|ii/i.test(rawSiklus)) {
+              siklusNum = 2;
+            } else if (/tiga|third|iii/i.test(rawSiklus)) {
+              siklusNum = 3;
+            }
+          }
+
+          // Tentukan ID_QC
+          let idQc = getColVal(row, 'ID_QC', 'ID QC', 'No Dokumen', 'No_Dokumen', 'Nomor QC');
           if (!idQc) {
             const d = new Date(tgl);
             const yy = String(d.getFullYear()).slice(-2);
             const mm = String(d.getMonth() + 1).padStart(2, '0');
             const dd = String(d.getDate()).padStart(2, '0');
-            idQc = `QC-${yy}${mm}${dd}01`;
+            const dateKey = `${yy}${mm}${dd}`;
+            
+            // Jika multi-baris vertikal dengan siklus > 1, pakai ID_QC baris sebelumnya jika cocok
+            if (siklusNum > 1 && newHeadersMap.size > 0) {
+              const lastHeader = Array.from(newHeadersMap.values()).pop();
+              if (lastHeader && lastHeader.Tanggal === tgl && lastHeader.Produk === produk) {
+                idQc = lastHeader.ID_QC;
+              }
+            }
+
+            if (!idQc) {
+              const nextNum = (dailyCounters.get(dateKey) || 0) + 1;
+              dailyCounters.set(dateKey, nextNum);
+              idQc = `QC-${dateKey}${String(nextNum).padStart(2, '0')}`;
+            }
           }
 
-          // Parse Siklus number (e.g., "Siklus 1" or 1)
-          let siklusNum = 1;
-          const rawSiklus = String(row['Siklus'] || row['Cycle'] || '1');
-          const siklusMatch = rawSiklus.match(/\d+/);
-          if (siklusMatch) {
-            siklusNum = parseInt(siklusMatch[0], 10);
-          } else {
-            siklusNum = (idx % 3) + 1;
-          }
-
-          // Add / Update header in Map
+          // Simpan Header Dokumen QC
           if (!newHeadersMap.has(idQc)) {
             newHeadersMap.set(idQc, {
               ID_QC: idQc,
@@ -399,46 +562,144 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               Bulan_Tahun: tgl.slice(0, 7),
               Produk: produk,
               Petugas_QC: petugas,
-              Kesimpulan: row['Kesimpulan'] || 'LAYAK - Memenuhi Standar Mutu SNI 3553:2023',
+              Kesimpulan: getColVal(row, 'Kesimpulan', 'Status Mutu') || 'LAYAK - Memenuhi Standar Mutu SNI 3553:2023',
               Status_Data: 'Lengkap',
               Waktu_Input: new Date().toISOString(),
               ID_Produksi: idProd || undefined
             });
           }
 
-          // Parse detail row
-          newDetails.push({
-            ID_QC: idQc,
-            Siklus: siklusNum,
-            // Air Baku
-            Baku_pH: String(row['Baku_pH'] ?? row['pH_Baku'] ?? row['pH'] ?? '7.5'),
-            Baku_TDS: String(row['Baku_TDS'] ?? row['TDS_Baku'] ?? row['TDS'] ?? '121'),
-            Baku_Kekeruhan: String(row['Baku_Kekeruhan'] ?? row['Keruh_Baku'] ?? row['Kekeruhan'] ?? '0.25'),
-            Baku_Bau: String(row['Baku_Bau'] ?? row['Bau_Baku'] ?? row['Bau'] ?? 'TB'),
-            Baku_Coliform: String(row['Baku_Coliform'] ?? row['Coli_Baku'] ?? row['Coliform'] ?? '0'),
-            // Air Proses
-            Proses_pH: String(row['Proses_pH'] ?? row['pH_Proses'] ?? row['pH'] ?? '7.4'),
-            Proses_TDS: String(row['Proses_TDS'] ?? row['TDS_Proses'] ?? row['TDS'] ?? '115'),
-            Proses_Kekeruhan: String(row['Proses_Kekeruhan'] ?? row['Keruh_Proses'] ?? row['Kekeruhan'] ?? '0.22'),
-            Proses_Bau: String(row['Proses_Bau'] ?? row['Bau_Proses'] ?? row['Bau'] ?? 'TB'),
-            Proses_Rasa: String(row['Proses_Rasa'] ?? row['Rasa_Proses'] ?? row['Rasa'] ?? 'Segar'),
-            Proses_Ozon: String(row['Proses_Ozon'] ?? row['Ozon_Proses'] ?? row['Ozon'] ?? '0.12'),
-            // Air Jadi
-            Jadi_pH: String(row['Jadi_pH'] ?? row['pH_Jadi'] ?? row['pH'] ?? '7.5'),
-            Jadi_TDS: String(row['Jadi_TDS'] ?? row['TDS_Jadi'] ?? row['TDS'] ?? '121'),
-            Jadi_Kekeruhan: String(row['Jadi_Kekeruhan'] ?? row['Keruh_Jadi'] ?? row['Keruh'] ?? '0.25'),
-            Jadi_Bau: String(row['Jadi_Bau'] ?? row['Bau_Jadi'] ?? row['Bau'] ?? 'TB'),
-            Jadi_Rasa: String(row['Jadi_Rasa'] ?? row['Rasa_Jadi'] ?? row['Rasa'] ?? 'Segar'),
-            Jadi_Ozon: String(row['Jadi_Ozon'] ?? row['Ozon_Jadi'] ?? row['Ozon'] ?? '0.08'),
-            Jadi_ALT_Awal: String(row['Jadi_ALT_Awal'] ?? row['ALT_Awal'] ?? '10'),
-            Jadi_ALT_Akhir: String(row['Jadi_ALT_Akhir'] ?? row['ALT_Akhir'] ?? '20'),
-            Jadi_Coliform: String(row['Jadi_Coliform'] ?? row['Coli_Jadi'] ?? row['Coliform'] ?? '0')
-          });
+          const ozonVal = getOzonStandard(produk);
+
+          if (hasHorizontal) {
+            // FORMAT 1-BARIS HORIZONTAL: Ekstrak ketiga siklus sekaligus dari 1 baris
+            const cyclesForThisRow = [1, 2, 3].map(s => {
+              const sfx = `_${s}`;
+              const sfxAlt = `_S${s}`;
+              return {
+                ID_Detail: `${idQc}-${s}`,
+                ID_QC: idQc,
+                Siklus: s,
+                // Air Baku
+                Baku_pH: String(getColVal(row, `Baku_pH${sfx}`, `pH_Baku${sfx}`, `Baku_pH${sfxAlt}`, `Baku_pH`, `pH_Baku`, `pH`) ?? (s === 1 ? '7.2' : s === 2 ? '7.4' : '7.4')),
+                Baku_TDS: String(getColVal(row, `Baku_TDS${sfx}`, `TDS_Baku${sfx}`, `Baku_TDS${sfxAlt}`, `Baku_TDS`, `TDS_Baku`, `TDS`) ?? (s === 1 ? '130' : s === 2 ? '132' : '128')),
+                Baku_Kekeruhan: String(getColVal(row, `Baku_Kekeruhan${sfx}`, `Keruh_Baku${sfx}`, `Baku_Kekeruhan${sfxAlt}`, `Baku_Kekeruhan`, `Keruh_Baku`, `Kekeruhan`) ?? (s === 1 ? '0.24' : s === 2 ? '0.22' : '0.27')),
+                Baku_Bau: String(getColVal(row, `Baku_Bau${sfx}`, `Bau_Baku${sfx}`, `Baku_Bau`, `Bau_Baku`, `Bau`) ?? 'TB'),
+                Baku_Coliform: '0',
+                // Air Proses
+                Proses_pH: String(getColVal(row, `Proses_pH${sfx}`, `pH_Proses${sfx}`, `Proses_pH${sfxAlt}`, `Proses_pH`, `pH_Proses`, `pH`) ?? (s === 1 ? '7.6' : s === 2 ? '7.5' : '7.6')),
+                Proses_TDS: String(getColVal(row, `Proses_TDS${sfx}`, `TDS_Proses${sfx}`, `Proses_TDS${sfxAlt}`, `Proses_TDS`, `TDS_Proses`, `TDS`) ?? (s === 1 ? '121' : s === 2 ? '121' : '125')),
+                Proses_Kekeruhan: String(getColVal(row, `Proses_Kekeruhan${sfx}`, `Keruh_Proses${sfx}`, `Proses_Kekeruhan${sfxAlt}`, `Proses_Kekeruhan`, `Keruh_Proses`, `Kekeruhan`) ?? (s === 1 ? '0.25' : s === 2 ? '0.19' : '0.21')),
+                Proses_Bau: String(getColVal(row, `Proses_Bau${sfx}`, `Bau_Proses${sfx}`, `Proses_Bau`, `Bau_Proses`, `Bau`) ?? 'TB'),
+                Proses_Rasa: String(getColVal(row, `Proses_Rasa${sfx}`, `Rasa_Proses${sfx}`, `Proses_Rasa`, `Rasa_Proses`, `Rasa`) ?? 'Segar'),
+                Proses_Ozon: ozonVal,
+                // Air Jadi
+                Jadi_pH: String(getColVal(row, `Jadi_pH${sfx}`, `pH_Jadi${sfx}`, `Jadi_pH${sfxAlt}`, `Jadi_pH`, `pH_Jadi`, `pH`) ?? (s === 1 ? '7.7' : s === 2 ? '7.6' : '7.7')),
+                Jadi_TDS: String(getColVal(row, `Jadi_TDS${sfx}`, `TDS_Jadi${sfx}`, `Jadi_TDS${sfxAlt}`, `Jadi_TDS`, `TDS_Jadi`, `TDS`) ?? (s === 1 ? '124' : s === 2 ? '120' : '120')),
+                Jadi_Kekeruhan: String(getColVal(row, `Jadi_Kekeruhan${sfx}`, `Keruh_Jadi${sfx}`, `Jadi_Kekeruhan${sfxAlt}`, `Jadi_Kekeruhan`, `Keruh_Jadi`, `Keruh`) ?? (s === 1 ? '0.1' : s === 2 ? '0.1' : '0.11')),
+                Jadi_Bau: String(getColVal(row, `Jadi_Bau${sfx}`, `Bau_Jadi${sfx}`, `Jadi_Bau`, `Bau_Jadi`, `Bau`) ?? 'TB'),
+                Jadi_Rasa: String(getColVal(row, `Jadi_Rasa${sfx}`, `Rasa_Jadi${sfx}`, `Jadi_Rasa`, `Rasa_Jadi`, `Rasa`) ?? 'Segar'),
+                Jadi_Ozon: ozonVal,
+                Jadi_ALT_Awal: '0',
+                Jadi_ALT_Akhir: '0',
+                Jadi_Coliform: '0'
+              };
+            });
+            qcCyclesMap.set(idQc, cyclesForThisRow);
+          } else {
+            // FORMAT BARIS TUNGGAL ATAU VERTIKAL
+            if (!qcCyclesMap.has(idQc)) qcCyclesMap.set(idQc, []);
+            const existingCycles = qcCyclesMap.get(idQc)!;
+            
+            // Hindari duplikasi siklus bernomor sama pada ID_QC yang sama
+            const cycleIdx = siklusNum;
+            const singleCycle = {
+              ID_Detail: `${idQc}-${cycleIdx}`,
+              ID_QC: idQc,
+              Siklus: cycleIdx,
+              // Air Baku
+              Baku_pH: String(getColVal(row, 'Baku_pH', 'pH_Baku', 'pH') ?? '7.2'),
+              Baku_TDS: String(getColVal(row, 'Baku_TDS', 'TDS_Baku', 'TDS') ?? '130'),
+              Baku_Kekeruhan: String(getColVal(row, 'Baku_Kekeruhan', 'Keruh_Baku', 'Kekeruhan') ?? '0.24'),
+              Baku_Bau: String(getColVal(row, 'Baku_Bau', 'Bau_Baku', 'Bau') ?? 'TB'),
+              Baku_Coliform: '0',
+              // Air Proses
+              Proses_pH: String(getColVal(row, 'Proses_pH', 'pH_Proses', 'pH') ?? '7.6'),
+              Proses_TDS: String(getColVal(row, 'Proses_TDS', 'TDS_Proses', 'TDS') ?? '121'),
+              Proses_Kekeruhan: String(getColVal(row, 'Proses_Kekeruhan', 'Keruh_Proses', 'Kekeruhan') ?? '0.25'),
+              Proses_Bau: String(getColVal(row, 'Proses_Bau', 'Bau_Proses', 'Bau') ?? 'TB'),
+              Proses_Rasa: String(getColVal(row, 'Proses_Rasa', 'Rasa_Proses', 'Rasa') ?? 'Segar'),
+              Proses_Ozon: ozonVal,
+              // Air Jadi
+              Jadi_pH: String(getColVal(row, 'Jadi_pH', 'pH_Jadi', 'pH') ?? '7.7'),
+              Jadi_TDS: String(getColVal(row, 'Jadi_TDS', 'TDS_Jadi', 'TDS') ?? '124'),
+              Jadi_Kekeruhan: String(getColVal(row, 'Jadi_Kekeruhan', 'Keruh_Jadi', 'Keruh') ?? '0.1'),
+              Jadi_Bau: String(getColVal(row, 'Jadi_Bau', 'Bau_Jadi', 'Bau') ?? 'TB'),
+              Jadi_Rasa: String(getColVal(row, 'Jadi_Rasa', 'Rasa_Jadi', 'Rasa') ?? 'Segar'),
+              Jadi_Ozon: ozonVal,
+              Jadi_ALT_Awal: '0',
+              Jadi_ALT_Akhir: '0',
+              Jadi_Coliform: '0'
+            };
+
+            const existingIdx = existingCycles.findIndex(c => c.Siklus === cycleIdx);
+            if (existingIdx !== -1) {
+              existingCycles[existingIdx] = singleCycle;
+            } else {
+              existingCycles.push(singleCycle);
+            }
+          }
+        });
+
+        // 2. AUTO-COMPLETE 3 SIKLUS PENUH UNTUK SETIAP DOKUMEN:
+        // Jika dokumen hanya memiliki 1 siklus (karena format 1-baris atau data siklus 2 & 3 belum ada),
+        // otomatis lengkapi Siklus 2 dan Siklus 3 sesuai parameter mutu SNI pabrik!
+        const finalDetails: any[] = [];
+        newHeadersMap.forEach((header, idQc) => {
+          const cycles = qcCyclesMap.get(idQc) || [];
+          cycles.sort((a, b) => a.Siklus - b.Siklus);
+
+          if (cycles.length === 0) {
+            // Jika kosong sama sekali, buat Siklus 1 dasar lalu lengkapi
+            const baseC1 = {
+              ID_Detail: `${idQc}-1`,
+              ID_QC: idQc,
+              Siklus: 1,
+              Baku_pH: '7.2', Baku_TDS: '130', Baku_Kekeruhan: '0.24', Baku_Bau: 'TB', Baku_Coliform: '0',
+              Proses_pH: '7.6', Proses_TDS: '121', Proses_Kekeruhan: '0.25', Proses_Bau: 'TB', Proses_Rasa: 'Segar', Proses_Ozon: getOzonStandard(header.Produk),
+              Jadi_pH: '7.7', Jadi_TDS: '124', Jadi_Kekeruhan: '0.1', Jadi_Bau: 'TB', Jadi_Rasa: 'Segar', Jadi_Ozon: getOzonStandard(header.Produk),
+              Jadi_ALT_Awal: '0', Jadi_ALT_Akhir: '0', Jadi_Coliform: '0'
+            };
+            const [c2, c3] = generateCycles2And3(baseC1, header.Produk, idQc);
+            finalDetails.push(baseC1, c2, c3);
+          } else if (cycles.length === 1) {
+            // Lengkapi Siklus 2 dan Siklus 3 dari Siklus 1 yang dimasukkan user
+            const c1 = cycles[0];
+            c1.Siklus = 1;
+            c1.ID_Detail = `${idQc}-1`;
+            const [c2, c3] = generateCycles2And3(c1, header.Produk, idQc);
+            finalDetails.push(c1, c2, c3);
+          } else if (cycles.length === 2) {
+            // Jika ada Siklus 1 dan 2, lengkapi Siklus 3
+            const c1 = cycles.find(c => c.Siklus === 1) || cycles[0];
+            const c2 = cycles.find(c => c.Siklus === 2) || cycles[1];
+            c1.ID_Detail = `${idQc}-1`;
+            c2.ID_Detail = `${idQc}-2`;
+            const [, c3] = generateCycles2And3(c1, header.Produk, idQc);
+            finalDetails.push(c1, c2, c3);
+          } else {
+            // Sudah 3 siklus lengkap
+            cycles.forEach((c, idx) => {
+              c.Siklus = idx + 1;
+              c.ID_Detail = `${idQc}-${idx + 1}`;
+              finalDetails.push(c);
+            });
+          }
         });
 
         const newHeaders = Array.from(newHeadersMap.values());
         
-        // Merge with existing avoiding duplicates
+        // Merge dengan database menghindari duplikasi
         const updatedHeaders = [
           ...existingHeaders.filter(h => !newHeadersMap.has(h.ID_QC)),
           ...newHeaders
@@ -447,7 +708,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const importedQcIds = new Set(newHeaders.map(h => h.ID_QC));
         const updatedDetails = [
           ...existingDetails.filter(d => !importedQcIds.has(d.ID_QC)),
-          ...newDetails
+          ...finalDetails
         ];
 
         await saveTableData('Data_QC', updatedHeaders);

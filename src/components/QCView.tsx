@@ -517,7 +517,9 @@ export const QCView: React.FC<QCViewProps> = ({
       const otherDetails = currentDetails.filter(d => d.ID_QC !== editingQcHeader.ID_QC);
       const newDetails: QCDetailCycle[] = [1, 2, 3].map(s => {
         const idx = s - 1;
+        const existingRow = currentDetails.find(d => d.ID_QC === editingQcHeader.ID_QC && d.Siklus === s);
         return {
+          ID_Detail: existingRow?.ID_Detail || `${editingQcHeader.ID_QC}-${s}`,
           ID_QC: editingQcHeader.ID_QC,
           Siklus: s,
           Baku_pH: cycles.baku[idx]?.ph ?? '',
@@ -569,6 +571,7 @@ export const QCView: React.FC<QCViewProps> = ({
       const newDetails: QCDetailCycle[] = [1, 2, 3].map(s => {
         const idx = s - 1;
         return {
+          ID_Detail: `${newQcId}-${s}`,
           ID_QC: newQcId,
           Siklus: s,
           Baku_pH: cycles.baku[idx]?.ph ?? '',
