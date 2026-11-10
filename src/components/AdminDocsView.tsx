@@ -80,6 +80,145 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   const [letterSearchQuery, setLetterSearchQuery] = useState<string>('');
   const [poSearchQuery, setPoSearchQuery] = useState<string>('');
 
+  // State Filter Periode Purchase Order (PO)
+  const [poFilterMonth, setPoFilterMonth] = useState<string>('all');
+  const [poFilterYear, setPoFilterYear] = useState<string>('all');
+
+  // Helper ekstraksi komponen tanggal (Tahun, Bulan, Hari) secara presisi dan terstruktur untuk PO
+  const extractPoDateParts = (raw: any): { year: string; month: string; day: string } | null => {
+    if (!raw && raw !== 0) return null;
+    const str = String(raw).trim();
+    if (!str || str === '-' || str === 'null' || str === 'undefined') return null;
+
+    // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (isoMatch) {
+      return {
+        year: isoMatch[1],
+        month: isoMatch[2].padStart(2, '0'),
+        day: isoMatch[3].padStart(2, '0')
+      };
+    }
+
+    // 2. Format Indonesia dengan teks bulan (misal "5 FEBRUARI 2025", "05-Feb-2025")
+    const monthMap: Record<string, string> = {
+      jan: '01', januari: '01', january: '01',
+      feb: '02', februari: '02', february: '02',
+      mar: '03', maret: '03', march: '03',
+      apr: '04', april: '04',
+      mei: '05', may: '05',
+      jun: '06', juni: '06', june: '06',
+      jul: '07', juli: '07', july: '07',
+      agu: '08', agust: '08', agustus: '08', aug: '08', august: '08',
+      sep: '09', sept: '09', september: '09',
+      okt: '10', oktober: '10', oct: '10', october: '10',
+      nov: '11', nop: '11', nopember: '11', november: '11',
+      des: '12', desember: '12', dec: '12', december: '12'
+    };
+
+    const textMonthMatch = str.match(/^(\d{1,2})[-\s/.]+([A-Za-z]+)[-\s/.]+(\d{2,4})/);
+    if (textMonthMatch) {
+      const day = textMonthMatch[1].padStart(2, '0');
+      const monStr = textMonthMatch[2].toLowerCase();
+      let mon = monthMap[monStr];
+      if (!mon) {
+        for (const [key, val] of Object.entries(monthMap)) {
+          if (monStr.startsWith(key)) {
+            mon = val;
+            break;
+          }
+        }
+      }
+      let yr = textMonthMatch[3];
+      if (yr.length === 2) {
+        yr = parseInt(yr, 10) >= 50 ? '19' + yr : '20' + yr;
+      }
+      if (mon) {
+        return { year: yr, month: mon, day };
+      }
+    }
+
+    // 3. Format DD-MM-YYYY or DD/MM/YYYY
+    const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (dmyMatch) {
+      const day = dmyMatch[1].padStart(2, '0');
+      const mon = dmyMatch[2].padStart(2, '0');
+      let yr = dmyMatch[3];
+      if (yr.length === 2) {
+        yr = parseInt(yr, 10) >= 50 ? '19' + yr : '20' + yr;
+      }
+      return { year: yr, month: mon, day };
+    }
+
+    // 4. Excel serial number (misal 45693 = 2025-02-05)
+    if (/^\d{5}$/.test(str)) {
+      const serial = parseInt(str, 10);
+      const date = new Date((serial - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return {
+          year: String(date.getUTCFullYear()),
+          month: String(date.getUTCMonth() + 1).padStart(2, '0'),
+          day: String(date.getUTCDate()).padStart(2, '0')
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const getPoMonthKey = (po: AdminPOHeader): string => {
+    const parts = extractPoDateParts(po.Tanggal_PO);
+    return parts ? `${parts.year}-${parts.month}` : '';
+  };
+
+  const getPoYear = (po: AdminPOHeader): string => {
+    const parts = extractPoDateParts(po.Tanggal_PO);
+    return parts ? parts.year : '';
+  };
+
+  // Daftar tahun unik yang tersedia pada data PO
+  const availablePoYears = useMemo(() => {
+    const map = new Map<string, number>();
+    (poHeaders || []).forEach(p => {
+      const yr = getPoYear(p);
+      if (yr && /^\d{4}$/.test(yr)) {
+        map.set(yr, (map.get(yr) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([year, count]) => ({ year, count }))
+      .sort((a, b) => b.year.localeCompare(a.year));
+  }, [poHeaders]);
+
+  // Daftar bulan unik yang tersedia pada data PO (tersaring tahun jika ada)
+  const availablePoMonths = useMemo(() => {
+    const map = new Map<string, number>();
+    (poHeaders || []).forEach(p => {
+      if (poFilterYear !== 'all' && getPoYear(p) !== poFilterYear) return;
+      const key = getPoMonthKey(p);
+      if (key && /^\d{4}-\d{2}$/.test(key)) {
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([period, count]) => ({ period, count }))
+      .sort((a, b) => b.period.localeCompare(a.period));
+  }, [poHeaders, poFilterYear]);
+
+  // Format label bulan bahasa Indonesia (contoh: '2025-02' => 'Februari 2025')
+  const formatPoMonthName = (periodStr: string): string => {
+    if (!periodStr || periodStr === 'all') return 'Semua Periode';
+    const parts = periodStr.split('-');
+    if (parts.length !== 2) return periodStr;
+    const year = parts[0];
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${monthNames[monthIdx] || parts[1]} ${year}`;
+  };
+
   // Filtered Letters (Surat Resmi) dengan pencarian teks
   const filteredLetters = useMemo(() => {
     let list = Array.isArray(letters) ? letters : [];
@@ -100,9 +239,15 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
     return list;
   }, [letters, letterSearchQuery]);
 
-  // Filtered Purchase Orders dengan pencarian teks
+  // Filtered Purchase Orders dengan filter tahun, bulan & pencarian teks
   const filteredPoHeaders = useMemo(() => {
     let list = Array.isArray(poHeaders) ? poHeaders : [];
+    if (poFilterYear !== 'all') {
+      list = list.filter(p => getPoYear(p) === poFilterYear);
+    }
+    if (poFilterMonth !== 'all') {
+      list = list.filter(p => getPoMonthKey(p) === poFilterMonth);
+    }
     if (poSearchQuery.trim()) {
       const q = poSearchQuery.toLowerCase();
       list = list.filter(p => 
@@ -116,7 +261,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
       );
     }
     return list;
-  }, [poHeaders, poSearchQuery]);
+  }, [poHeaders, poSearchQuery, poFilterYear, poFilterMonth]);
 
   // Modals for Letters
   const [showLetterEditorModal, setShowLetterEditorModal] = useState(false);
@@ -2428,6 +2573,107 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
                 <Plus size={14} />
                 <span>Buat PO Baru</span>
               </button>
+            </div>
+          </div>
+
+          {/* Filter Periode & Bulan Purchase Order (PO) */}
+          <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 font-semibold">
+                <Calendar size={14} className="text-blue-600" />
+                <span>Filter Periode PO:</span>
+              </div>
+
+              {/* Pilihan Tahun */}
+              <select
+                value={poFilterYear}
+                onChange={e => {
+                  setPoFilterYear(e.target.value);
+                  setPoFilterMonth('all');
+                }}
+                className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                title="Pilih Tahun PO"
+              >
+                <option value="all">Semua Tahun ({poHeaders.length} PO)</option>
+                {availablePoYears.map(y => (
+                  <option key={y.year} value={y.year}>
+                    Tahun {y.year} ({y.count} PO)
+                  </option>
+                ))}
+              </select>
+
+              {/* Pilihan Bulan Cepat */}
+              <select
+                value={poFilterMonth}
+                onChange={e => {
+                  const val = e.target.value;
+                  setPoFilterMonth(val);
+                  if (val !== 'all') {
+                    setPoFilterYear(val.slice(0, 4));
+                  }
+                }}
+                className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                title="Pilih Bulan Spesifik"
+              >
+                <option value="all">
+                  {poFilterYear === 'all' ? `Semua Bulan (${poHeaders.length} PO)` : `Seluruh Bulan di Tahun ${poFilterYear}`}
+                </option>
+                {availablePoMonths.map(m => (
+                  <option key={m.period} value={m.period}>
+                    🗓️ {formatPoMonthName(m.period)} ({m.count} PO)
+                  </option>
+                ))}
+              </select>
+
+              {/* Input Bulan type="month" */}
+              <input
+                type="month"
+                value={poFilterMonth === 'all' ? '' : poFilterMonth}
+                onChange={e => {
+                  const val = e.target.value || 'all';
+                  setPoFilterMonth(val);
+                  if (val !== 'all') {
+                    setPoFilterYear(val.slice(0, 4));
+                  }
+                }}
+                className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-blue-500 bg-slate-50 text-slate-700 font-mono"
+                title="Pilih Bulan & Tahun Kustom"
+              />
+
+              {/* Tombol Pintas Bulan Ini */}
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const yr = String(now.getFullYear());
+                  const ym = `${yr}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  setPoFilterYear(yr);
+                  setPoFilterMonth(ym);
+                }}
+                className="px-2.5 py-1.5 text-xs rounded-lg font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
+              >
+                Bulan Ini
+              </button>
+
+              {(poFilterMonth !== 'all' || poFilterYear !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPoFilterMonth('all');
+                    setPoFilterYear('all');
+                  }}
+                  className="px-2.5 py-1.5 text-xs rounded-lg font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors cursor-pointer"
+                >
+                  Reset (Semua)
+                </button>
+              )}
+            </div>
+
+            {/* Ringkasan Nilai PO Terfilter */}
+            <div className="flex items-center gap-3 text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 font-mono">
+              <span className="text-slate-500 font-sans">Total PO: <strong className="text-slate-800 font-mono">{filteredPoHeaders.length}</strong></span>
+              <span className="text-slate-300">|</span>
+              <span className="text-slate-500 font-sans">Total Nilai: <strong className="text-blue-700 font-mono">Rp {filteredPoHeaders.reduce((sum, p) => sum + (Number(p.Total_Nilai_PO) || 0), 0).toLocaleString('id-ID')}</strong></span>
             </div>
           </div>
 

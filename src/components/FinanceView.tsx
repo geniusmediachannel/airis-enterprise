@@ -147,6 +147,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [custFilterStatus, setCustFilterStatus] = useState<'all' | 'piutang' | 'deposit' | 'lunas'>('all');
   const [piutangSearchQuery, setPiutangSearchQuery] = useState<string>('');
   const [piutangTypeFilter, setPiutangTypeFilter] = useState<'all' | 'Piutang' | 'Utang'>('all');
+  const [piutangFilterYear, setPiutangFilterYear] = useState<string>('all');
   const [piutangFilterMonth, setPiutangFilterMonth] = useState<string>('all');
 
   // Modal input pembayaran pelanggan
@@ -392,22 +393,119 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     return [...distReceivables, ...purchasePayables, ...manual];
   }, [distReceivables, purchasePayables, receivables]);
 
-  // Helper ekstraksi bulan YYYY-MM dari record tagihan / utang
-  const getReceivableMonthKey = (r: ReceivablePayableItem): string => {
-    const raw = String(r.Tanggal || r.TANGGAL || r.Tgl_Jatuh_Tempo || r.JATUH_TEMPO || '').trim();
-    if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
-    const parts = raw.split(/[\/\-.]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}`;
-      if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}`;
+  // Helper ekstraksi komponen tanggal (Tahun, Bulan, Hari) secara presisi dan terstruktur
+  const extractDateParts = (raw: any): { year: string; month: string; day: string } | null => {
+    if (!raw && raw !== 0) return null;
+    const str = String(raw).trim();
+    if (!str || str === '-' || str === 'null' || str === 'undefined') return null;
+
+    // 1. ISO format: YYYY-MM-DD or YYYY/MM/DD
+    const isoMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (isoMatch) {
+      return {
+        year: isoMatch[1],
+        month: isoMatch[2].padStart(2, '0'),
+        day: isoMatch[3].padStart(2, '0')
+      };
     }
-    return '';
+
+    // 2. Format Indonesia dengan teks bulan (misal "5 FEBRUARI 2025", "05-Feb-2025")
+    const monthMap: Record<string, string> = {
+      jan: '01', januari: '01', january: '01',
+      feb: '02', februari: '02', february: '02',
+      mar: '03', maret: '03', march: '03',
+      apr: '04', april: '04',
+      mei: '05', may: '05',
+      jun: '06', juni: '06', june: '06',
+      jul: '07', juli: '07', july: '07',
+      agu: '08', agust: '08', agustus: '08', aug: '08', august: '08',
+      sep: '09', sept: '09', september: '09',
+      okt: '10', oktober: '10', oct: '10', october: '10',
+      nov: '11', nop: '11', nopember: '11', november: '11',
+      des: '12', desember: '12', dec: '12', december: '12'
+    };
+
+    const textMonthMatch = str.match(/^(\d{1,2})[-\s/.]+([A-Za-z]+)[-\s/.]+(\d{2,4})/);
+    if (textMonthMatch) {
+      const day = textMonthMatch[1].padStart(2, '0');
+      const monStr = textMonthMatch[2].toLowerCase();
+      let mon = monthMap[monStr];
+      if (!mon) {
+        for (const [key, val] of Object.entries(monthMap)) {
+          if (monStr.startsWith(key)) {
+            mon = val;
+            break;
+          }
+        }
+      }
+      let yr = textMonthMatch[3];
+      if (yr.length === 2) {
+        yr = parseInt(yr, 10) >= 50 ? '19' + yr : '20' + yr;
+      }
+      if (mon) {
+        return { year: yr, month: mon, day };
+      }
+    }
+
+    // 3. Format DD-MM-YYYY or DD/MM/YYYY
+    const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+    if (dmyMatch) {
+      const day = dmyMatch[1].padStart(2, '0');
+      const mon = dmyMatch[2].padStart(2, '0');
+      let yr = dmyMatch[3];
+      if (yr.length === 2) {
+        yr = parseInt(yr, 10) >= 50 ? '19' + yr : '20' + yr;
+      }
+      return { year: yr, month: mon, day };
+    }
+
+    // 4. Excel serial number (misal 45693 = 2025-02-05)
+    if (/^\d{5}$/.test(str)) {
+      const serial = parseInt(str, 10);
+      const date = new Date((serial - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return {
+          year: String(date.getUTCFullYear()),
+          month: String(date.getUTCMonth() + 1).padStart(2, '0'),
+          day: String(date.getUTCDate()).padStart(2, '0')
+        };
+      }
+    }
+
+    return null;
   };
 
-  // Daftar periode bulan unik yang tersedia pada data tagihan/utang
+  // Helper ekstraksi bulan YYYY-MM dari record tagihan / utang
+  const getReceivableMonthKey = (r: ReceivablePayableItem): string => {
+    const parts = extractDateParts(r.Tanggal || r.TANGGAL) || extractDateParts(r.Tgl_Jatuh_Tempo || r.JATUH_TEMPO);
+    return parts ? `${parts.year}-${parts.month}` : '';
+  };
+
+  // Helper ekstraksi tahun YYYY dari record tagihan / utang
+  const getReceivableYear = (r: ReceivablePayableItem): string => {
+    const parts = extractDateParts(r.Tanggal || r.TANGGAL) || extractDateParts(r.Tgl_Jatuh_Tempo || r.JATUH_TEMPO);
+    return parts ? parts.year : '';
+  };
+
+  // Daftar tahun unik yang tersedia pada data tagihan/utang
+  const availablePiutangYears = useMemo(() => {
+    const map = new Map<string, number>();
+    allReceivablesList.forEach(r => {
+      const yr = getReceivableYear(r);
+      if (yr && /^\d{4}$/.test(yr)) {
+        map.set(yr, (map.get(yr) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([year, count]) => ({ year, count }))
+      .sort((a, b) => b.year.localeCompare(a.year));
+  }, [allReceivablesList]);
+
+  // Daftar periode bulan unik yang tersedia pada data tagihan/utang (bisa difilter per tahun)
   const availablePiutangMonths = useMemo(() => {
     const map = new Map<string, number>();
     allReceivablesList.forEach(r => {
+      if (piutangFilterYear !== 'all' && getReceivableYear(r) !== piutangFilterYear) return;
       const key = getReceivableMonthKey(r);
       if (key && /^\d{4}-\d{2}$/.test(key)) {
         map.set(key, (map.get(key) || 0) + 1);
@@ -416,7 +514,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     return Array.from(map.entries())
       .map(([period, count]) => ({ period, count }))
       .sort((a, b) => b.period.localeCompare(a.period));
-  }, [allReceivablesList]);
+  }, [allReceivablesList, piutangFilterYear]);
 
   // Format label bulan bahasa Indonesia (contoh: '2025-02' => 'Februari 2025')
   const formatPeriodMonthName = (periodStr: string): string => {
@@ -432,11 +530,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     return `${monthNames[monthIdx] || parts[1]} ${year}`;
   };
 
-  // Data tagihan dalam bulan yang dipilih (untuk counter tab dan ringkasan metrik)
+  // Data tagihan dalam periode yang dipilih (mematuhi filter tahun dan filter bulan secara isolatif dan ketat)
   const receivablesInMonth = useMemo(() => {
-    if (piutangFilterMonth === 'all') return allReceivablesList;
-    return allReceivablesList.filter(r => getReceivableMonthKey(r) === piutangFilterMonth);
-  }, [allReceivablesList, piutangFilterMonth]);
+    return allReceivablesList.filter(r => {
+      if (piutangFilterYear !== 'all' && getReceivableYear(r) !== piutangFilterYear) return false;
+      if (piutangFilterMonth !== 'all' && getReceivableMonthKey(r) !== piutangFilterMonth) return false;
+      return true;
+    });
+  }, [allReceivablesList, piutangFilterYear, piutangFilterMonth]);
 
   // -------------------------------------------------------------
   // REKAPITULASI BUKU PEMBANTU PER PELANGGAN (PEMBELIAN, BAYAR, SALDO/DEPOSIT, LOGISTIK)
@@ -4308,7 +4409,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           {/* ========================================================= */}
           {piutangSubTab === 'semua_tagihan' && (
             <div className="space-y-3">
-              {/* Filter Bulanan & Kontrol Periode */}
+              {/* Filter Bulanan, Tahun & Kontrol Periode Terpadu */}
               <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 font-semibold">
@@ -4316,13 +4417,40 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     <span>Filter Periode:</span>
                   </div>
 
+                  {/* Dropdown Pilihan Tahun */}
+                  <select
+                    value={piutangFilterYear}
+                    onChange={(e) => {
+                      setPiutangFilterYear(e.target.value);
+                      setPiutangFilterMonth('all');
+                    }}
+                    className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                    title="Pilih Tahun Transaksi"
+                  >
+                    <option value="all">Semua Tahun ({allReceivablesList.length} Transaksi)</option>
+                    {availablePiutangYears.map((y) => (
+                      <option key={y.year} value={y.year}>
+                        Tahun {y.year} ({y.count} Transaksi)
+                      </option>
+                    ))}
+                  </select>
+
                   {/* Dropdown Pilihan Bulan Cepat */}
                   <select
                     value={piutangFilterMonth}
-                    onChange={(e) => setPiutangFilterMonth(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPiutangFilterMonth(val);
+                      if (val !== 'all') {
+                        setPiutangFilterYear(val.slice(0, 4));
+                      }
+                    }}
                     className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                    title="Pilih Bulan Spesifik"
                   >
-                    <option value="all">📅 Semua Periode ({allReceivablesList.length} Transaksi)</option>
+                    <option value="all">
+                      {piutangFilterYear === 'all' ? `Semua Bulan (${allReceivablesList.length} Transaksi)` : `Seluruh Bulan di Tahun ${piutangFilterYear}`}
+                    </option>
                     {availablePiutangMonths.map((m) => (
                       <option key={m.period} value={m.period}>
                         🗓️ {formatPeriodMonthName(m.period)} ({m.count} Transaksi)
@@ -4334,32 +4462,59 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   <input
                     type="month"
                     value={piutangFilterMonth === 'all' ? '' : piutangFilterMonth}
-                    onChange={(e) => setPiutangFilterMonth(e.target.value || 'all')}
+                    onChange={(e) => {
+                      const val = e.target.value || 'all';
+                      setPiutangFilterMonth(val);
+                      if (val !== 'all') {
+                        setPiutangFilterYear(val.slice(0, 4));
+                      }
+                    }}
                     className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-blue-500 bg-slate-50 text-slate-700 font-mono"
                     title="Pilih Bulan & Tahun Kustom"
                   />
 
-                  {/* Tombol Pintas Bulan Ini & Semua */}
+                  {/* Tombol Pintas Tahun 2026 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPiutangFilterYear('2026');
+                      setPiutangFilterMonth('all');
+                    }}
+                    className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer border ${
+                      piutangFilterYear === '2026' && piutangFilterMonth === 'all'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Tahun 2026
+                  </button>
+
+                  {/* Tombol Pintas Bulan Ini */}
                   <button
                     type="button"
                     onClick={() => {
                       const now = new Date();
-                      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                      const yr = String(now.getFullYear());
+                      const ym = `${yr}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                      setPiutangFilterYear(yr);
                       setPiutangFilterMonth(ym);
                     }}
                     className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer border ${
                       piutangFilterMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
                         : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     Bulan Ini
                   </button>
 
-                  {piutangFilterMonth !== 'all' && (
+                  {(piutangFilterMonth !== 'all' || piutangFilterYear !== 'all') && (
                     <button
                       type="button"
-                      onClick={() => setPiutangFilterMonth('all')}
+                      onClick={() => {
+                        setPiutangFilterMonth('all');
+                        setPiutangFilterYear('all');
+                      }}
                       className="px-2.5 py-1.5 text-xs rounded-lg font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer border border-slate-200"
                     >
                       Reset (Semua)
@@ -4449,6 +4604,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                         <th className="p-3 text-right">Total Tagihan</th>
                         <th className="p-3 text-right">Terbayar</th>
                         <th className="p-3 text-right">Sisa Tagihan</th>
+                        <th className="p-3">Tgl Dokumen</th>
                         <th className="p-3">Jatuh Tempo</th>
                         <th className="p-3 text-center">Status</th>
                         <th className="p-3 text-center">Aksi</th>
@@ -4466,6 +4622,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                           if (!matchSearch) return false;
                           const jenis = r.Jenis || r.TIPE || 'Piutang';
                           if (piutangTypeFilter !== 'all' && jenis !== piutangTypeFilter) return false;
+                          if (piutangFilterYear !== 'all' && getReceivableYear(r) !== piutangFilterYear) return false;
                           if (piutangFilterMonth !== 'all' && getReceivableMonthKey(r) !== piutangFilterMonth) return false;
                           return true;
                         });
@@ -4473,8 +4630,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                         if (filtered.length === 0) {
                           return (
                             <tr>
-                              <td colSpan={10} className="p-8 text-center text-slate-400 font-sans italic">
-                                Belum ada catatan tagihan atau piutang yang sesuai.
+                              <td colSpan={11} className="p-8 text-center text-slate-400 font-sans italic">
+                                Belum ada catatan tagihan atau piutang yang sesuai dengan filter yang dipilih.
                               </td>
                             </tr>
                           );
@@ -4487,6 +4644,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                           const nominal = Number(r.Nominal ?? r.TOTAL_TAGIHAN ?? 0);
                           const terbayar = Number(r.Terbayar ?? r.TOTAL_DIBAYAR ?? 0);
                           const sisa = Number(r.Sisa ?? r.SISA_SALDO ?? (nominal - terbayar));
+                          const tglDokumen = r.Tanggal || r.TANGGAL || '-';
                           const tempo = r.Tgl_Jatuh_Tempo || r.JATUH_TEMPO || '-';
                           const status = r.Status || r.STATUS || 'Belum Lunas';
 
@@ -4523,6 +4681,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                               <td className="p-3 text-right font-bold tabular-nums">Rp {nominal.toLocaleString('id-ID')}</td>
                               <td className="p-3 text-right tabular-nums text-emerald-700">Rp {terbayar.toLocaleString('id-ID')}</td>
                               <td className="p-3 text-right font-bold tabular-nums text-red-600">Rp {sisa.toLocaleString('id-ID')}</td>
+                              <td className="p-3 text-slate-700 font-semibold">{tglDokumen}</td>
                               <td className="p-3 text-slate-500">{tempo}</td>
                               <td className="p-3 text-center font-sans">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
