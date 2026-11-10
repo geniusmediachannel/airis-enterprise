@@ -5,7 +5,8 @@ import {
   Calculator, Check, X, Building2, AlertTriangle, RefreshCw,
   Edit2, Trash2, FileSpreadsheet, Save, FileDown, Users, History, CreditCard, Search,
   ChevronRight, ArrowLeft, ArrowUpRight, ArrowDownLeft, Eye, ShoppingBag, Banknote, ShieldCheck,
-  ArrowUpDown, ArrowUp, ArrowDown, Truck, Coins, PackageCheck, CheckSquare, Square, RotateCcw, Filter, ExternalLink, Clock
+  ArrowUpDown, ArrowUp, ArrowDown, Truck, Coins, PackageCheck, CheckSquare, Square, RotateCcw, Filter, ExternalLink, Clock,
+  Calendar
 } from 'lucide-react';
 import { 
   COAItem, GeneralJournalItem, DraftJournalItem, CashTransactionItem, 
@@ -146,6 +147,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [custFilterStatus, setCustFilterStatus] = useState<'all' | 'piutang' | 'deposit' | 'lunas'>('all');
   const [piutangSearchQuery, setPiutangSearchQuery] = useState<string>('');
   const [piutangTypeFilter, setPiutangTypeFilter] = useState<'all' | 'Piutang' | 'Utang'>('all');
+  const [piutangFilterMonth, setPiutangFilterMonth] = useState<string>('all');
 
   // Modal input pembayaran pelanggan
   const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
@@ -389,6 +391,52 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
     return [...distReceivables, ...purchasePayables, ...manual];
   }, [distReceivables, purchasePayables, receivables]);
+
+  // Helper ekstraksi bulan YYYY-MM dari record tagihan / utang
+  const getReceivableMonthKey = (r: ReceivablePayableItem): string => {
+    const raw = String(r.Tanggal || r.TANGGAL || r.Tgl_Jatuh_Tempo || r.JATUH_TEMPO || '').trim();
+    if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+    const parts = raw.split(/[\/\-.]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}`;
+      if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}`;
+    }
+    return '';
+  };
+
+  // Daftar periode bulan unik yang tersedia pada data tagihan/utang
+  const availablePiutangMonths = useMemo(() => {
+    const map = new Map<string, number>();
+    allReceivablesList.forEach(r => {
+      const key = getReceivableMonthKey(r);
+      if (key && /^\d{4}-\d{2}$/.test(key)) {
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([period, count]) => ({ period, count }))
+      .sort((a, b) => b.period.localeCompare(a.period));
+  }, [allReceivablesList]);
+
+  // Format label bulan bahasa Indonesia (contoh: '2025-02' => 'Februari 2025')
+  const formatPeriodMonthName = (periodStr: string): string => {
+    if (!periodStr || periodStr === 'all') return 'Semua Periode';
+    const parts = periodStr.split('-');
+    if (parts.length !== 2) return periodStr;
+    const year = parts[0];
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${monthNames[monthIdx] || parts[1]} ${year}`;
+  };
+
+  // Data tagihan dalam bulan yang dipilih (untuk counter tab dan ringkasan metrik)
+  const receivablesInMonth = useMemo(() => {
+    if (piutangFilterMonth === 'all') return allReceivablesList;
+    return allReceivablesList.filter(r => getReceivableMonthKey(r) === piutangFilterMonth);
+  }, [allReceivablesList, piutangFilterMonth]);
 
   // -------------------------------------------------------------
   // REKAPITULASI BUKU PEMBANTU PER PELANGGAN (PEMBELIAN, BAYAR, SALDO/DEPOSIT, LOGISTIK)
@@ -4260,6 +4308,94 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           {/* ========================================================= */}
           {piutangSubTab === 'semua_tagihan' && (
             <div className="space-y-3">
+              {/* Filter Bulanan & Kontrol Periode */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 font-semibold">
+                    <Calendar size={15} className="text-blue-600" />
+                    <span>Filter Periode:</span>
+                  </div>
+
+                  {/* Dropdown Pilihan Bulan Cepat */}
+                  <select
+                    value={piutangFilterMonth}
+                    onChange={(e) => setPiutangFilterMonth(e.target.value)}
+                    className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                  >
+                    <option value="all">📅 Semua Periode ({allReceivablesList.length} Transaksi)</option>
+                    {availablePiutangMonths.map((m) => (
+                      <option key={m.period} value={m.period}>
+                        🗓️ {formatPeriodMonthName(m.period)} ({m.count} Transaksi)
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Input Bulan type="month" */}
+                  <input
+                    type="month"
+                    value={piutangFilterMonth === 'all' ? '' : piutangFilterMonth}
+                    onChange={(e) => setPiutangFilterMonth(e.target.value || 'all')}
+                    className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-blue-500 bg-slate-50 text-slate-700 font-mono"
+                    title="Pilih Bulan & Tahun Kustom"
+                  />
+
+                  {/* Tombol Pintas Bulan Ini & Semua */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                      setPiutangFilterMonth(ym);
+                    }}
+                    className={`px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors cursor-pointer border ${
+                      piutangFilterMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Bulan Ini
+                  </button>
+
+                  {piutangFilterMonth !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setPiutangFilterMonth('all')}
+                      className="px-2.5 py-1.5 text-xs rounded-lg font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer border border-slate-200"
+                    >
+                      Reset (Semua)
+                    </button>
+                  )}
+                </div>
+
+                {/* Ringkasan Saldo Periode Terpilih */}
+                <div className="flex items-center gap-3 text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 font-mono">
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-sans">Total:</span>
+                    <span className="font-bold text-slate-800">
+                      Rp {receivablesInMonth.reduce((acc, r) => acc + Number(r.Nominal ?? r.TOTAL_TAGIHAN ?? 0), 0).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">|</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-sans">Terbayar:</span>
+                    <span className="font-bold text-emerald-600">
+                      Rp {receivablesInMonth.reduce((acc, r) => acc + Number(r.Terbayar ?? r.TOTAL_DIBAYAR ?? 0), 0).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">|</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-sans">Sisa:</span>
+                    <span className="font-bold text-red-600">
+                      Rp {receivablesInMonth.reduce((acc, r) => {
+                        const n = Number(r.Nominal ?? r.TOTAL_TAGIHAN ?? 0);
+                        const b = Number(r.Terbayar ?? r.TOTAL_DIBAYAR ?? 0);
+                        return acc + Number(r.Sisa ?? r.SISA_SALDO ?? (n - b));
+                      }, 0).toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Search & Filter Bar */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200">
                 <div className="relative flex-1">
@@ -4279,7 +4415,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       piutangTypeFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    Semua ({allReceivablesList.length})
+                    Semua ({receivablesInMonth.length})
                   </button>
                   <button
                     onClick={() => setPiutangTypeFilter('Piutang')}
@@ -4287,7 +4423,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       piutangTypeFilter === 'Piutang' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                     }`}
                   >
-                    Piutang Pelanggan ({allReceivablesList.filter(r => (r.Jenis || r.TIPE) === 'Piutang').length})
+                    Piutang Pelanggan ({receivablesInMonth.filter(r => (r.Jenis || r.TIPE) === 'Piutang').length})
                   </button>
                   <button
                     onClick={() => setPiutangTypeFilter('Utang')}
@@ -4295,7 +4431,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       piutangTypeFilter === 'Utang' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
                     }`}
                   >
-                    Utang Supplier ({allReceivablesList.filter(r => (r.Jenis || r.TIPE) === 'Utang').length})
+                    Utang Supplier ({receivablesInMonth.filter(r => (r.Jenis || r.TIPE) === 'Utang').length})
                   </button>
                 </div>
               </div>
@@ -4330,6 +4466,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                           if (!matchSearch) return false;
                           const jenis = r.Jenis || r.TIPE || 'Piutang';
                           if (piutangTypeFilter !== 'all' && jenis !== piutangTypeFilter) return false;
+                          if (piutangFilterMonth !== 'all' && getReceivableMonthKey(r) !== piutangFilterMonth) return false;
                           return true;
                         });
 

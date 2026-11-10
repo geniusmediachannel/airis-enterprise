@@ -936,6 +936,119 @@ export async function restoreAllDatabaseFromJSON(file: File): Promise<{
  * Mengelompokkan baris berdasarkan No_PO atau ID_PO, menghitung Grand_Total otomatis,
  * dan menyimpan ke tabel Admin_PO (header) dan Admin_PO_Detail (detail barang) secara terintegrasi.
  */
+/**
+ * Helper membersihkan nilai numerik dari string Excel (contoh: "24.150 Pcs", "Rp 3.500.000,00", "72.000")
+ */
+function cleanNumeric(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  let str = String(val).trim();
+  // Buang teks non-digit selain titik, koma, minus
+  str = str.replace(/[^\d.,\-]/gi, '').trim();
+  if (!str) return 0;
+  if (str.includes('.') && str.includes(',')) {
+    // 3.500.000,00 -> titik ribuan, koma desimal
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else if (str.includes('.') && !str.includes(',')) {
+    const parts = str.split('.');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/\./g, '');
+    }
+  } else if (str.includes(',') && !str.includes('.')) {
+    const parts = str.split(',');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/,/g, '');
+    } else {
+      str = str.replace(',', '.');
+    }
+  }
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Helper mengurai berbagai macam format tanggal Excel:
+ * - Date object
+ * - Angka serial Excel (e.g. 45693)
+ * - Teks bahasa Indonesia / Inggris: "5 FEBRUARI 2025", "10 FEBRUARI 2025", "26 Agustus 2025", "01-Okt-2026"
+ * - Format numerik: 05/02/2025, 2025-02-05, dsb.
+ */
+function parseFlexibleDate(raw: any): string {
+  if (!raw && raw !== 0) return new Date().toISOString().slice(0, 10);
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
+    const yr = raw.getFullYear();
+    const mo = String(raw.getMonth() + 1).padStart(2, '0');
+    const da = String(raw.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  }
+  if (typeof raw === 'number' && raw > 1000) {
+    const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const str = String(raw).trim();
+  if (!str || str === '-') return new Date().toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+
+  const monthMap: Record<string, number> = {
+    'jan': 1, 'januari': 1, 'january': 1,
+    'feb': 2, 'februari': 2, 'february': 2, 'peb': 2, 'pebruari': 2,
+    'mar': 3, 'maret': 3, 'march': 3,
+    'apr': 4, 'april': 4,
+    'mei': 5, 'may': 5,
+    'jun': 6, 'juni': 6, 'june': 6,
+    'jul': 7, 'juli': 7, 'july': 7,
+    'agu': 8, 'agustus': 8, 'aug': 8, 'august': 8, 'agt': 8,
+    'sep': 9, 'september': 9, 'sept': 9,
+    'okt': 10, 'oktober': 10, 'oct': 10, 'october': 10,
+    'nov': 11, 'november': 11,
+    'des': 12, 'desember': 12, 'dec': 12, 'december': 12
+  };
+
+  // 1. Text Month: "5 FEBRUARI 2025", "10 FEBRUARI 2025", "01-Okt-2026"
+  const textMonthMatch = str.match(/^(\d{1,2})[-\s/.]+([A-Za-z]+)[-\s/.]+(\d{2,4})/);
+  if (textMonthMatch) {
+    const day = textMonthMatch[1].padStart(2, '0');
+    const mRaw = textMonthMatch[2].toLowerCase();
+    const mNum = monthMap[mRaw] || monthMap[mRaw.slice(0, 3)];
+    let yr = parseInt(textMonthMatch[3], 10);
+    if (yr < 100) yr += 2000;
+    if (mNum) {
+      return `${yr}-${String(mNum).padStart(2, '0')}-${day}`;
+    }
+  }
+
+  // 2. Text Month reverse: "Februari 5, 2025"
+  const revMatch = str.match(/^([A-Za-z]+)[-\s/.]+(\d{1,2})[,\s/.-]+(\d{2,4})/);
+  if (revMatch) {
+    const mRaw = revMatch[1].toLowerCase();
+    const mNum = monthMap[mRaw] || monthMap[mRaw.slice(0, 3)];
+    const day = revMatch[2].padStart(2, '0');
+    let yr = parseInt(revMatch[3], 10);
+    if (yr < 100) yr += 2000;
+    if (mNum) {
+      return `${yr}-${String(mNum).padStart(2, '0')}-${day}`;
+    }
+  }
+
+  // 3. DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
+  if (dmyMatch) {
+    let yr = parseInt(dmyMatch[3], 10);
+    if (yr < 100) yr += 2000;
+    return `${yr}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+
+  // 4. YYYY/MM/DD
+  const ymdMatch = str.match(/^(\d{4})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})/);
+  if (ymdMatch) {
+    return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+  }
+
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function importUnifiedPORows(parsedRows: any[]): {
   success: boolean;
   totalHeaders: number;
@@ -984,39 +1097,16 @@ export function importUnifiedPORows(parsedRows: any[]): {
     // Item Detail Fields
     const rawNamaProduk = r.Nama_Produk ?? r.Nama_Barang ?? r.Barang ?? r.Produk ?? r.Item ?? r['Nama Produk'] ?? r['Nama Barang'] ?? r['Nama Item'];
     const rawSpek = r.Spesifikasi ?? r.Spek ?? r['Spesifikasi'] ?? '';
-    const rawQty = Number(r.Qty ?? r.Jumlah ?? r.Quantity ?? r['Qty'] ?? r['Jumlah'] ?? 0);
+    const rawQty = cleanNumeric(r.Qty ?? r.Jumlah ?? r.Quantity ?? r['Qty'] ?? r['Jumlah'] ?? 0);
     const rawSatuan = String(r.Satuan ?? r['Satuan'] ?? 'Pcs').trim();
-    const rawHargaSatuan = Number(r.Harga_Satuan ?? r.Harga ?? r['Harga Satuan'] ?? r['Harga'] ?? 0);
-    const rawTotalHarga = Number(r.Total_Harga ?? r.Subtotal ?? r['Total Harga'] ?? r['Subtotal'] ?? (rawQty * rawHargaSatuan));
+    const rawHargaSatuan = cleanNumeric(r.Harga_Satuan ?? r.Harga ?? r['Harga Satuan'] ?? r['Harga'] ?? 0);
+    const rawTotalHarga = cleanNumeric(r.Total_Harga ?? r.Subtotal ?? r['Total Harga'] ?? r['Subtotal'] ?? (rawQty * rawHargaSatuan));
 
     // Jika baris benar-benar kosong, abaikan
     if (!rawNoPO && !rawSupplier && !rawNamaProduk) continue;
 
-    // Normalisasi Tanggal
-    let tglIso = '';
-    if (rawTanggal) {
-      if (typeof rawTanggal === 'number' && rawTanggal > 1000) {
-        // Excel serial date
-        const d = new Date(Date.UTC(1899, 11, 30) + rawTanggal * 86400000);
-        tglIso = d.toISOString().slice(0, 10);
-      } else {
-        const str = String(rawTanggal).trim();
-        if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-          tglIso = str.slice(0, 10);
-        } else {
-          const dmy = str.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
-          if (dmy) {
-            let yr = parseInt(dmy[3], 10);
-            if (yr < 100) yr += 2000;
-            tglIso = `${yr}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-          } else {
-            tglIso = new Date().toISOString().slice(0, 10);
-          }
-        }
-      }
-    } else {
-      tglIso = new Date().toISOString().slice(0, 10);
-    }
+    // Normalisasi Tanggal Fleksibel (Mendukung "5 FEBRUARI 2025", serial Excel, format Indo/Eng, dll)
+    const tglIso = parseFlexibleDate(rawTanggal);
 
     // Tentukan group key
     const groupKey = String(rawNoPO || `AUTO-PO-${rawSupplier}-${tglIso}`).trim().toLowerCase();
