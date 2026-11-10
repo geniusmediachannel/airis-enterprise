@@ -286,6 +286,34 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return map;
   }, [distributionItems]);
 
+  // State & Handler Sinkronisasi Kilat Multi-Device (PC & HP)
+  const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
+
+  const handleQuickSyncCloud = async () => {
+    setIsRefreshingCloud(true);
+    try {
+      const { pullTablesFromTurso } = await import('../services/tursoAdapter');
+      await pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi']);
+      onRefresh();
+      showToast('Data Cloud Disinkronkan', 'Data distribusi berhasil diselaraskan dari database cloud.', 'success');
+    } catch (e: any) {
+      showToast('Gagal Sinkronisasi', e?.message || 'Gagal menyinkronkan data dari cloud.', 'error');
+    } finally {
+      setTimeout(() => setIsRefreshingCloud(false), 500);
+    }
+  };
+
+  // Auto-pull instan saat modul Distribusi dibuka di HP maupun PC
+  useEffect(() => {
+    import('../services/tursoAdapter').then(({ pullTablesFromTurso }) => {
+      pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi'])
+        .then(synced => {
+          if (synced) onRefresh();
+        })
+        .catch(() => {});
+    });
+  }, []);
+
   // Restore filter month from last imported batch & Auto-reconcile data Galon
   useEffect(() => {
     try {
@@ -1166,6 +1194,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             syncTableToTurso('Distribusi', updatedDistList, currentDist),
             syncTableToTurso('Distribusi_Item', updatedItemsList, currentItems)
           ]);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('airis_cloud_synced'));
+          }
         }
       } catch (tursoErr) {
         console.warn('[DistributionView] Direct Turso sync failed:', tursoErr);
@@ -2281,6 +2312,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Tombol Sinkronisasi Kilat Cloud (HP / PC) */}
+            <button
+              type="button"
+              onClick={handleQuickSyncCloud}
+              disabled={isRefreshingCloud}
+              className="p-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+              title="Perbarui &amp; Sinkronkan Data dari Cloud (HP / PC)"
+            >
+              <RotateCcw size={15} className={isRefreshingCloud ? 'animate-spin text-blue-600' : ''} />
+            </button>
+
             {/* Tombol Laporan Distribusi */}
             <button
               onClick={() => {

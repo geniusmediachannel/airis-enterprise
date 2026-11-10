@@ -37,7 +37,7 @@ import {
   deduplicateMasterProductsAndFixRelations
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
-import { getTursoConfig, pullAllTablesFromTurso } from './services/tursoAdapter';
+import { getTursoConfig, pullAllTablesFromTurso, pullTablesFromTurso } from './services/tursoAdapter';
 import { checkAndApplyScheduledPriceChanges } from './services/priceService';
 import { 
   getStoredSession, signOut 
@@ -324,25 +324,46 @@ export default function App() {
         .catch(console.warn);
     }
 
-    // 7b. Interval background polling hemat CPU (setiap 45 detik saat tab aktif)
+    // 7b. Interval background polling kilat (setiap 8 detik saat tab aktif)
+    // Menjamin data yang diinput dari PC langsung masuk ke HP dalam beberapa detik
+    let pollCycle = 0;
     const realtimePollInterval = setInterval(() => {
-      if (document.hidden) return; // Hemat baterai & CPU jika tab di-minimize
+      if (document.hidden) return; // Hemat baterai jika tab HP di-minimize
       const activeTurso = getTursoConfig();
       if (activeTurso.isConnected && activeTurso.autoSync) {
-        pullAllTablesFromTurso({ silent: true })
-          .then(res => {
-            if (res.success) {
-              reloadData();
-            }
+        pollCycle++;
+        // Siklus cepat (setiap 8 detik): sinkronkan tabel distribusi & operasional utama
+        pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi'])
+          .then(changed => {
+            if (changed) reloadData();
           })
           .catch(() => {});
-      }
-    }, 45000);
 
-    // Auto-sync saat tab browser aktif kembali (focus) - misal saat membuka kembali HP
-    const handleWindowFocus = () => {
+        // Siklus menyeluruh (setiap ~24 detik): sinkronkan seluruh database
+        if (pollCycle % 3 === 0) {
+          pullAllTablesFromTurso({ silent: true })
+            .then(res => {
+              if (res.success) {
+                reloadData();
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }, 8000);
+
+    // Auto-sync saat tab browser aktif kembali (focus) atau layar HP dibuka (visibilitychange)
+    const handleActiveResume = () => {
       const activeTurso = getTursoConfig();
       if (activeTurso.isConnected && activeTurso.autoSync) {
+        // Tarik instan tabel distribusi & transaksi (< 400ms)
+        pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi', 'Produksi', 'SPK'])
+          .then(changed => {
+            if (changed) reloadData();
+          })
+          .catch(() => {});
+
+        // Lanjutkan sinkronisasi penuh
         pullAllTablesFromTurso({ silent: true })
           .then(res => {
             if (res.success) {
@@ -353,7 +374,15 @@ export default function App() {
           .catch(console.warn);
       }
     };
-    window.addEventListener('focus', handleWindowFocus);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleActiveResume();
+      }
+    };
+
+    window.addEventListener('focus', handleActiveResume);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Event listener saat terjadi sinkronisasi cloud
     const handleCloudSynced = () => {
@@ -372,13 +401,40 @@ export default function App() {
       window.removeEventListener('airis_db_updated', handleDbUpdate);
       window.removeEventListener('airis_auth_changed', handleAuthChange);
       window.removeEventListener('airis_notifications_updated', handleNotifsUpdate);
-      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('focus', handleActiveResume);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('airis_cloud_synced', handleCloudSynced);
       window.removeEventListener('airis_license_updated', handleLicenseUpdated);
       clearInterval(interval);
       clearInterval(realtimePollInterval);
     };
   }, [pushPermission]);
+
+  // Auto-sync instan saat berpindah modul di HP / PC
+  useEffect(() => {
+    const activeTurso = getTursoConfig();
+    if (activeTurso.isConnected && activeTurso.autoSync) {
+      if (currentView === 'distribusi' || currentView === 'distribution') {
+        pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi'])
+          .then(changed => {
+            if (changed) reloadData();
+          })
+          .catch(() => {});
+      } else if (currentView === 'produksi' || currentView === 'production') {
+        pullTablesFromTurso(['Produksi', 'SPK', 'MD_BOM'])
+          .then(changed => {
+            if (changed) reloadData();
+          })
+          .catch(() => {});
+      } else if (currentView === 'keuangan' || currentView === 'finance') {
+        pullTablesFromTurso(['Jurnal_Umum', 'Data_Piutang_Utang', 'Pencairan_Biaya_Distribusi', 'Distribusi'])
+          .then(changed => {
+            if (changed) reloadData();
+          })
+          .catch(() => {});
+      }
+    }
+  }, [currentView]);
 
   // Hook Penanganan Tombol Kembali HP (Android / iOS Hardware & Gesture Back Button)
   // Menjamin tombol kembali di HP tidak menutup aplikasi, melainkan menutup modal atau kembali ke halaman sebelumnya
