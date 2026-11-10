@@ -801,13 +801,27 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   // -------------------------------------------------------------
   // REKAPITULASI BIAYA DISTRIBUSI & PENCAIRAN DRIVER PABRIK
   // -------------------------------------------------------------
+  // Helper parsing list string/array aman (menghindari error runtime jika properti tersimpan sebagai string JSON / comma text di SQLite)
+  const safeList = (val: any): string[] => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim()) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
+
   const distSettlementMap = useMemo(() => {
     const map = new Map<string, DriverSettlementItem>();
     (driverSettlements || []).forEach(s => {
-      (s.ID_Distribusi_List || []).forEach(id => {
+      safeList(s.ID_Distribusi_List).forEach(id => {
         if (id) map.set(String(id).trim(), s);
       });
-      (s.No_Surat_Jalan_List || []).forEach(sj => {
+      safeList(s.No_Surat_Jalan_List).forEach(sj => {
         if (sj) map.set(String(sj).trim(), s);
       });
     });
@@ -1234,6 +1248,201 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
     showToast('success', `Pencairan ${settlementId} berhasil dibatalkan.`);
     onRefresh();
+  };
+
+  // Helper pencetakan resmi Voucher Kas Keluar Biaya Distribusi via hidden iframe (eksklusif voucher, bebas background halaman)
+  const handlePrintVoucher = (item: DriverSettlementItem) => {
+    const details = (item.Items_Detail && Array.isArray(item.Items_Detail) && item.Items_Detail.length > 0)
+      ? item.Items_Detail
+      : (() => {
+          const idList = safeList(item.ID_Distribusi_List);
+          const sjList = safeList(item.No_Surat_Jalan_List);
+          const idSet = new Set(idList);
+          const sjSet = new Set(sjList);
+          const matched = (distributions || []).filter(d => idSet.has(d.ID_Distribusi) || sjSet.has(d.No_Surat_Jalan));
+          return matched.map(d => {
+            const dus = (distributionItems || [])
+              .filter(it => it.ID_Distribusi === d.ID_Distribusi)
+              .reduce((sum, it) => sum + (Number(it.Qty) || 0), 0);
+            const tarif = Number(item.Tarif_Per_Dus || 1000);
+            return {
+              ID_Distribusi: d.ID_Distribusi,
+              No_Surat_Jalan: d.No_Surat_Jalan || '-',
+              Tanggal: d.Tanggal,
+              Pelanggan: d.Nama_Pelanggan || 'Pelanggan',
+              Tujuan: d.Tujuan_Pengiriman || d.Alamat || '-',
+              Dus: dus,
+              Tarif: tarif,
+              Biaya: dus * tarif
+            };
+          });
+        })();
+
+    const rowsHtml = details.length > 0 ? details.map((d: any, idx: number) => `
+      <tr>
+        <td style="text-align: center; color: #64748b;">${idx + 1}</td>
+        <td style="font-weight: bold; color: #0f172a;">${d.No_Surat_Jalan || '-'}</td>
+        <td style="color: #475569;">${formatDateDDMMYYYY(d.Tanggal)}</td>
+        <td style="font-family: sans-serif; color: #1e293b;">${d.Pelanggan || '-'}${d.Tujuan ? ` (${d.Tujuan})` : ''}</td>
+        <td style="text-align: center; font-weight: bold; color: #0f172a;">${Number(d.Dus || 0).toLocaleString('id-ID')}</td>
+        <td style="text-align: right; color: #334155;">${Number(d.Tarif || 0).toLocaleString('id-ID')}</td>
+        <td style="text-align: right; font-weight: bold; color: #0f172a;">${Number(d.Biaya || 0).toLocaleString('id-ID')}</td>
+      </tr>
+    `).join('') : `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 12px; color: #64748b; font-style: italic;">
+          ${item.Jumlah_Pengiriman || 0} Pengiriman (${item.Total_Dus || 0} Dus)
+        </td>
+      </tr>
+    `;
+
+    const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Voucher Kas Keluar - ${item.ID_Pencairan}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 15mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 10px; color: #0f172a; background: #ffffff; font-size: 11px; }
+    .voucher-card { max-width: 720px; margin: 0 auto; border: 1.5px solid #0f172a; border-radius: 8px; padding: 24px; background: #ffffff; }
+    .header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .company-title { font-size: 17px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: -0.01em; }
+    .company-sub { font-size: 11px; color: #475569; margin: 2px 0 0 0; }
+    .company-contact { font-size: 10px; color: #64748b; margin: 1px 0 0 0; }
+    .badge-box { text-align: right; }
+    .badge { background: #0f172a; color: #ffffff; padding: 4px 10px; font-weight: bold; font-size: 11px; border-radius: 4px; display: inline-block; font-family: monospace; letter-spacing: 0.05em; }
+    .doc-id { font-family: monospace; font-weight: bold; font-size: 12px; color: #0f172a; margin-top: 5px; }
+    .doc-date { font-size: 10px; color: #64748b; margin-top: 1px; }
+    .info-box { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 11px; }
+    .info-label { color: #64748b; font-size: 10px; display: block; margin-bottom: 2px; }
+    .info-val { font-size: 13px; font-weight: bold; color: #0f172a; }
+    .info-purpose { grid-column: span 2; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 11px; }
+    th { background: #f1f5f9; color: #334155; font-weight: 700; padding: 8px 10px; border: 1px solid #cbd5e1; text-align: left; }
+    td { padding: 7px 10px; border: 1px solid #e2e8f0; font-family: monospace; font-size: 11px; }
+    .total-row td { background: #f8fafc; font-weight: bold; font-size: 12px; border-top: 2px solid #0f172a; color: #0f172a; }
+    .sig-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; text-align: center; font-size: 11px; margin-top: 36px; padding-top: 8px; }
+    .sig-space { height: 55px; }
+    .sig-line { border-bottom: 1px solid #475569; width: 140px; margin: 0 auto; padding-bottom: 3px; font-weight: bold; color: #0f172a; }
+    @media print {
+      body { padding: 0; margin: 0; }
+      .voucher-card { border: 1.5px solid #0f172a; margin: 0; width: 100%; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="voucher-card">
+    <div class="header">
+      <div>
+        <h1 class="company-title">PT. ANUGERAH ILLAHI RABBI</h1>
+        <p class="company-sub">Pabrik Air Minum Dalam Kemasan (AMDK) As-Shofaa &amp; Airis</p>
+        <p class="company-contact">Klaten, Jawa Tengah • Telp: (0272) 321xxx</p>
+      </div>
+      <div class="badge-box">
+        <div class="badge">BUKTI KAS KELUAR</div>
+        <div class="doc-id">${item.ID_Pencairan}</div>
+        <div class="doc-date">Tgl: ${formatDateDDMMYYYY(item.Tanggal)}</div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div>
+        <span class="info-label">Dibayarkan Kepada (Driver):</span>
+        <span class="info-val">${item.Nama_Driver}</span>
+      </div>
+      <div>
+        <span class="info-label">Dibayarkan Melalui Akun:</span>
+        <span class="info-val">${item.Nama_Akun_Kas || item.Akun_Kas}</span>
+      </div>
+      <div class="info-purpose">
+        <span style="color: #64748b;">Untuk Keperluan: </span>
+        <strong>${item.Keterangan || `Pencairan Ongkos Distribusi Driver: ${item.Nama_Driver}`}</strong>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 35px; text-align: center;">No</th>
+          <th>No. Surat Jalan</th>
+          <th>Tanggal</th>
+          <th>Pelanggan / Tujuan</th>
+          <th style="text-align: center;">Volume Dus</th>
+          <th style="text-align: right;">Tarif (Rp)</th>
+          <th style="text-align: right;">Jumlah (Rp)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="4" style="text-align: right; text-transform: uppercase;">Total Dibayarkan:</td>
+          <td style="text-align: center;">${Number(item.Total_Dus || 0).toLocaleString('id-ID')} Dus</td>
+          <td></td>
+          <td style="text-align: right;">Rp ${Number(item.Total_Biaya || 0).toLocaleString('id-ID')}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="sig-row">
+      <div>
+        <span style="color: #475569;">Diterima Oleh (Driver):</span>
+        <div class="sig-space"></div>
+        <div class="sig-line">${item.Nama_Driver}</div>
+      </div>
+      <div>
+        <span style="color: #475569;">Kasir / Keuangan:</span>
+        <div class="sig-space"></div>
+        <div class="sig-line">Admin Finance</div>
+      </div>
+      <div>
+        <span style="color: #475569;">Menyetujui (Manager):</span>
+        <div class="sig-space"></div>
+        <div class="sig-line">Marko Dwi N.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    let iframe = document.getElementById('voucher-print-frame') as HTMLIFrameElement;
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'voucher-print-frame';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+    }
+
+    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (iframeDoc) {
+      iframeDoc.open();
+      iframeDoc.write(printContent);
+      iframeDoc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      }, 250);
+    } else {
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(printContent);
+        printWin.document.close();
+        printWin.focus();
+        setTimeout(() => {
+          printWin.print();
+          printWin.close();
+        }, 300);
+      }
+    }
   };
 
   // -------------------------------------------------------------
@@ -1692,7 +1901,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       if (!sId) return false;
       if (refStr && (refStr === sId || refStr.includes(sId) || sId.includes(refStr))) return true;
       if (ketStr && ketStr.includes(sId.toLowerCase())) return true;
-      if (s.No_Surat_Jalan_List && s.No_Surat_Jalan_List.some(sj => ketStr.includes(String(sj).toLowerCase()))) return true;
+      if (safeList(s.No_Surat_Jalan_List).some(sj => ketStr.includes(String(sj).toLowerCase()))) return true;
       if (s.Keterangan && s.Keterangan.trim().toLowerCase() === ketStr) return true;
       return false;
     });
@@ -2297,7 +2506,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   };
 
   return (
-    <div className="space-y-5 w-full max-w-full min-w-0 overflow-x-hidden">
+    <div className={`space-y-5 w-full max-w-full min-w-0 overflow-x-hidden ${showDetailSettlementModal ? 'print-bg-content' : ''}`}>
       {/* Toast Notification */}
       {toastMsg && (
         <div 
@@ -5506,9 +5715,35 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       {/* MODAL VOUCHER / BUKTI PENGELUARAN KAS DRIVER (PRINTABLE) */}
       {showDetailSettlementModal && (() => {
         const item = showDetailSettlementModal;
+        const details = (item.Items_Detail && Array.isArray(item.Items_Detail) && item.Items_Detail.length > 0)
+          ? item.Items_Detail
+          : (() => {
+              const idList = safeList(item.ID_Distribusi_List);
+              const sjList = safeList(item.No_Surat_Jalan_List);
+              const idSet = new Set(idList);
+              const sjSet = new Set(sjList);
+              const matched = (distributions || []).filter(d => idSet.has(d.ID_Distribusi) || sjSet.has(d.No_Surat_Jalan));
+              return matched.map(d => {
+                const dus = (distributionItems || [])
+                  .filter(it => it.ID_Distribusi === d.ID_Distribusi)
+                  .reduce((sum, it) => sum + (Number(it.Qty) || 0), 0);
+                const tarif = Number(item.Tarif_Per_Dus || 1000);
+                return {
+                  ID_Distribusi: d.ID_Distribusi,
+                  No_Surat_Jalan: d.No_Surat_Jalan || '-',
+                  Tanggal: d.Tanggal,
+                  Pelanggan: d.Nama_Pelanggan || 'Pelanggan',
+                  Tujuan: d.Tujuan_Pengiriman || d.Alamat || '-',
+                  Dus: dus,
+                  Tarif: tarif,
+                  Biaya: dus * tarif
+                };
+              });
+            })();
+
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto no-print">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden my-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto printable-modal-overlay">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden my-6 printable-modal-card">
               <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white no-print">
                 <div className="flex items-center gap-2">
                   <Printer size={18} className="text-blue-400" />
@@ -5518,8 +5753,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => window.print()}
-                    className="px-3 py-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                    onClick={() => handlePrintVoucher(item)}
+                    className="px-3 py-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                    title="Cetak Voucher Kas Keluar format A4 Resmi"
                   >
                     <Printer size={13} />
                     <span>Cetak Voucher</span>
@@ -5531,7 +5767,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               </div>
 
               {/* TAMPILAN RESMI VOUCHER KAS KELUAR */}
-              <div className="p-6 space-y-4 text-xs font-sans bg-white printable-voucher">
+              <div className="p-6 space-y-4 text-xs font-sans bg-white printable-voucher printable-content">
                 {/* Header Kop Perusahaan */}
                 <div className="border-b-2 border-slate-900 pb-3 flex items-start justify-between">
                   <div>
@@ -5579,17 +5815,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-mono">
-                      {(item.Items_Detail && item.Items_Detail.length > 0) ? (
-                        item.Items_Detail.map((d, i) => (
+                      {details.length > 0 ? (
+                        details.map((d: any, i: number) => (
                           <tr key={i}>
                             <td className="p-2 text-center text-slate-500">{i + 1}</td>
-                            <td className="p-2 font-bold text-slate-900">{d.No_Surat_Jalan}</td>
+                            <td className="p-2 font-bold text-slate-900">{d.No_Surat_Jalan || '-'}</td>
                             <td className="p-2 text-slate-600">{formatDateDDMMYYYY(d.Tanggal)}</td>
-                            <td className="p-2 font-sans">{d.Pelanggan} ({d.Tujuan})</td>
-                            <td className="p-2 text-center font-bold">{d.Dus}</td>
-                            <td className="p-2 text-right">{d.Tarif.toLocaleString('id-ID')}</td>
+                            <td className="p-2 font-sans">{d.Pelanggan || '-'}{d.Tujuan ? ` (${d.Tujuan})` : ''}</td>
+                            <td className="p-2 text-center font-bold">{Number(d.Dus || 0).toLocaleString('id-ID')}</td>
+                            <td className="p-2 text-right">{Number(d.Tarif || 0).toLocaleString('id-ID')}</td>
                             <td className="p-2 text-right font-bold tabular-nums">
-                              {d.Biaya.toLocaleString('id-ID')}
+                              {Number(d.Biaya || 0).toLocaleString('id-ID')}
                             </td>
                           </tr>
                         ))
@@ -5604,10 +5840,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-900">
                       <tr>
                         <td colSpan={4} className="p-2 text-right font-sans uppercase">Total Dibayarkan:</td>
-                        <td className="p-2 text-center font-mono">{item.Total_Dus.toLocaleString('id-ID')} Dus</td>
+                        <td className="p-2 text-center font-mono">{Number(item.Total_Dus || 0).toLocaleString('id-ID')} Dus</td>
                         <td></td>
                         <td className="p-2 text-right font-mono text-sm tabular-nums">
-                          Rp {item.Total_Biaya.toLocaleString('id-ID')}
+                          Rp {Number(item.Total_Biaya || 0).toLocaleString('id-ID')}
                         </td>
                       </tr>
                     </tfoot>
@@ -5639,8 +5875,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   Tutup
                 </button>
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => handlePrintVoucher(item)}
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <Printer size={14} />
                   <span>Cetak Dokumen</span>

@@ -328,7 +328,16 @@ export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
       Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
       Grand_Total: Number(r.Grand_Total ?? r.Total_Tagihan ?? 0),
       Items: typeof r.Items === 'string' ? r.Items : JSON.stringify(r.Items || []),
+      No_Surat_Jalan_List: typeof r.No_Surat_Jalan_List === 'string' ? r.No_Surat_Jalan_List : JSON.stringify(r.No_Surat_Jalan_List || []),
+      ID_Distribusi_List: typeof r.ID_Distribusi_List === 'string' ? r.ID_Distribusi_List : JSON.stringify(r.ID_Distribusi_List || []),
       Status: r.Status || 'Draf'
+    }));
+  }
+  if (table === 'Pencairan_Biaya_Distribusi') {
+    return rows.map(r => ({
+      ...r,
+      ID_Distribusi_List: typeof r.ID_Distribusi_List === 'string' ? r.ID_Distribusi_List : JSON.stringify(r.ID_Distribusi_List || []),
+      No_Surat_Jalan_List: typeof r.No_Surat_Jalan_List === 'string' ? r.No_Surat_Jalan_List : JSON.stringify(r.No_Surat_Jalan_List || [])
     }));
   }
   return rows;
@@ -554,12 +563,26 @@ export async function pullAllTablesFromTurso(options?: {
             PEMBUAT: r.PEMBUAT || r.Pembuat || 'Admin Finance'
           }));
         } else if (table === 'Pencairan_Biaya_Distribusi') {
+          const parseList = (val: any): string[] => {
+            if (Array.isArray(val)) return val;
+            if (typeof val === 'string' && val.trim()) {
+              try {
+                const parsed = JSON.parse(val);
+                if (Array.isArray(parsed)) return parsed;
+              } catch {
+                return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+              }
+            }
+            return [];
+          };
           cleanedRows = cleanedRows.map((r: any) => ({
             ...r,
             Tarif_Per_Dus: Number(r.Tarif_Per_Dus || 1000),
             Total_Dus: Number(r.Total_Dus || 0),
             Total_Biaya: Number(r.Total_Biaya || 0),
-            Jumlah_Pengiriman: Number(r.Jumlah_Pengiriman || 0)
+            Jumlah_Pengiriman: Number(r.Jumlah_Pengiriman || 0),
+            ID_Distribusi_List: parseList(r.ID_Distribusi_List),
+            No_Surat_Jalan_List: parseList(r.No_Surat_Jalan_List)
           }));
         } else if (table === 'Admin_PO') {
           cleanedRows = cleanedRows.map((r: any) => ({
