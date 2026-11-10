@@ -14,7 +14,8 @@ import {
   CustomerItem, RawMaterialPurchase, CustomerPaymentRecord, DriverSettlementItem, DriverSettlementDetail
 } from '../types';
 import { 
-  getTableData, setTableData, verifyAndPostDraftJournal, upgradeCOAToFactoryStandard 
+  getTableData, setTableData, verifyAndPostDraftJournal, upgradeCOAToFactoryStandard,
+  normalizeDistributionDriver, isRadityaVariant 
 } from '../services/dbAdapter';
 import { syncAllModulesToFinance, reconcileAndBalanceJournals } from '../services/financeSyncService';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
@@ -738,7 +739,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           });
         } else {
           // Kirim Armada Pabrik
-          const driverName = (d.Pengirim && d.Pengirim !== '-' ? d.Pengirim : 'Driver Pabrik').trim();
+          const driverName = normalizeDistributionDriver(d.Pengirim, true);
           const estimasiBiaya = totalDus * 1000; // Standar biaya armada distribusi pabrik Rp 1.000/dus
           totalDusKirimArmada += totalDus;
           totalTripDriver += 1;
@@ -838,7 +839,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       .map(d => {
         const idDist = String(d.ID_Distribusi || '').trim();
         const noSJ = String(d.No_Surat_Jalan || '-').trim();
-        const driverName = (d.Pengirim && d.Pengirim !== '-' && d.Pengirim.trim() !== '') ? d.Pengirim.trim() : 'Driver Pabrik';
+        const driverName = normalizeDistributionDriver(d.Pengirim, true);
 
         const itms = distItemsMap.get(idDist) || [];
         let totalDus = itms.reduce((s, it) => s + (Number(it.Qty) || 0), 0);
@@ -5065,7 +5066,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 }`}
               >
                 <Users size={14} />
-                <span>Rekap Per Driver Pabrik</span>
+                <span>Rekap Per Driver</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
                   distCostSubView === 'rekap_driver' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-700'
                 }`}>
@@ -5148,11 +5149,22 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-800 font-bold flex items-center justify-center text-xs uppercase shadow-xs">
-                              {drv.namaDriver.slice(0, 2)}
+                            <div className={`w-9 h-9 rounded-full font-bold flex items-center justify-center text-xs uppercase shadow-xs ${
+                              drv.namaDriver === 'Driver -' 
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {drv.namaDriver === 'Driver -' ? 'D-' : drv.namaDriver.slice(0, 2)}
                             </div>
                             <div>
-                              <h4 className="text-sm font-bold text-slate-900">{drv.namaDriver}</h4>
+                              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                                {drv.namaDriver}
+                                {drv.namaDriver === 'Driver -' && (
+                                  <span className="text-[10px] font-normal text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                    Pengirim Kosong
+                                  </span>
+                                )}
+                              </h4>
                               <p className="text-[11px] text-slate-500 font-mono">
                                 {drv.totalPengiriman} Trip Pengiriman
                               </p>

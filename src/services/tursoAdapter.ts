@@ -6,7 +6,7 @@
  * Tanpa library eksternal, sangat ringan, kencang, dan bebas limit Egress 5 GB!
  */
 
-import { getTableData, ALL_DATABASE_TABLES, TABLE_PRIMARY_KEYS, notifyDbChange, STORAGE_KEY_PREFIX, memoryTableCache } from './dbAdapter';
+import { getTableData, ALL_DATABASE_TABLES, TABLE_PRIMARY_KEYS, notifyDbChange, STORAGE_KEY_PREFIX, memoryTableCache, isRadityaVariant } from './dbAdapter';
 
 export interface TursoConfig {
   url: string;
@@ -318,6 +318,16 @@ export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
       Subtotal: Number(r.Subtotal ?? r.Total_Harga ?? 0)
     }));
   }
+  if (table === 'Distribusi') {
+    return rows.map(r => {
+      const rawPengirim = r.Pengirim ? String(r.Pengirim).trim() : '';
+      const pengirim = isRadityaVariant(rawPengirim) ? 'RADITYA' : (rawPengirim || '-');
+      return {
+        ...r,
+        Pengirim: pengirim
+      };
+    });
+  }
   if (table === 'Data_Custom_Invoice') {
     return rows.map(r => ({
       ...r,
@@ -540,16 +550,21 @@ export async function pullAllTablesFromTurso(options?: {
         }
 
         if (table === 'Distribusi') {
-          cleanedRows = cleanedRows.map((r: any) => ({
-            ...r,
-            C120: Number(r.C120) || 0,
-            C220: Number(r.C220) || 0,
-            B330: Number(r.B330) || 0,
-            B600: Number(r.B600) || 0,
-            G19: Number(r.G19) || 0,
-            Galon: Number(r.G19) || 0,
-            Total_Tagihan: Number(r.Total_Tagihan) || 0
-          }));
+          cleanedRows = cleanedRows.map((r: any) => {
+            const rawPengirim = r.Pengirim ? String(r.Pengirim).trim() : '';
+            const pengirim = isRadityaVariant(rawPengirim) ? 'RADITYA' : (rawPengirim || '-');
+            return {
+              ...r,
+              Pengirim: pengirim,
+              C120: Number(r.C120) || 0,
+              C220: Number(r.C220) || 0,
+              B330: Number(r.B330) || 0,
+              B600: Number(r.B600) || 0,
+              G19: Number(r.G19) || 0,
+              Galon: Number(r.G19) || 0,
+              Total_Tagihan: Number(r.Total_Tagihan) || 0
+            };
+          });
         } else if (table === 'Jurnal_Umum') {
           cleanedRows = cleanedRows.map((r: any) => ({
             ID_JURNAL: r.ID_JURNAL || r.ID_Entry || r.ID_Transaksi || '',

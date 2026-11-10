@@ -12,7 +12,7 @@ import {
   CustomerItem, SpecialPriceItem, DraftJournalItem, ReceivablePayableItem,
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
-import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
@@ -636,7 +636,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     // 1. Count from distributions history
     (distributions || []).forEach(d => {
-      const name = String(d?.Pengirim || '').trim();
+      let name = String(d?.Pengirim || '').trim();
+      if (isRadityaVariant(name)) name = 'RADITYA';
       if (name && name !== '-' && name.toLowerCase() !== 'null' && name.toLowerCase() !== 'undefined') {
         counts.set(name, (counts.get(name) || 0) + 1);
       }
@@ -1010,7 +1011,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         ID_Pelanggan: formData.ID_Pelanggan,
         Nama_Pelanggan: finalCustName,
         Level_Pelanggan: finalCustLevel,
-        Pengirim: formData.Pengirim,
+        Pengirim: isRadityaVariant(formData.Pengirim) ? 'RADITYA' : (formData.Pengirim.trim() || '-'),
         Penerima: formData.Penerima,
         Tujuan: formData.Tujuan,
         Metode_Kirim: formData.Metode_Kirim,
@@ -1255,7 +1256,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Level_Pelanggan: cust?.Level_Pelanggan || 'Distributor',
       Metode_Kirim: planForm.Metode_Kirim,
       Alamat_Tujuan: planForm.Alamat_Tujuan,
-      Sopir: planForm.Sopir,
+      Sopir: isRadityaVariant(planForm.Sopir) ? 'RADITYA' : (planForm.Sopir.trim() || '-'),
       Status: editingPlan ? editingPlan.Status : 'Menunggu',
       Keterangan: planForm.Keterangan,
       Items: items
@@ -1344,7 +1345,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       ID_Pelanggan: plan.ID_Pelanggan,
       Nama_Pelanggan: plan.Nama_Pelanggan,
       Level_Pelanggan: plan.Level_Pelanggan,
-      Pengirim: plan.Sopir,
+      Pengirim: isRadityaVariant(plan.Sopir) ? 'RADITYA' : (plan.Sopir || '-'),
       Penerima: 'Penerima Toko',
       Tujuan: plan.Alamat_Tujuan,
       Metode_Kirim: plan.Metode_Kirim,

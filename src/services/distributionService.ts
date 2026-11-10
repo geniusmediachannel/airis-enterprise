@@ -4,7 +4,7 @@
  * serta menyinkronkan item produk ke Distribusi_Item dan Jurnal Keuangan.
  */
 
-import { getTableData, setTableData, getSupabaseConfig, syncTableToSupabaseExplicit } from './dbAdapter';
+import { getTableData, setTableData, getSupabaseConfig, syncTableToSupabaseExplicit, isRadityaVariant } from './dbAdapter';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
   CustomerItem, EmployeeItem, DraftJournalItem, ReceivablePayableItem, SpecialPriceItem 
@@ -314,6 +314,8 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
       }
       if (!anyDist.Pengirim || String(anyDist.Pengirim).trim() === '') {
         anyDist.Pengirim = '-';
+      } else if (isRadityaVariant(anyDist.Pengirim)) {
+        anyDist.Pengirim = 'RADITYA';
       }
       if (!anyDist.Tujuan || String(anyDist.Tujuan).trim() === '') {
         anyDist.Tujuan = '-';
@@ -804,9 +806,12 @@ export async function importDistributionRows(parsedRows: any[]): Promise<{
       const metode = (rawMetode && String(rawMetode).trim()) ? String(rawMetode).trim() : '-';
 
       const rawPengirim = getVal(row, ['PENGIRIM', 'Pengirim', 'Driver', 'Sopir']);
-      const pengirim = (rawPengirim && String(rawPengirim).trim() && !String(rawPengirim).includes('___')) 
+      let pengirim = (rawPengirim && String(rawPengirim).trim() && !String(rawPengirim).includes('___')) 
         ? String(rawPengirim).trim() 
         : '-';
+      if (isRadityaVariant(pengirim)) {
+        pengirim = 'RADITYA';
+      }
 
       const rawPenerima = getVal(row, ['PENERIMA', 'Penerima', 'Nama Penerima']);
       const penerima = (rawPenerima && String(rawPenerima).trim() && !String(rawPenerima).includes('___')) 

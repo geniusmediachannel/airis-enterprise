@@ -16,6 +16,41 @@ import {
   UserAccount, SpecialPriceItem
 } from '../types';
 
+// Helper Normalisasi Driver / Pengirim
+/**
+ * Memeriksa apakah sebuah nama merupakan variasi penulisan dari "RADITYA"
+ * (seperti radit, radiya, raditya, radittya, radityya, raditia, radithya, dll.)
+ */
+export function isRadityaVariant(name?: string | null): boolean {
+  if (!name) return false;
+  const n = String(name).trim().toLowerCase();
+  if (['radit', 'radiya', 'raditya', 'radityya', 'radittya', 'radithya', 'raditia', 'radtya', 'radditya'].includes(n)) {
+    return true;
+  }
+  if (/^rad[ityh\s]+$/i.test(n) && (n.startsWith('radit') || n.startsWith('radiy') || n.startsWith('radty'))) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalisasi nama sopir/pengirim distribusi:
+ * - Jika cocok dengan variasi Radit (radit, radityya, dll) -> ubah ke 'RADITYA'
+ * - Jika kosong/strip ('', '-', null, undefined, atau 'driver pabrik') pada konteks Biaya Distribusi -> ubah ke 'Driver -'
+ * - Jika kosong pada konteks umum data distribusi -> kembalikan default ('-')
+ */
+export function normalizeDistributionDriver(rawName?: string | null, isForBiayaDistribusi = false): string {
+  if (!rawName) return isForBiayaDistribusi ? 'Driver -' : '-';
+  const trimmed = String(rawName).trim();
+  if (!trimmed || trimmed === '-' || trimmed.toLowerCase() === 'driver pabrik') {
+    return isForBiayaDistribusi ? 'Driver -' : '-';
+  }
+  if (isRadityaVariant(trimmed)) {
+    return 'RADITYA';
+  }
+  return trimmed;
+}
+
 export const STORAGE_KEY_PREFIX = 'AIRIS_ENTERPRISE_';
 const SUPABASE_CONFIG_KEY = 'AIRIS_SUPABASE_CONFIG';
 
@@ -2617,7 +2652,7 @@ const DEFAULT_DISTRIBUSI: DistributionItem[] = [
   { ID_Distribusi: 'DST-652', Tanggal: '2026-10-03', ID_Pelanggan: 'PLG-CANDRA', Nama_Pelanggan: 'CANDRA DITIA TRI A', Level_Pelanggan: 'Agen', Pengirim: 'RADITYA', Penerima: '-', Tujuan: 'NGAWEN', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '652/x/26', No_Invoice: 'INV-652/X/26', Keterangan: '' },
   { ID_Distribusi: 'DST-652B', Tanggal: '2026-10-03', ID_Pelanggan: 'PLG-PARJOKO', Nama_Pelanggan: 'PARJOKO', Level_Pelanggan: 'Agen', Pengirim: '-', Penerima: '-', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '652/X/26', No_Invoice: 'INV-652B/X/26', Keterangan: '' },
   { ID_Distribusi: 'DST-653', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-JIWAN', Nama_Pelanggan: 'D. PR NU JIWAN', Level_Pelanggan: 'Distributor', Pengirim: 'AGUS', Penerima: '-', Tujuan: 'JIWAN KARANGNONGKO', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '653/X/26', No_Invoice: 'INV-653/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' },
-  { ID_Distribusi: 'DST-654', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-SUPRAPTO', Nama_Pelanggan: 'AGEN SUPRAPTO', Level_Pelanggan: 'Agen', Pengirim: 'RADIT', Penerima: '-', Tujuan: 'KARANGANOM', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '654/X/26', No_Invoice: 'INV-654/X/26', Keterangan: '' },
+  { ID_Distribusi: 'DST-654', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-SUPRAPTO', Nama_Pelanggan: 'AGEN SUPRAPTO', Level_Pelanggan: 'Agen', Pengirim: 'RADITYA', Penerima: '-', Tujuan: 'KARANGANOM', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '654/X/26', No_Invoice: 'INV-654/X/26', Keterangan: '' },
   { ID_Distribusi: 'DST-655', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-KLATENUTARA', Nama_Pelanggan: 'D. MWC NU KLATEN UTARA', Level_Pelanggan: 'Distributor', Pengirim: 'RENGGA', Penerima: 'RENGGA', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '655/X/26', No_Invoice: 'INV-655/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' },
   { ID_Distribusi: 'DST-656', Tanggal: '2026-10-06', ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', Level_Pelanggan: 'Distributor', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Hendra', Tujuan: 'Klaten', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '656/X/26', No_Invoice: 'INV-656/X/26', Keterangan: 'Pesanan Reguler Toko' },
   { ID_Distribusi: 'DST-657', Tanggal: '2026-10-08', ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', Level_Pelanggan: 'Agen', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Ahmad', Tujuan: 'Prambanan', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '657/X/26', No_Invoice: 'INV-657/X/26', Keterangan: 'Pengiriman Galon & Botol' },
@@ -2851,6 +2886,35 @@ export function initializeDatabase() {
   // Pastikan Master Produk ter-deduplikasi bersih dan relasi transaksi menyatu di ASH-GLN19L
   try {
     deduplicateMasterProductsAndFixRelations();
+  } catch (e) {}
+
+  // Normalisasi nama sopir Raditya (radit, radityya, dll.) pada data distribusi yang ada di LocalStorage
+  try {
+    const distList = getTableData<any>('Distribusi', []);
+    let hasDistUpdate = false;
+    const updatedDist = distList.map(d => {
+      if (isRadityaVariant(d.Pengirim)) {
+        hasDistUpdate = true;
+        return { ...d, Pengirim: 'RADITYA' };
+      }
+      return d;
+    });
+    if (hasDistUpdate) {
+      setTableData('Distribusi', updatedDist);
+    }
+
+    const plans = getTableData<any>('Rencana_Distribusi', []);
+    let hasPlanUpdate = false;
+    const updatedPlans = plans.map(p => {
+      if (isRadityaVariant(p.Sopir)) {
+        hasPlanUpdate = true;
+        return { ...p, Sopir: 'RADITYA' };
+      }
+      return p;
+    });
+    if (hasPlanUpdate) {
+      setTableData('Rencana_Distribusi', updatedPlans);
+    }
   } catch (e) {}
 }
 
