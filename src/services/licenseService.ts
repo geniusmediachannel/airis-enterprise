@@ -57,6 +57,16 @@ export function saveLicenseSettings(
     localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(next));
     window.dispatchEvent(new CustomEvent('airis_license_updated', { detail: next }));
 
+    // Simpan juga ke IndexedDB
+    import('./indexedDbAdapter').then(({ idbSet }) => {
+      idbSet(LICENSE_STORAGE_KEY, next).catch(() => {});
+    }).catch(() => {});
+
+    // Sinkronkan ke Turso Cloud Database agar HP & PC lain langsung terupdate otomatis
+    import('./tursoAdapter').then(({ syncLicenseToTurso }) => {
+      syncLicenseToTurso(next).catch(console.warn);
+    }).catch(() => {});
+
     // Sinkronkan juga ke Supabase Cloud jika terhubung agar device lain langsung terupdate
     const client = getSupabaseClient();
     if (client) {
@@ -211,3 +221,4 @@ export function quickExtendLicense(days: number, updaterUsername: string = 'hype
 // Alias fungsi untuk fleksibilitas import
 export const getAppLicenseSettings = getLicenseSettings;
 export const saveAppLicenseSettings = saveLicenseSettings;
+export { syncLicenseToTurso, pullLicenseFromTurso } from './tursoAdapter';

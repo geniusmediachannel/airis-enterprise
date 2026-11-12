@@ -7,6 +7,8 @@
  */
 
 import { getTableData, ALL_DATABASE_TABLES, TABLE_PRIMARY_KEYS, notifyDbChange, STORAGE_KEY_PREFIX, memoryTableCache, isRadityaVariant } from './dbAdapter';
+import { AppLicenseSettings } from '../types';
+import { idbSet } from './indexedDbAdapter';
 
 export interface TursoConfig {
   url: string;
@@ -228,19 +230,38 @@ export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
   Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Tipe', 'Qty', 'Keterangan'],
   Data_QC: ['ID_QC', 'Tanggal', 'Bulan_Tahun', 'Produk', 'Petugas_QC', 'Kesimpulan', 'Status_Data', 'ID_Produksi'],
   Data_QC_Detail: ['ID_Detail', 'ID_QC', 'Siklus', 'Baku_pH', 'Baku_TDS', 'Baku_Kekeruhan', 'Baku_Bau', 'Baku_Coliform', 'Proses_pH', 'Proses_TDS', 'Proses_Kekeruhan', 'Proses_Bau', 'Proses_Rasa', 'Proses_Ozon', 'Jadi_pH', 'Jadi_TDS', 'Jadi_Kekeruhan', 'Jadi_Bau', 'Jadi_Rasa', 'Jadi_Ozon', 'Jadi_ALT_Awal', 'Jadi_ALT_Akhir', 'Jadi_Coliform'],
-  Data_Presensi: ['ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_H', 'Total_T', 'Total_I', 'Total_S', 'Total_C', 'Total_A', 'Tanggal', 'Status_Kehadiran', 'Jam_Masuk', 'Jam_Pulang', 'Keterangan'],
-  Data_Lembur: ['ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_Jam_Lembur', 'Tanggal', 'Durasi_Jam', 'Keterangan'],
+  Data_Presensi: [
+    'ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 
+    'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 
+    'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'T17', 'T18', 'T19', 'T20', 
+    'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27', 'T28', 'T29', 'T30', 'T31', 
+    'Total_H', 'Total_T', 'Total_Menit_Telat', 'Total_I', 'Total_S', 'Total_C', 'Total_A', 'Total_PA', 'Total_L', 
+    'Catatan_Presensi', 'Tanggal', 'Status_Kehadiran', 'Jam_Masuk', 'Jam_Pulang', 'Keterangan'
+  ],
+  Data_Lembur: [
+    'ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 
+    'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 
+    'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'T17', 'T18', 'T19', 'T20', 
+    'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27', 'T28', 'T29', 'T30', 'T31', 
+    'Total_Jam_Lembur', 'Tanggal', 'Durasi_Jam', 'Keterangan'
+  ],
   Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Tenor', 'Cicilan_Per_Bulan', 'Status', 'Keterangan'],
-  Histori_Penggajian: ['ID_Histori', 'ID_Gaji', 'Bulan_Tahun', 'Periode', 'Tanggal_Bayar', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Total_Lembur_Nominal', 'Potongan_Kasbon', 'Potongan_Alpha', 'Gaji_Bersih', 'Total_Diterima', 'Tanggal_Cetak', 'Status_Bayar', 'Status'],
+  Histori_Penggajian: [
+    'ID_Histori', 'ID_Batch', 'ID_Gaji', 'Bulan_Tahun', 'Periode', 'Tanggal_Bayar', 'Tanggal_Pencairan', 'Waktu_Pencairan',
+    'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Bonus_Hadir', 'Bonus_Target',
+    'Jam_Lembur', 'Jam_Lembur_15', 'Jam_Lembur_20', 'Upah_Lembur', 'Total_Lembur_Nominal', 'PPh21', 'BPJS',
+    'BPJS_Ketenagakerjaan', 'BPJS_Kesehatan', 'Kasbon', 'Potongan_Kasbon', 'Potongan_Absen', 'Potongan_Alpha',
+    'Total_Pendapatan', 'Total_Potongan', 'Gaji_Bersih', 'Total_Diterima', 'Tanggal_Cetak', 'Status_Bayar', 'Status'
+  ],
   Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SUB_KATEGORI', 'SALDO_NORMAL', 'SALDO_AWAL', 'STATUS'],
   Jurnal_Umum: ['ID_Entry', 'ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT', 'ID_Transaksi', 'Tanggal', 'Kode_Akun', 'Nama_Akun', 'Keterangan', 'Debit', 'Kredit'],
   Draf_Jurnal: ['ID_Draf', 'Sumber', 'Tanggal', 'Referensi', 'Keterangan', 'Kode_Debit', 'Kode_Kredit', 'Nominal', 'Status', 'Waktu_Dibuat', 'Kategori', 'Akun_Debit', 'Akun_Kredit'],
   Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status', 'KETERANGAN', 'Keterangan'],
   Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN', 'KATEGORI', 'TGL_PEROLEHAN', 'HARGA_PEROLEHAN', 'NILAI_SISA', 'MASA_MANFAAT', 'METODE_PENYUSUTAN'],
   Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Lampiran', 'Kepada', 'Alamat_Tujuan', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Tembusan', 'Dibuat_Oleh', 'Isi_Surat_HTML', 'LetterDocSettings', 'Penandatangan_List'],
-  Admin_PO: ['ID_PO', 'No_PO', 'Tanggal_PO', 'Tanggal', 'ID_Supplier', 'Nama_Supplier', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Perihal', 'Grand_Total', 'Total_Nilai', 'Status'],
+  Admin_PO: ['ID_PO', 'No_PO', 'Tanggal_PO', 'Tanggal', 'ID_Supplier', 'Nama_Supplier', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Perihal', 'Grand_Total', 'Total_Nilai', 'Status', 'Signatories', 'POSettings'],
   Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Barang', 'Nama_Produk', 'Spesifikasi', 'Qty', 'Satuan', 'Harga_Satuan', 'Total_Harga', 'Subtotal'],
-  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Nomor_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Keterangan', 'Items', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Total_Tagihan', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
+  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Nomor_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Kirim_Ke', 'Keterangan', 'Items', 'ShipmentGroups', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Total_Tagihan', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
   Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'Tanggal', 'ID_Distribusi', 'ID_Pelanggan', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Nominal', 'Metode_Bayar', 'Metode', 'No_Referensi', 'Catatan', 'Keterangan', 'Waktu_Input'],
   Pencairan_Biaya_Distribusi: ['ID_Pencairan', 'Tanggal', 'Nama_Driver', 'Tarif_Per_Dus', 'Total_Dus', 'Total_Biaya', 'Jumlah_Pengiriman', 'ID_Distribusi_List', 'No_Surat_Jalan_List', 'Akun_Kas', 'Nama_Akun_Kas', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input']
 };
@@ -302,7 +323,49 @@ export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
       Perihal: r.Perihal || '',
       Grand_Total: Number(r.Grand_Total ?? r.Total_Nilai ?? 0),
       Total_Nilai: Number(r.Total_Nilai ?? r.Grand_Total ?? 0),
-      Status: r.Status || 'Draf'
+      Status: r.Status || 'Draf',
+      Signatories: typeof r.Signatories === 'string' ? r.Signatories : (r.Signatories ? JSON.stringify(r.Signatories) : ''),
+      POSettings: typeof r.POSettings === 'string' ? r.POSettings : (r.POSettings ? JSON.stringify(r.POSettings) : '')
+    }));
+  }
+  if (table === 'Data_Surat') {
+    return rows.map(r => ({
+      ...r,
+      LetterDocSettings: typeof r.LetterDocSettings === 'string' ? r.LetterDocSettings : (r.LetterDocSettings ? JSON.stringify(r.LetterDocSettings) : ''),
+      Penandatangan_List: typeof r.Penandatangan_List === 'string' ? r.Penandatangan_List : (r.Penandatangan_List ? JSON.stringify(r.Penandatangan_List) : '')
+    }));
+  }
+  if (table === 'Data_Presensi') {
+    return rows.map(r => ({
+      ...r,
+      Catatan_Presensi: r.Catatan_Presensi && typeof r.Catatan_Presensi === 'object' ? JSON.stringify(r.Catatan_Presensi) : (r.Catatan_Presensi || '')
+    }));
+  }
+  if (table === 'Histori_Penggajian') {
+    return rows.map((r, idx) => ({
+      ...r,
+      ID_Histori: r.ID_Histori || (r.ID_Batch && r.ID_Karyawan ? `${r.ID_Batch}_${r.ID_Karyawan}` : `HIST-GAJI-${r.Bulan_Tahun || 'PER'}-${idx + 1}`),
+      Gaji_Pokok: Number(r.Gaji_Pokok || 0),
+      Tunjangan: Number(r.Tunjangan || 0),
+      Bonus_Hadir: Number(r.Bonus_Hadir || 0),
+      Bonus_Target: Number(r.Bonus_Target || 0),
+      Jam_Lembur: Number(r.Jam_Lembur || 0),
+      Jam_Lembur_15: Number(r.Jam_Lembur_15 || 0),
+      Jam_Lembur_20: Number(r.Jam_Lembur_20 || 0),
+      Upah_Lembur: Number(r.Upah_Lembur ?? r.Total_Lembur_Nominal ?? 0),
+      Total_Lembur_Nominal: Number(r.Total_Lembur_Nominal ?? r.Upah_Lembur ?? 0),
+      PPh21: Number(r.PPh21 || 0),
+      BPJS: Number(r.BPJS || 0),
+      BPJS_Ketenagakerjaan: Number(r.BPJS_Ketenagakerjaan || 0),
+      BPJS_Kesehatan: Number(r.BPJS_Kesehatan || 0),
+      Kasbon: Number(r.Kasbon ?? r.Potongan_Kasbon ?? 0),
+      Potongan_Kasbon: Number(r.Potongan_Kasbon ?? r.Kasbon ?? 0),
+      Potongan_Absen: Number(r.Potongan_Absen ?? r.Potongan_Alpha ?? 0),
+      Potongan_Alpha: Number(r.Potongan_Alpha ?? r.Potongan_Absen ?? 0),
+      Total_Pendapatan: Number(r.Total_Pendapatan || 0),
+      Total_Potongan: Number(r.Total_Potongan || 0),
+      Gaji_Bersih: Number(r.Gaji_Bersih ?? r.Total_Diterima ?? 0),
+      Total_Diterima: Number(r.Total_Diterima ?? r.Gaji_Bersih ?? 0)
     }));
   }
   if (table === 'Admin_PO_Detail') {
@@ -335,12 +398,17 @@ export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
       Nomor_Invoice: r.Nomor_Invoice || r.No_Invoice || '',
       Tanggal: r.Tanggal || '',
       Nama_Pelanggan: r.Nama_Pelanggan || '',
+      Subtotal: Number(r.Subtotal || 0),
+      Potongan_Ekspedisi: Number(r.Potongan_Ekspedisi || 0),
+      Diskon: Number(r.Diskon || 0),
+      Pajak_PPN: Number(r.Pajak_PPN || 0),
       Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
       Grand_Total: Number(r.Grand_Total ?? r.Total_Tagihan ?? 0),
       Items: typeof r.Items === 'string' ? r.Items : JSON.stringify(r.Items || []),
+      ShipmentGroups: typeof r.ShipmentGroups === 'string' ? r.ShipmentGroups : JSON.stringify(r.ShipmentGroups || []),
       No_Surat_Jalan_List: typeof r.No_Surat_Jalan_List === 'string' ? r.No_Surat_Jalan_List : JSON.stringify(r.No_Surat_Jalan_List || []),
       ID_Distribusi_List: typeof r.ID_Distribusi_List === 'string' ? r.ID_Distribusi_List : JSON.stringify(r.ID_Distribusi_List || []),
-      Status: r.Status || 'Draf'
+      Status: r.Status || 'Draft'
     }));
   }
   if (table === 'Pencairan_Biaya_Distribusi') {
@@ -470,6 +538,15 @@ export async function pushAllTablesToTurso(options?: {
     }
   }
 
+  // Unggah juga status lisensi aplikasi ke Turso Cloud
+  try {
+    const rawLic = localStorage.getItem('AIRIS_APP_LICENSE_V1');
+    if (rawLic) {
+      const parsed = JSON.parse(rawLic);
+      if (parsed) await syncLicenseToTurso(parsed);
+    }
+  } catch {}
+
   return {
     success: true,
     message: `Berhasil mengunggah ${totalRows.toLocaleString('id-ID')} data (${pushedTables} tabel) ke Turso Cloud!`,
@@ -559,7 +636,59 @@ export function cleanPulledTableRows(
       ID_Distribusi_List: parseList(r.ID_Distribusi_List),
       No_Surat_Jalan_List: parseList(r.No_Surat_Jalan_List)
     }));
+  } else if (table === 'Data_Presensi') {
+    cleanedRows = cleanedRows.map((r: any) => {
+      let cat = r.Catatan_Presensi;
+      if (typeof cat === 'string' && cat.trim()) {
+        try { cat = JSON.parse(cat); } catch {}
+      }
+      return {
+        ...r,
+        Catatan_Presensi: cat && typeof cat === 'object' ? cat : undefined
+      };
+    });
+  } else if (table === 'Histori_Penggajian') {
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      Gaji_Pokok: Number(r.Gaji_Pokok || 0),
+      Tunjangan: Number(r.Tunjangan || 0),
+      Bonus_Hadir: Number(r.Bonus_Hadir || 0),
+      Bonus_Target: Number(r.Bonus_Target || 0),
+      Jam_Lembur: Number(r.Jam_Lembur || 0),
+      Jam_Lembur_15: Number(r.Jam_Lembur_15 || 0),
+      Jam_Lembur_20: Number(r.Jam_Lembur_20 || 0),
+      Upah_Lembur: Number(r.Upah_Lembur ?? r.Total_Lembur_Nominal ?? 0),
+      Total_Lembur_Nominal: Number(r.Total_Lembur_Nominal ?? r.Upah_Lembur ?? 0),
+      PPh21: Number(r.PPh21 || 0),
+      BPJS: Number(r.BPJS || 0),
+      BPJS_Ketenagakerjaan: Number(r.BPJS_Ketenagakerjaan || 0),
+      BPJS_Kesehatan: Number(r.BPJS_Kesehatan || 0),
+      Kasbon: Number(r.Kasbon ?? r.Potongan_Kasbon ?? 0),
+      Potongan_Kasbon: Number(r.Potongan_Kasbon ?? r.Kasbon ?? 0),
+      Potongan_Absen: Number(r.Potongan_Absen ?? r.Potongan_Alpha ?? 0),
+      Potongan_Alpha: Number(r.Potongan_Alpha ?? r.Potongan_Absen ?? 0),
+      Total_Pendapatan: Number(r.Total_Pendapatan || 0),
+      Total_Potongan: Number(r.Total_Potongan || 0),
+      Gaji_Bersih: Number(r.Gaji_Bersih ?? r.Total_Diterima ?? 0),
+      Total_Diterima: Number(r.Total_Diterima ?? r.Gaji_Bersih ?? 0)
+    }));
+  } else if (table === 'Data_Surat') {
+    const parseJsonObj = (val: any) => {
+      if (!val) return undefined;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return undefined; }
+    };
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      LetterDocSettings: parseJsonObj(r.LetterDocSettings),
+      Penandatangan_List: parseJsonObj(r.Penandatangan_List)
+    }));
   } else if (table === 'Admin_PO') {
+    const parseJsonObj = (val: any) => {
+      if (!val) return undefined;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return undefined; }
+    };
     cleanedRows = cleanedRows.map((r: any) => ({
       ...r,
       Tanggal_PO: r.Tanggal_PO || r.Tanggal || '',
@@ -569,7 +698,9 @@ export function cleanPulledTableRows(
       ID_Supplier: r.ID_Supplier || r.Order_Ke || '',
       Grand_Total: Number(r.Grand_Total ?? r.Total_Nilai ?? 0),
       Total_Nilai: Number(r.Total_Nilai ?? r.Grand_Total ?? 0),
-      Status: r.Status || 'Draf'
+      Status: r.Status || 'Draf',
+      Signatories: parseJsonObj(r.Signatories),
+      POSettings: parseJsonObj(r.POSettings)
     }));
   } else if (table === 'Admin_PO_Detail') {
     cleanedRows = cleanedRows.map((r: any) => ({
@@ -583,13 +714,25 @@ export function cleanPulledTableRows(
       Harga_Satuan: Number(r.Harga_Satuan || 0)
     }));
   } else if (table === 'Data_Custom_Invoice') {
+    const parseJsonSafe = (val: any, fallback: any = []) => {
+      if (!val) return fallback;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return fallback; }
+    };
     cleanedRows = cleanedRows.map((r: any) => ({
       ...r,
       No_Invoice: r.No_Invoice || r.Nomor_Invoice || '',
       Nomor_Invoice: r.Nomor_Invoice || r.No_Invoice || '',
+      Subtotal: Number(r.Subtotal ?? 0),
+      Potongan_Ekspedisi: Number(r.Potongan_Ekspedisi ?? 0),
+      Diskon: Number(r.Diskon ?? 0),
+      Pajak_PPN: Number(r.Pajak_PPN ?? 0),
       Grand_Total: Number(r.Grand_Total ?? r.Total_Tagihan ?? 0),
       Total_Tagihan: Number(r.Total_Tagihan ?? r.Grand_Total ?? 0),
-      Items: typeof r.Items === 'string' ? (() => { try { return JSON.parse(r.Items); } catch { return []; } })() : (r.Items || [])
+      Items: parseJsonSafe(r.Items, []),
+      ShipmentGroups: parseJsonSafe(r.ShipmentGroups, []),
+      No_Surat_Jalan_List: parseJsonSafe(r.No_Surat_Jalan_List, []),
+      ID_Distribusi_List: parseJsonSafe(r.ID_Distribusi_List, [])
     }));
   }
 
@@ -622,6 +765,7 @@ export async function pullTableFromTurso(
     if (res.success && Array.isArray(res.rows)) {
       const cleanedRows = cleanPulledTableRows(table, res.rows);
       memoryTableCache[table] = cleanedRows;
+      idbSet(table, cleanedRows).catch(() => {});
       try {
         localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(cleanedRows));
       } catch (e) {}
@@ -732,6 +876,7 @@ export async function pullAllTablesFromTurso(options?: {
         if (res.success && Array.isArray(res.rows)) {
           const cleanedRows = cleanPulledTableRows(table, res.rows, deletedRecordsMap);
           memoryTableCache[table] = cleanedRows;
+          idbSet(table, cleanedRows).catch(() => {});
           try {
             localStorage.setItem(STORAGE_KEY_PREFIX + table, JSON.stringify(cleanedRows));
           } catch (e) {}
@@ -743,6 +888,13 @@ export async function pullAllTablesFromTurso(options?: {
         console.warn(`[TursoPull] Gagal pull tabel ${table}:`, err);
       }
     }));
+  }
+
+  // Sinkronkan status lisensi dari cloud Turso
+  try {
+    await pullLicenseFromTurso();
+  } catch (licErr) {
+    console.warn('[Turso] Gagal menarik lisensi:', licErr);
   }
 
   notifyDbChange();
@@ -953,3 +1105,82 @@ export async function clearAllTursoDatabase(keepUserAccounts: boolean = true): P
 
   return { success: true, clearedCount: tablesToClear.length };
 }
+
+/**
+ * Sinkronisasi Pengaturan Lisensi ke Turso Cloud
+ * Menyimpan masa aktif dan status kunci di tabel App_Settings Turso
+ * sehingga seluruh perangkat HP dan PC tersinkronisasi otomatis secara real-time.
+ */
+export async function syncLicenseToTurso(settings: AppLicenseSettings): Promise<{ success: boolean; error?: string }> {
+  const cfg = getTursoConfig();
+  if (!cfg.isConnected || !cfg.url || !cfg.authToken) {
+    return { success: false, error: 'Turso tidak terhubung' };
+  }
+
+  const jsonStr = JSON.stringify(settings);
+
+  try {
+    // 1. Pastikan tabel App_Settings ada di Turso
+    await executeTursoQuery(`
+      CREATE TABLE IF NOT EXISTS "App_Settings" (
+        "key" TEXT PRIMARY KEY,
+        "value" TEXT NOT NULL,
+        "updated_at" TEXT DEFAULT (datetime('now', 'localtime'))
+      )
+    `, [], cfg).catch(() => {});
+
+    // 2. Simpan nilai lisensi dengan UPSERT
+    const res = await executeTursoQuery(
+      `INSERT INTO "App_Settings" ("key", "value", "updated_at")
+       VALUES ('license_settings', ?, datetime('now', 'localtime'))
+       ON CONFLICT("key") DO UPDATE SET "value" = excluded."value", "updated_at" = excluded."updated_at"`,
+      [jsonStr],
+      cfg
+    );
+
+    return res.success ? { success: true } : { success: false, error: res.error };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Gagal menyimpan lisensi ke Turso' };
+  }
+}
+
+/**
+ * Menarik Pengaturan Lisensi Terbaru dari Turso Cloud
+ * Dipanggil secara otomatis saat aplikasi dibuka di HP/PC atau saat sinkronisasi berkala.
+ */
+export async function pullLicenseFromTurso(): Promise<AppLicenseSettings | null> {
+  const cfg = getTursoConfig();
+  if (!cfg.isConnected || !cfg.url || !cfg.authToken) return null;
+
+  try {
+    const res = await executeTursoQuery(
+      `SELECT "value" FROM "App_Settings" WHERE "key" = 'license_settings' LIMIT 1`,
+      [],
+      cfg
+    );
+
+    let cloudLic: AppLicenseSettings | null = null;
+    if (res.success && res.rows.length > 0 && res.rows[0].value) {
+      try {
+        const parsed = JSON.parse(res.rows[0].value);
+        if (parsed && typeof parsed.expiryDate === 'string') {
+          cloudLic = parsed;
+        }
+      } catch {}
+    }
+
+    if (cloudLic) {
+      try {
+        localStorage.setItem('AIRIS_APP_LICENSE_V1', JSON.stringify(cloudLic));
+        idbSet('AIRIS_APP_LICENSE_V1', cloudLic).catch(() => {});
+        window.dispatchEvent(new CustomEvent('airis_license_updated', { detail: cloudLic }));
+      } catch {}
+      return cloudLic;
+    }
+  } catch (e) {
+    console.warn('[Turso] Gagal menarik lisensi dari cloud:', e);
+  }
+
+  return null;
+}
+

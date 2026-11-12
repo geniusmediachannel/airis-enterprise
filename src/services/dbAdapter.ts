@@ -15,6 +15,7 @@ import {
   AdminPOHeader, AdminPODetail, SupabaseConfig,
   UserAccount, SpecialPriceItem
 } from '../types';
+import { idbGet, idbSet, idbGetAll, idbClear } from './indexedDbAdapter';
 
 // Helper Normalisasi Driver / Pengirim
 /**
@@ -297,6 +298,60 @@ export function recordDeletedDistributionId(id: string | number) {
   // No-op: Data di Turso dihapus langsung via SQL DELETE sehingga tidak perlu lagi tombstone lokal
 }
 
+/**
+ * Inisialisasi dan pemuatan cepat seluruh data dari IndexedDB ke memori aplikasi.
+ * Jika IndexedDB masih kosong (pengguna lama), otomatis migrasikan data dari localStorage ke IndexedDB.
+ */
+export async function initIndexedDBStorage(): Promise<boolean> {
+  try {
+    const idbData = await idbGetAll();
+    const idbKeys = Object.keys(idbData);
+    let loadedCount = 0;
+
+    if (idbKeys.length > 0) {
+      for (const [tbl, rows] of Object.entries(idbData)) {
+        if (Array.isArray(rows) && rows.length > 0) {
+          memoryTableCache[tbl] = rows;
+          loadedCount++;
+        }
+      }
+    }
+
+    // Periksa migrasi dari localStorage untuk tabel yang belum ada di IndexedDB
+    for (const tbl of ALL_DATABASE_TABLES) {
+      if (!memoryTableCache[tbl] || memoryTableCache[tbl].length === 0) {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY_PREFIX + tbl);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              memoryTableCache[tbl] = parsed;
+              idbSet(tbl, parsed).catch(() => {});
+              loadedCount++;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Muat juga status lisensi dari IndexedDB jika ada
+    try {
+      const licData = idbData['AIRIS_APP_LICENSE_V1'];
+      if (licData && (licData as any).expiryDate) {
+        localStorage.setItem('AIRIS_APP_LICENSE_V1', JSON.stringify(licData));
+      }
+    } catch (e) {}
+
+    if (loadedCount > 0) {
+      notifyDbChange();
+    }
+    return true;
+  } catch (err) {
+    console.warn('[IndexedDB] Init error:', err);
+    return false;
+  }
+}
+
 export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T[] {
   let result: T[] | null = null;
 
@@ -318,11 +373,24 @@ export function getTableData<T>(tableName: string, fallbackDefault: T[] = []): T
     }
   }
 
+  // 2. Jika belum ada di memory cache, picu pemuatan async dari IndexedDB untuk menghangatkan cache
+  if (!result || result.length === 0) {
+    idbGet<T[]>(tableName).then(idbRows => {
+      if (Array.isArray(idbRows) && idbRows.length > 0) {
+        if (!memoryTableCache[tableName] || memoryTableCache[tableName].length === 0) {
+          memoryTableCache[tableName] = idbRows;
+          notifyDbChange(tableName);
+        }
+      }
+    }).catch(() => {});
+  }
+
   if (!result) {
     memoryTableCache[tableName] = fallbackDefault;
     try {
       localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(fallbackDefault));
     } catch (e) {}
+    idbSet(tableName, fallbackDefault).catch(() => {});
     result = fallbackDefault;
   }
 
@@ -386,27 +454,14 @@ export function setTableData<T>(tableName: string, data: T[], options?: { skipCl
   const safeData = Array.isArray(data) ? data : [];
   memoryTableCache[tableName] = safeData;
 
+  // 1. Simpan ke IndexedDB (Kapasitas ratusan MB, async, bebas QuotaExceededError)
+  idbSet(tableName, safeData).catch(() => {});
+
+  // 2. Simpan cadangan ke localStorage jika muat (tanpa membuat crash jika kuota browser penuh)
   try {
     localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(safeData));
   } catch (e: any) {
-    console.warn(`LocalStorage quota warning writing ${tableName}:`, e);
-    // Jika kuota localStorage penuh (QuotaExceededError), bersihkan data non-kritis dan coba lagi
-    try {
-      // 1. Pangkas log jurnal otomatis jika melebihi 500 baris
-      const rawJ = localStorage.getItem(STORAGE_KEY_PREFIX + 'Jurnal_Umum');
-      if (rawJ) {
-        const jArr = JSON.parse(rawJ);
-        if (Array.isArray(jArr) && jArr.length > 500) {
-          localStorage.setItem(STORAGE_KEY_PREFIX + 'Jurnal_Umum', JSON.stringify(jArr.slice(-500)));
-        }
-      }
-      // 2. Bersihkan log notifikasi
-      localStorage.removeItem('airis_notifications');
-      // 3. Simpan kembali data utama
-      localStorage.setItem(STORAGE_KEY_PREFIX + tableName, JSON.stringify(safeData));
-    } catch (retryErr) {
-      console.warn(`LocalStorage retry failed for ${tableName}, kept safely in memory cache:`, retryErr);
-    }
+    // Kuota localStorage penuh tidak lagi menjadi masalah karena data utama aman di IndexedDB & memoryTableCache
   }
 
   notifyDbChange();
@@ -437,6 +492,7 @@ export async function deleteTableRow(
   idValue: string | number | (string | number)[], 
   customIdField?: string
 ): Promise<{ success: boolean; deletedCount: number; message: string; cloudError?: string }> {
+  let cloudErrorMsg: string | undefined = undefined;
   try {
     const pk = customIdField || TABLE_PRIMARY_KEYS[tableName] || TABLE_COLUMNS[tableName]?.[0] || 'id';
     const targetIds = (Array.isArray(idValue) ? idValue : [idValue]).map(v => String(v).trim());
@@ -453,7 +509,10 @@ export async function deleteTableRow(
       const tursoCfg = getTursoConfig();
       if (tursoCfg.isConnected) {
         for (const singleId of targetIds) {
-          await deleteRowFromTurso(tableName, singleId, pk).catch(() => {});
+          const res = await deleteRowFromTurso(tableName, singleId, pk).catch(err => ({ success: false, error: err?.message }));
+          if (res && !res.success && res.error) {
+            cloudErrorMsg = res.error;
+          }
           // Hapus child foreign key terkait jika ada
           if (tableName === 'Distribusi') {
             await deleteRowFromTurso('Distribusi_Item', singleId, 'ID_Distribusi').catch(() => {});
@@ -464,7 +523,9 @@ export async function deleteTableRow(
           }
         }
       }
-    } catch (e) {}
+    } catch (e: any) {
+      cloudErrorMsg = e?.message || 'Gagal koneksi cloud Turso';
+    }
 
     // 2. Hapus dari memori lokal & LocalStorage
     const currentRows = getTableData<any>(tableName, []);
@@ -525,19 +586,19 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Qty', 'Keterangan'],
   Data_QC: ['ID_QC', 'Tanggal', 'Bulan_Tahun', 'Produk', 'Petugas_QC', 'Kesimpulan', 'Status_Data', 'ID_Produksi'],
   Data_QC_Detail: ['ID_Detail', 'ID_QC', 'Siklus', 'Baku_pH', 'Baku_TDS', 'Baku_Kekeruhan', 'Baku_Bau', 'Baku_Coliform', 'Proses_pH', 'Proses_TDS', 'Proses_Kekeruhan', 'Proses_Bau', 'Proses_Rasa', 'Proses_Ozon', 'Jadi_pH', 'Jadi_TDS', 'Jadi_Kekeruhan', 'Jadi_Bau', 'Jadi_Rasa', 'Jadi_Ozon', 'Jadi_ALT_Awal', 'Jadi_ALT_Akhir', 'Jadi_Coliform'],
-  Data_Presensi: ['ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_H', 'Total_T', 'Total_I', 'Total_S', 'Total_C', 'Total_A'],
-  Data_Lembur: ['ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'Total_Jam_Lembur'],
+  Data_Presensi: ['ID_Presensi', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'T17', 'T18', 'T19', 'T20', 'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27', 'T28', 'T29', 'T30', 'T31', 'Total_H', 'Total_T', 'Total_Menit_Telat', 'Total_I', 'Total_S', 'Total_C', 'Total_A', 'Total_PA', 'Total_L', 'Catatan_Presensi'],
+  Data_Lembur: ['ID_Lembur', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15', 'T16', 'T17', 'T18', 'T19', 'T20', 'T21', 'T22', 'T23', 'T24', 'T25', 'T26', 'T27', 'T28', 'T29', 'T30', 'T31', 'Total_Jam_Lembur'],
   Data_Kasbon: ['ID_Kasbon', 'Tanggal', 'ID_Karyawan', 'Nama_Karyawan', 'Nominal', 'Tenor', 'Cicilan_Per_Bulan'],
-  Histori_Penggajian: ['ID_Histori', 'ID_Gaji', 'Bulan_Tahun', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Total_Lembur_Nominal', 'Potongan_Kasbon', 'Potongan_Alpha', 'Gaji_Bersih', 'Tanggal_Cetak', 'Status_Bayar'],
+  Histori_Penggajian: ['ID_Histori', 'ID_Batch', 'ID_Gaji', 'Bulan_Tahun', 'Periode', 'Tanggal_Bayar', 'Tanggal_Pencairan', 'Waktu_Pencairan', 'ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Gaji_Pokok', 'Tunjangan', 'Bonus_Hadir', 'Bonus_Target', 'Jam_Lembur', 'Jam_Lembur_15', 'Jam_Lembur_20', 'Upah_Lembur', 'Total_Lembur_Nominal', 'PPh21', 'BPJS', 'BPJS_Ketenagakerjaan', 'BPJS_Kesehatan', 'Kasbon', 'Potongan_Kasbon', 'Potongan_Absen', 'Potongan_Alpha', 'Total_Pendapatan', 'Total_Potongan', 'Gaji_Bersih', 'Total_Diterima', 'Tanggal_Cetak', 'Status_Bayar', 'Status'],
   Master_COA: ['KODE_AKUN', 'NAMA_AKUN', 'KATEGORI', 'SALDO_NORMAL', 'STATUS'],
   Jurnal_Umum: ['ID_Entry', 'ID_JURNAL', 'TANGGAL', 'PERIODE', 'REFERENSI', 'KETERANGAN', 'KODE_AKUN', 'DEBIT', 'KREDIT', 'PEMBUAT'],
   Draf_Jurnal: ['ID_Draf', 'Sumber', 'Tanggal', 'Referensi', 'Keterangan', 'Kode_Debit', 'Kode_Kredit', 'Nominal', 'Status', 'Waktu_Dibuat'],
   Data_Piutang_Utang: ['ID_DOKUMEN', 'ID_Transaksi', 'TIPE', 'Jenis', 'TANGGAL', 'Tanggal', 'JATUH_TEMPO', 'Tgl_Jatuh_Tempo', 'NAMA_ENTITAS', 'Entitas', 'TOTAL_TAGIHAN', 'Nominal', 'TOTAL_DIBAYAR', 'Terbayar', 'SISA_SALDO', 'Sisa', 'STATUS', 'Status'],
   Data_Aset_Tetap: ['ID_ASET', 'NAMA_ASET', 'TGL_BELI', 'NILAI_PEROLEHAN', 'NILAI_RESIDU', 'UMUR_EKONOMIS_BLN', 'BEBAN_PENYUSUTAN_BLN', 'AKUN_ASET', 'AKUN_AKUMULASI', 'AKUN_BEBAN'],
-  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Kepada', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Dibuat_Oleh'],
-  Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status'],
+  Data_Surat: ['ID_Surat', 'Nomor_Surat', 'Tipe_Surat', 'Tanggal', 'Perihal', 'Kepada', 'Isi_Surat', 'Penandatangan_Nama', 'Penandatangan_Jabatan', 'Dibuat_Oleh', 'Isi_Surat_HTML', 'LetterDocSettings', 'Penandatangan_List'],
+  Admin_PO: ['ID_PO', 'Tanggal_PO', 'No_PO', 'Order_Ke', 'Alamat_Supplier', 'Syarat_Ketentuan', 'Grand_Total', 'Status', 'Signatories', 'POSettings'],
   Admin_PO_Detail: ['ID_Detail', 'ID_PO', 'Nama_Produk', 'Spesifikasi', 'Qty', 'Harga_Satuan', 'Total_Harga'],
-  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Keterangan', 'Items', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
+  Data_Custom_Invoice: ['ID_Invoice', 'No_Invoice', 'Nomor_Invoice', 'Tanggal', 'Jatuh_Tempo', 'Nama_Pelanggan', 'Level_Pelanggan', 'Alamat_Pelanggan', 'No_Kontak', 'No_PO_Pelanggan', 'No_Surat_Jalan_List', 'ID_Distribusi_List', 'Metode_Kirim', 'Penerima', 'Kirim_Ke', 'Keterangan', 'Items', 'ShipmentGroups', 'Subtotal', 'Potongan_Ekspedisi', 'Diskon', 'Pajak_PPN', 'Grand_Total', 'Total_Tagihan', 'Status', 'Dibuat_Oleh', 'Waktu_Input'],
   Data_Pembayaran_Pelanggan: ['ID_Pembayaran', 'Tanggal_Bayar', 'ID_Distribusi', 'Nama_Pelanggan', 'Jumlah_Bayar', 'Metode_Bayar', 'No_Referensi', 'Keterangan'],
   Pencairan_Biaya_Distribusi: ['ID_Pencairan', 'Tanggal', 'Nama_Driver', 'Tarif_Per_Dus', 'Total_Dus', 'Total_Biaya', 'Jumlah_Pengiriman', 'ID_Distribusi_List', 'No_Surat_Jalan_List', 'Akun_Kas', 'Nama_Akun_Kas', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input']
 };
@@ -2774,7 +2835,10 @@ const DEFAULT_OFFICIAL_LETTERS: OfficialLetterItem[] = [
   }
 ];
 
-export function initializeDatabase() {
+export async function initializeDatabase(): Promise<void> {
+  // Pemuatan data dari IndexedDB ke memori aplikasi
+  await initIndexedDBStorage();
+
   if (!localStorage.getItem(STORAGE_KEY_PREFIX + 'INITIALIZED')) {
     const opts = { skipCloudSync: true };
     setTableData('MD_Produk', DEFAULT_PRODUCTS, opts);
@@ -2984,7 +3048,8 @@ export async function resetAllDatabase(keepUserAccounts: boolean = true): Promis
       'MD_Karyawan', 'HRD_Payroll_Settings', 'Data_COA', 'Master_COA'
     ];
 
-    // 1. Kosongkan memori cache dan localStorage seketika
+    // 1. Kosongkan memori cache, IndexedDB, dan localStorage seketika
+    await idbClear().catch(() => {});
     tableNames.forEach(tbl => {
       memoryTableCache[tbl] = [];
       localStorage.removeItem(STORAGE_KEY_PREFIX + tbl);

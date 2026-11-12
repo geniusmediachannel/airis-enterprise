@@ -239,6 +239,9 @@ export interface DistributionItem {
   Keterangan: string;
   No_Invoice?: string;
   Total_Tagihan?: number;
+  Tanda_Tangan_Penerima?: string;
+  Tanda_Tangan_Sopir?: string;
+  Waktu_Diterima?: string;
 }
 
 export interface DistributionProductDetail {

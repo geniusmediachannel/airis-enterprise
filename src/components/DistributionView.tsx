@@ -5,8 +5,12 @@ import {
   Edit2, Trash2, Upload, FileDown, CheckCircle2,
   Clock, ArrowRight, BarChart2, PackageCheck, Send, FolderOpen,
   Settings, Image, RotateCcw, TrendingUp, Sparkles, Search,
-  ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet
+  ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet,
+  QrCode, PenTool
 } from 'lucide-react';
+import { QRCodeDisplay } from './QRCodeDisplay';
+import { QRScannerModal } from './QRScannerModal';
+import { SignaturePadModal } from './SignaturePadModal';
 import { 
   DistributionItem, DistributionProductDetail, ProductItem, 
   CustomerItem, SpecialPriceItem, DraftJournalItem, ReceivablePayableItem,
@@ -445,6 +449,49 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     items: DistributionProductDetail[]; 
     docType: 'sj' | 'inv' 
   } | null>(null);
+
+  // QR Scanner & Digital Signature States
+  const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
+  const [signatureModalConfig, setSignatureModalConfig] = useState<{
+    isOpen: boolean;
+    dist: DistributionItem;
+    role: 'penerima' | 'sopir';
+  } | null>(null);
+
+  const handleSaveSignature = async (sigUrl: string, signerName: string) => {
+    if (!signatureModalConfig) return;
+    const { dist, role } = signatureModalConfig;
+    const allDist = [...distributions];
+    const targetIdx = allDist.findIndex(d => d.ID_Distribusi === dist.ID_Distribusi);
+    if (targetIdx >= 0) {
+      const updated = { ...allDist[targetIdx] };
+      if (role === 'penerima') {
+        updated.Tanda_Tangan_Penerima = sigUrl;
+        if (signerName) updated.Penerima = signerName;
+        updated.Waktu_Diterima = new Date().toLocaleString('id-ID');
+      } else {
+        updated.Tanda_Tangan_Sopir = sigUrl;
+        if (signerName) updated.Pengirim = signerName;
+      }
+      allDist[targetIdx] = updated;
+      await setTableData('Distribusi', allDist);
+
+      if (viewDocModal && viewDocModal.dist.ID_Distribusi === dist.ID_Distribusi) {
+        setViewDocModal(prev => prev ? { ...prev, dist: updated } : null);
+      }
+      if (openDetailDist && openDetailDist.ID_Distribusi === dist.ID_Distribusi) {
+        setOpenDetailDist(updated);
+      }
+
+      showToast(
+        'Tanda Tangan Berhasil Disimpan',
+        `Tanda tangan digital ${role === 'penerima' ? 'penerima' : 'sopir'} untuk Surat Jalan ${updated.No_Surat_Jalan || updated.ID_Distribusi} berhasil dicatat.`,
+        'success'
+      );
+      onRefresh();
+    }
+    setSignatureModalConfig(null);
+  };
 
   // Document Template Settings State (Kop Surat, Cap, TTD, Penandatangan, Info Pembayaran)
   const defaultDocSettings: DocumentTemplateSettings = {
@@ -2371,6 +2418,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               <span>Kirim Barang Baru</span>
             </button>
 
+            {/* Tombol Scan QR Surat Jalan */}
+            <button
+              onClick={() => setIsQRScannerOpen(true)}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Pindai QR Code Surat Jalan untuk verifikasi cepat & tanda tangan digital supir/penerima"
+            >
+              <QrCode size={14} />
+              <span>Scan QR Surat Jalan</span>
+            </button>
+
             {/* Tombol Print Icon */}
             <button
               onClick={() => window.print()}
@@ -2858,6 +2915,20 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     >
                       <FileCheck size={15} />
                       <span>Surat Jalan</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSignatureModalConfig({
+                          isOpen: true,
+                          dist: dist,
+                          role: 'penerima'
+                        });
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                      title="Bubuhkan tanda tangan digital supir atau penerima barang"
+                    >
+                      <PenTool size={14} />
+                      <span>TTD Digital</span>
                     </button>
                   </div>
 
@@ -4566,13 +4637,23 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </div>
                   )}
 
-                  <div className="text-center my-2">
-                    <h2 className="text-base font-black underline uppercase tracking-widest text-slate-900">
-                      SURAT JALAN PENGIRIMAN
-                    </h2>
-                    <p className="text-xs font-mono font-semibold text-slate-600 mt-0.5">
-                      No: {viewDocModal.dist.No_Surat_Jalan}
-                    </p>
+                  <div className="flex items-center justify-between my-2 border-b border-slate-200 pb-3">
+                    <div>
+                      <h2 className="text-base font-black underline uppercase tracking-widest text-slate-900">
+                        SURAT JALAN PENGIRIMAN
+                      </h2>
+                      <p className="text-xs font-mono font-semibold text-slate-600 mt-0.5">
+                        No: {viewDocModal.dist.No_Surat_Jalan}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <QRCodeDisplay
+                        value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
+                        size={64}
+                        showLabel={false}
+                      />
+                      <span className="text-[9px] font-mono text-slate-500 mt-0.5">QR Validasi</span>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-xs p-3 bg-slate-50 border border-slate-200 rounded-lg">
@@ -4621,18 +4702,76 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 text-center text-xs pt-8 border-t border-slate-200 mt-6">
-                    <div>
-                      <p className="text-slate-500 mb-14">Penerima Barang,</p>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">( {viewDocModal.dist.Penerima || '.....................'} )</p>
+                  <div className="grid grid-cols-3 text-center text-xs pt-6 border-t border-slate-200 mt-6 gap-4">
+                    {/* PENERIMA */}
+                    <div className="flex flex-col items-center justify-between min-h-[140px]">
+                      <p className="text-slate-500 font-medium">Penerima Barang,</p>
+                      <div className="my-2 h-16 flex items-center justify-center">
+                        {viewDocModal.dist.Tanda_Tangan_Penerima ? (
+                          <img
+                            src={viewDocModal.dist.Tanda_Tangan_Penerima}
+                            alt="TTD Penerima"
+                            className="max-h-14 max-w-[120px] object-contain"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSignatureModalConfig({
+                                isOpen: true,
+                                dist: viewDocModal.dist,
+                                role: 'penerima'
+                              });
+                            }}
+                            className="px-2.5 py-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-semibold cursor-pointer transition-colors shadow-2xs"
+                          >
+                            + TTD Penerima
+                          </button>
+                        )}
+                      </div>
+                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
+                        ( {viewDocModal.dist.Penerima || '.....................'} )
+                      </p>
                     </div>
-                    <div>
-                      <p className="text-slate-500 mb-14">Sopir / Pengirim,</p>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">( {viewDocModal.dist.Pengirim || 'Armada Pabrik'} )</p>
+
+                    {/* SOPIR / PENGIRIM */}
+                    <div className="flex flex-col items-center justify-between min-h-[140px]">
+                      <p className="text-slate-500 font-medium">Sopir / Pengirim,</p>
+                      <div className="my-2 h-16 flex items-center justify-center">
+                        {viewDocModal.dist.Tanda_Tangan_Sopir ? (
+                          <img
+                            src={viewDocModal.dist.Tanda_Tangan_Sopir}
+                            alt="TTD Sopir"
+                            className="max-h-14 max-w-[120px] object-contain"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSignatureModalConfig({
+                                isOpen: true,
+                                dist: viewDocModal.dist,
+                                role: 'sopir'
+                              });
+                            }}
+                            className="px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md font-semibold cursor-pointer transition-colors shadow-2xs"
+                          >
+                            + TTD Sopir
+                          </button>
+                        )}
+                      </div>
+                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
+                        ( {viewDocModal.dist.Pengirim || 'Armada Pabrik'} )
+                      </p>
                     </div>
-                    <div>
-                      <p className="text-slate-500 mb-14">Petugas Gudang,</p>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">Admin Gudang</p>
+
+                    {/* PETUGAS GUDANG */}
+                    <div className="flex flex-col items-center justify-between min-h-[140px]">
+                      <p className="text-slate-500 font-medium">Petugas Gudang,</p>
+                      <div className="my-2 h-16 flex items-center justify-center">
+                        <span className="text-[10px] text-slate-400 italic">Disahkan</span>
+                      </div>
+                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
+                        Admin Gudang
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -4988,6 +5127,47 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* ============================================================== */}
+      {/* MODAL SCANNER QR CODE SURAT JALAN                              */}
+      {/* ============================================================== */}
+      <QRScannerModal
+        isOpen={isQRScannerOpen}
+        onClose={() => setIsQRScannerOpen(false)}
+        distributions={distributions}
+        onSelectDistribution={(selectedDist, action) => {
+          if (action === 'sign') {
+            setSignatureModalConfig({
+              isOpen: true,
+              dist: selectedDist,
+              role: 'penerima'
+            });
+          } else {
+            const cleanItems = getCleanDocItems(
+              selectedDist,
+              distributionItems.filter(i => i.ID_Distribusi === selectedDist.ID_Distribusi)
+            );
+            setViewDocModal({ dist: selectedDist, items: cleanItems, docType: 'sj' });
+          }
+        }}
+      />
+
+      {/* ============================================================== */}
+      {/* MODAL TANDA TANGAN DIGITAL (CANVAS INTERAKTIF)                 */}
+      {/* ============================================================== */}
+      {signatureModalConfig && (
+        <SignaturePadModal
+          isOpen={signatureModalConfig.isOpen}
+          onClose={() => setSignatureModalConfig(null)}
+          title={`Tanda Tangan Digital - ${signatureModalConfig.role === 'penerima' ? 'Penerima Barang' : 'Sopir / Pengirim'}`}
+          roleLabel={signatureModalConfig.role === 'penerima' ? 'Nama Penerima (Toko/Mitra)' : 'Nama Sopir / Pengirim'}
+          defaultSignerName={
+            signatureModalConfig.role === 'penerima'
+              ? (signatureModalConfig.dist.Penerima || signatureModalConfig.dist.Nama_Pelanggan)
+              : (signatureModalConfig.dist.Pengirim || '')
+          }
+          onSave={handleSaveSignature}
+        />
       )}
     </div>
   );

@@ -64,7 +64,7 @@ export async function signIn(identifier: string, password: string): Promise<{ su
   // Menjamin Hyper Admin selalu bisa login tanpa terhalang sinkronisasi database lama atau koneksi Supabase
   if (cleanId === 'hyperadmin' || cleanId === 'gemiusmediachannel@gmail.com') {
     const hyperDef = DEFAULT_ACCOUNTS.find(a => a.Username === 'hyperadmin')!;
-    if (cleanPass === 'hyper123' || cleanPass === 'admin123' || cleanPass === hyperDef.PasswordPlain) {
+    if (cleanPass === 'hyper123' || cleanPass === hyperDef.PasswordPlain) {
       const hyperUser: UserAccount = {
         ID_User: hyperDef.ID_User,
         Username: 'hyperadmin',
@@ -190,7 +190,6 @@ export async function signIn(identifier: string, password: string): Promise<{ su
     const validPass = 
       (found.Password && found.Password === cleanPass) || 
       (def && def.PasswordPlain === cleanPass) || 
-      cleanPass === 'admin123' ||
       (found.Role === 'HyperAdmin' && cleanPass === 'hyper123');
 
     if (validPass) {

@@ -246,8 +246,11 @@ export default function App() {
       window.location.reload();
     };
 
-    // 1. Initialize seed data
-    initializeDatabase();
+    // 1. Initialize seed data & warm IndexedDB
+    initializeDatabase().then(() => {
+      reloadData(true);
+      setLicenseStatus(checkLicenseStatus());
+    });
 
     // 1b. Apply saved theme & compact mode
     const savedTheme = localStorage.getItem('airis_theme') || 'light';
