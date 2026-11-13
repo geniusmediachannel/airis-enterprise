@@ -675,106 +675,111 @@ export function generateSuratJalanPDF(params: {
     jabatanPenandatangan?: string;
   };
 }) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-  const pageWidth = doc.internal.pageSize.getWidth();
+  // Format A5 Landscape (210mm x 148mm)
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a5', compress: true });
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 148mm
 
   const cs = params.customSettings;
   const companyName = cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI';
-  const addressLine1 = cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,';
-  const addressLine2 = 'Kec. Klaten Utara, Kab. Klaten, 57438';
-  const phoneText = cs?.kontakPerusahaan || '0856 4000 1926';
+  const addressLine = 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan, Kec. Klaten Utara, Kab. Klaten, 57438';
+  const phoneText = '0856 4000 1926';
   const emailText = 'anugerahillahirabbi@gmail.com';
 
+  const marginX = 6;
+  const marginY = 6;
+  const borderW = pageWidth - (marginX * 2); // 198mm
+  const borderH = 133; // leaves room for FM-LOG outside border
+
   // Outer border
-  doc.setDrawColor(30, 30, 30);
-  doc.setLineWidth(0.4);
-  doc.rect(10, 10, pageWidth - 20, 277);
+  doc.setDrawColor(20, 20, 20);
+  doc.setLineWidth(0.35);
+  doc.rect(marginX, marginY, borderW, borderH);
 
   // Header Company
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.setTextColor(20, 20, 20);
-  doc.text(companyName, pageWidth / 2, 20, { align: 'center' });
+  doc.setFontSize(13);
+  doc.setTextColor(15, 23, 42);
+  doc.text(companyName, pageWidth / 2, 12, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(50, 50, 50);
-  doc.text(addressLine1, pageWidth / 2, 24.5, { align: 'center' });
-  doc.text(addressLine2, pageWidth / 2, 28.5, { align: 'center' });
-  doc.text(`${phoneText}    |    ${emailText}`, pageWidth / 2, 32.5, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(40, 40, 40);
+  doc.text(addressLine, pageWidth / 2, 15.5, { align: 'center' });
+  doc.text(`${phoneText}    |    ${emailText}`, pageWidth / 2, 19, { align: 'center' });
 
   // Two-tone divider bar (cyan + navy)
   doc.setFillColor(56, 189, 248); // Cyan
-  doc.rect(15, 35, 45, 1.5, 'F');
+  doc.rect(marginX + 3, 21, 50, 1.2, 'F');
   doc.setFillColor(30, 58, 138); // Navy
-  doc.rect(60, 35, pageWidth - 75, 1.5, 'F');
+  doc.rect(marginX + 53, 21, borderW - 56, 1.2, 'F');
 
   // SURAT JALAN Banner
   doc.setFillColor(30, 58, 138);
-  doc.rect(15, 42, 60, 8, 'F');
+  doc.rect(marginX + 3, 24.5, 42, 6, 'F');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
+  doc.setFontSize(10.5);
   doc.setTextColor(255, 255, 255);
-  doc.text('SURAT JALAN', 45, 47.5, { align: 'center' });
+  doc.text('SURAT JALAN', marginX + 24, 28.8, { align: 'center' });
 
   // Slanted cyan triangle next to banner
   doc.setFillColor(56, 189, 248);
-  doc.triangle(75, 42, 85, 42, 75, 50, 'F');
+  doc.triangle(marginX + 45, 24.5, marginX + 51, 24.5, marginX + 45, 30.5, 'F');
 
   // Nomer on left
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(20, 20, 20);
-  doc.text(`Nomer    : ${params.noSuratJalan || '-'}`, 15, 56);
+  doc.text(`Nomer    : ${params.noSuratJalan || '-'}`, marginX + 3, 35.5);
 
   // Metadata on right
   const metaX = 125;
-  doc.text(`Tgl Kirim    : ${params.tanggal || '-'}`, metaX, 45);
-  doc.text(`Kepada      : ${params.namaPelanggan || '-'}`, metaX, 50);
-  doc.text(`Alamat       : ${(params.alamatPelanggan || '-').slice(0, 32)}`, metaX, 55);
-  doc.text(`Pengemudi : ${params.sopir || '-'}`, metaX, 60);
+  doc.text(`Tgl Kirim    : ${params.tanggal || '-'}`, metaX, 26.5);
+  doc.text(`Kepada      : ${(params.namaPelanggan || '-').slice(0, 32)}`, metaX, 30.5);
+  doc.text(`Alamat       : ${(params.alamatPelanggan || '-').slice(0, 36)}`, metaX, 34.5);
+  doc.text(`Pengemudi : ${params.sopir || '-'}`, metaX, 38.5);
 
   // Table
-  let y = 65;
-  const colW = { no: 12, name: 60, qty: 28, lot: 40, ket: 50 };
-  const tableX = 15;
-  const totalW = pageWidth - 30; // 190mm
+  let y = 41.5;
+  const colW = { no: 10, name: 68, qty: 26, lot: 36, ket: 52 };
+  const tableX = marginX + 3;
+  const totalW = colW.no + colW.name + colW.qty + colW.lot + colW.ket; // 192mm
 
   // Cyan table header
   doc.setFillColor(103, 192, 222); // #67c0de
-  doc.rect(tableX, y, totalW, 7, 'F');
-  doc.rect(tableX, y, totalW, 7, 'S');
+  doc.rect(tableX, y, totalW, 5.5, 'F');
+  doc.rect(tableX, y, totalW, 5.5, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(15, 23, 42);
 
-  doc.text('No', tableX + 6, y + 5, { align: 'center' });
-  doc.text('Nama Barang', tableX + colW.no + colW.name / 2, y + 5, { align: 'center' });
-  doc.text('Jumlah Dikirim', tableX + colW.no + colW.name + colW.qty / 2, y + 5, { align: 'center' });
-  doc.text('Kode Produksi', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 5, { align: 'center' });
-  doc.text('Keterangan', tableX + colW.no + colW.name + colW.qty + colW.lot + colW.ket / 2, y + 5, { align: 'center' });
+  doc.text('No', tableX + colW.no / 2, y + 4, { align: 'center' });
+  doc.text('Nama Barang', tableX + colW.no + colW.name / 2, y + 4, { align: 'center' });
+  doc.text('Jumlah Dikirim', tableX + colW.no + colW.name + colW.qty / 2, y + 4, { align: 'center' });
+  doc.text('Kode Produksi', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 4, { align: 'center' });
+  doc.text('Keterangan', tableX + colW.no + colW.name + colW.qty + colW.lot + colW.ket / 2, y + 4, { align: 'center' });
 
   // Column vertical lines in header
   let curX = tableX + colW.no;
-  doc.line(curX, y, curX, y + 7);
+  doc.line(curX, y, curX, y + 5.5);
   curX += colW.name;
-  doc.line(curX, y, curX, y + 7);
+  doc.line(curX, y, curX, y + 5.5);
   curX += colW.qty;
-  doc.line(curX, y, curX, y + 7);
+  doc.line(curX, y, curX, y + 5.5);
   curX += colW.lot;
-  doc.line(curX, y, curX, y + 7);
+  doc.line(curX, y, curX, y + 5.5);
 
-  y += 7;
+  y += 5.5;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
 
-  const rowHeight = 6.5;
-  const minRows = 8;
+  const rowHeight = 5.2;
   const displayItems = [...params.items];
+  const emptyRowsCount = params.items.length >= 6 ? 0 : 2;
 
-  // Fill up to at least minRows
-  while (displayItems.length < minRows) {
+  // Add empty rows according to user's rule
+  for (let e = 0; e < emptyRowsCount; e++) {
     displayItems.push({ nama: '', qty: 0, kodeProduksi: '', keterangan: '' });
   }
 
@@ -791,39 +796,40 @@ export function generateSuratJalanPDF(params: {
     doc.line(curX, y, curX, y + rowHeight);
 
     if (it.nama) {
-      doc.text(String(idx + 1), tableX + 6, y + 4.5, { align: 'center' });
-      doc.text(it.nama, tableX + colW.no + 3, y + 4.5);
-      doc.text(String(it.qty), tableX + colW.no + colW.name + colW.qty / 2, y + 4.5, { align: 'center' });
-      doc.text(it.kodeProduksi || '-', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 4.5, { align: 'center' });
-      doc.text(it.keterangan || params.catatan || '', tableX + colW.no + colW.name + colW.qty + colW.lot + 3, y + 4.5);
+      doc.text(String(idx + 1), tableX + colW.no / 2, y + 3.8, { align: 'center' });
+      doc.text(it.nama, tableX + colW.no + 2.5, y + 3.8);
+      doc.text(String(it.qty), tableX + colW.no + colW.name + colW.qty / 2, y + 3.8, { align: 'center' });
+      doc.text(it.kodeProduksi || '-', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 3.8, { align: 'center' });
+      doc.text(it.keterangan || params.catatan || '', tableX + colW.no + colW.name + colW.qty + colW.lot + 2.5, y + 3.8);
+    } else {
+      doc.text(String(idx + 1), tableX + colW.no / 2, y + 3.8, { align: 'center' });
     }
     y += rowHeight;
   });
 
   // 4 Signatures Block
-  y += 18;
+  y = Math.max(y + 3, 114);
   const sigColW = totalW / 4;
   const sigTitles = ['Disiapkan', 'Disetujui', 'Diantar Oleh', 'Diterima Oleh'];
-  const sigNames = ['Admin Gudang', 'Pimpinan', params.sopir || 'Sopir', params.namaPelanggan || 'Penerima'];
 
   sigTitles.forEach((title, i) => {
     const sX = tableX + i * sigColW;
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.text(title, sX + sigColW / 2, y, { align: 'center' });
 
     // Underline for signature
-    const lineY = y + 22;
+    const lineY = y + 15;
     doc.line(sX + 5, lineY, sX + sigColW - 5, lineY);
-    doc.setFontSize(8);
-    doc.text(`( ${sigNames[i]} )`, sX + sigColW / 2, lineY + 4.5, { align: 'center' });
+    doc.setFontSize(7.5);
+    doc.text('( ____________________ )', sX + sigColW / 2, lineY + 3.5, { align: 'center' });
   });
 
-  // Document code bottom right
-  doc.setFontSize(7.5);
-  doc.setTextColor(80, 80, 80);
-  doc.text('FM-LOG-01-01', pageWidth - 15, 280, { align: 'right' });
-  doc.text('0/1', pageWidth - 15, 283.5, { align: 'right' });
+  // Document code bottom right (OUTSIDE BORDER)
+  doc.setFontSize(7);
+  doc.setTextColor(60, 60, 60);
+  doc.text('FM-LOG-01-01', pageWidth - marginX - 1, 142.5, { align: 'right' });
+  doc.text('0/1', pageWidth - marginX - 1, 145.2, { align: 'right' });
 
   const filename = `SJ-${sanitizeFilename(params.noSuratJalan)} (${sanitizeFilename(params.namaPelanggan)}).pdf`;
   doc.save(filename);

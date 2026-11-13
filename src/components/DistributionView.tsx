@@ -4760,272 +4760,281 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   }
                 };
 
-                const emptyRowsCount = Math.max(0, 8 - cleanDocItems.length);
+                const emptyRowsCount = cleanDocItems.length >= 6 ? 0 : 2;
 
                 return (
                 /* ============================================================== */
-                /* SURAT JALAN PENGIRIMAN TEMPLATE (AIRIS RESMI TEMPLATE FISIK)   */
+                /* SURAT JALAN PENGIRIMAN TEMPLATE (A5 LANDSCAPE RESMI FISIK)     */
                 /* ============================================================== */
-                <div className="border border-black p-4 sm:p-6 bg-white text-black font-sans max-w-4xl mx-auto shadow-xs print:shadow-none print:border-black print:p-2 print:max-w-none">
-                  {/* HEADER PERUSAHAAN */}
-                  <div className="text-center">
-                    <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-black">
-                      {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
-                    </h1>
-                    <p className="text-xs font-semibold text-black mt-0.5 leading-tight">
-                      {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,'}
-                    </p>
-                    <p className="text-xs font-semibold text-black leading-tight">
-                      Kec. Klaten Utara, Kab. Klaten, 57438
-                    </p>
-                    <div className="flex items-center justify-center gap-4 text-[11px] font-semibold text-black mt-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-4 h-4 rounded-full bg-[#38bdf8] text-white flex items-center justify-center text-[9px] font-bold">
-                          ☎
-                        </span>
-                        <span>{docSettings.kontakPerusahaan || '0856 4000 1926'}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-4 h-4 rounded-full bg-[#38bdf8] text-white flex items-center justify-center text-[9px] font-bold">
-                          ✉
-                        </span>
+                <div className="surat-jalan-a5-wrapper w-full max-w-[205mm] mx-auto text-black font-sans my-1">
+                  {/* Print Page Setup specifically for A5 Landscape */}
+                  <style>{`
+                    @page {
+                      size: A5 landscape !important;
+                      margin: 5mm !important;
+                    }
+                    @media print {
+                      html, body {
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #ffffff !important;
+                      }
+                      .surat-jalan-a5-wrapper {
+                        width: 100% !important;
+                        max-width: none !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        page-break-inside: avoid !important;
+                      }
+                    }
+                  `}</style>
+
+                  {/* KOTAK UTAMA BER-BORDER */}
+                  <div className="border border-black p-3 sm:p-4 bg-white text-black shadow-xs print:shadow-none print:border-black print:p-2.5">
+                    {/* HEADER PERUSAHAAN */}
+                    <div className="text-center">
+                      <h1 className="text-base sm:text-lg font-black uppercase tracking-wide text-black leading-tight">
+                        {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
+                      </h1>
+                      <p className="text-[10px] sm:text-[11px] font-semibold text-black mt-0.5 leading-tight">
+                        {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,'} Kec. Klaten Utara, Kab. Klaten, 57438
+                      </p>
+                      {/* Kontak Bersih Tanpa Ikon & Tanpa Duplikasi Email */}
+                      <div className="flex items-center justify-center gap-3 text-[10px] sm:text-[11px] font-semibold text-black mt-0.5">
+                        <span>0856 4000 1926</span>
+                        <span>|</span>
                         <span>anugerahillahirabbi@gmail.com</span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* TWO-TONE DECORATIVE BAR (CYAN & DARK NAVY) */}
-                  <div className="flex w-full h-1.5 mt-2.5">
-                    <div className="w-[30%] bg-[#38bdf8]"></div>
-                    <div className="w-[70%] bg-[#1e3a8a]"></div>
-                  </div>
+                    {/* TWO-TONE DECORATIVE BAR (CYAN & DARK NAVY) */}
+                    <div className="flex w-full h-1 mt-2">
+                      <div className="w-[30%] bg-[#38bdf8]"></div>
+                      <div className="w-[70%] bg-[#1e3a8a]"></div>
+                    </div>
 
-                  {/* DOCUMENT META & BANNER */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 items-start">
-                    {/* LEFT COLUMN: BANNER SURAT JALAN + NOMOR + QR VALIDASI */}
-                    <div>
-                      <div className="flex items-stretch h-8 mb-2">
-                        <div className="bg-[#1e3a8a] text-white font-black text-sm sm:text-base tracking-widest px-5 flex items-center uppercase">
-                          SURAT JALAN
+                    {/* DOCUMENT META & BANNER */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2.5 items-start">
+                      {/* LEFT COLUMN: BANNER SURAT JALAN + NOMOR + PURE FULL QR */}
+                      <div>
+                        <div className="flex items-stretch h-7 mb-1.5">
+                          <div className="bg-[#1e3a8a] text-white font-black text-xs sm:text-sm tracking-widest px-4 flex items-center uppercase">
+                            SURAT JALAN
+                          </div>
+                          <div className="w-7 bg-[#38bdf8] [clip-path:polygon(0_0,100%_0,0_100%)]"></div>
                         </div>
-                        <div className="w-8 bg-[#38bdf8] [clip-path:polygon(0_0,100%_0,0_100%)]"></div>
+
+                        <div className="flex items-center justify-between gap-3 mt-1">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-black flex-1">
+                            <span className="w-14">Nomer</span>
+                            <span>:</span>
+                            <span className="font-mono font-bold border-b border-black flex-1 pb-0.5">
+                              {viewDocModal.dist.No_Surat_Jalan || '-'}
+                            </span>
+                          </div>
+                          {/* Full Pure QR Code Tanpa Tulisan QR Validasi */}
+                          <div className="p-0.5 bg-white print:p-0 flex items-center justify-center shrink-0" title="QR Code Surat Jalan">
+                            <QRCodeDisplay
+                              value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
+                              size={44}
+                              showLabel={false}
+                            />
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 mt-1.5">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-black flex-1">
-                          <span className="w-16">Nomer</span>
+                      {/* RIGHT COLUMN: METADATA PENGIRIMAN */}
+                      <div className="space-y-1 text-xs">
+                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
+                          <span className="font-semibold text-black">Tgl Kirim</span>
                           <span>:</span>
-                          <span className="font-mono font-bold border-b border-black flex-1 pb-0.5">
-                            {viewDocModal.dist.No_Surat_Jalan || '-'}
+                          <span className="font-mono font-bold border-b border-black pb-0.5">
+                            {formatDisplayDate(viewDocModal.dist.Tanggal)}
                           </span>
                         </div>
-                        {/* Compact QR Validation for Camera Scanning */}
-                        <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded print:border-none print:bg-transparent" title="QR Code Resmi untuk Validasi & Tanda Tangan Scanner">
-                          <QRCodeDisplay
-                            value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
-                            size={44}
-                            showLabel={false}
-                          />
-                          <span className="text-[8px] font-mono text-slate-500 leading-tight hidden sm:inline">QR Validasi</span>
+                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
+                          <span className="font-semibold text-black">Kepada</span>
+                          <span>:</span>
+                          <span className="font-bold uppercase border-b border-black pb-0.5 truncate">
+                            {viewDocModal.dist.Nama_Pelanggan}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
+                          <span className="font-semibold text-black">Alamat</span>
+                          <span>:</span>
+                          <span className="border-b border-black pb-0.5 truncate">
+                            {viewDocModal.dist.Tujuan || '-'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
+                          <span className="font-semibold text-black">Pengemudi</span>
+                          <span>:</span>
+                          <span className="font-semibold border-b border-black pb-0.5">
+                            {viewDocModal.dist.Pengirim || '-'}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* RIGHT COLUMN: METADATA PENGIRIMAN */}
-                    <div className="space-y-1 text-xs">
-                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
-                        <span className="font-semibold text-black">Tgl Kirim</span>
-                        <span>:</span>
-                        <span className="font-mono font-bold border-b border-black pb-0.5">
-                          {formatDisplayDate(viewDocModal.dist.Tanggal)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
-                        <span className="font-semibold text-black">Kepada</span>
-                        <span>:</span>
-                        <span className="font-bold uppercase border-b border-black pb-0.5 truncate">
-                          {viewDocModal.dist.Nama_Pelanggan}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
-                        <span className="font-semibold text-black">Alamat</span>
-                        <span>:</span>
-                        <span className="border-b border-black pb-0.5 truncate">
-                          {viewDocModal.dist.Tujuan || '-'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
-                        <span className="font-semibold text-black">Pengemudi</span>
-                        <span>:</span>
-                        <span className="font-semibold border-b border-black pb-0.5">
-                          {viewDocModal.dist.Pengirim || '-'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ITEMS TABLE WITH CYAN HEADER */}
-                  <table className="w-full text-xs border-collapse border border-black mt-3">
-                    <thead>
-                      <tr style={{ backgroundColor: '#67c0de' }} className="border-b border-black font-bold text-center text-black">
-                        <th className="border border-black py-1.5 px-2 w-10 text-center">No</th>
-                        <th className="border border-black py-1.5 px-2 text-center">Nama Barang</th>
-                        <th className="border border-black py-1.5 px-2 w-28 text-center">Jumlah Dikirim</th>
-                        <th className="border border-black py-1.5 px-2 w-32 text-center" title="Kode Produksi FIFO (Dapat Diedit Langsung)">
-                          Kode Produksi
-                        </th>
-                        <th className="border border-black py-1.5 px-2 w-40 text-center">Keterangan</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cleanDocItems.map((item, idx) => {
-                        const itemKey = item.ID_Detail || item.ID_Produk;
-                        return (
-                          <tr key={idx} className="border-b border-black">
-                            <td className="border border-black py-1.5 px-2 text-center font-mono">{idx + 1}</td>
-                            <td className="border border-black py-1.5 px-2 font-medium text-black">{item.Nama_Produk}</td>
-                            <td className="border border-black py-1.5 px-2 text-center font-mono font-bold text-black">{item.Qty}</td>
-                            <td className="border border-black py-0 px-1 text-center font-mono font-bold">
-                              <input
-                                type="text"
-                                value={item.Kode_Produksi || ''}
-                                onChange={(e) => handleUpdateDocItemLot(itemKey, e.target.value)}
-                                title="Klik untuk mengedit Kode Produksi"
-                                placeholder="P..."
-                                className="w-full text-center bg-transparent border-0 outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 rounded font-mono font-bold text-black text-xs py-1"
-                              />
-                            </td>
-                            <td className="border border-black py-1.5 px-2 text-slate-800 text-[11px]">
-                              {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {/* Empty padding rows to preserve authentic printed appearance */}
-                      {Array.from({ length: emptyRowsCount }).map((_, rIdx) => (
-                        <tr key={`empty-${rIdx}`} className="border-b border-black h-7">
-                          <td className="border border-black py-1.5 px-2 text-center font-mono text-slate-400">
-                            {cleanDocItems.length + rIdx + 1}
-                          </td>
-                          <td className="border border-black py-1.5 px-2"></td>
-                          <td className="border border-black py-1.5 px-2"></td>
-                          <td className="border border-black py-1.5 px-2"></td>
-                          <td className="border border-black py-1.5 px-2"></td>
+                    {/* ITEMS TABLE WITH CYAN HEADER */}
+                    <table className="w-full text-xs border-collapse border border-black mt-2.5">
+                      <thead>
+                        <tr style={{ backgroundColor: '#67c0de' }} className="border-b border-black font-bold text-center text-black">
+                          <th className="border border-black py-1 px-1.5 w-9 text-center">No</th>
+                          <th className="border border-black py-1 px-2 text-center">Nama Barang</th>
+                          <th className="border border-black py-1 px-2 w-24 text-center">Jumlah Dikirim</th>
+                          <th className="border border-black py-1 px-2 w-28 text-center" title="Kode Produksi FIFO (Dapat Diedit Langsung)">
+                            Kode Produksi
+                          </th>
+                          <th className="border border-black py-1 px-2 w-36 text-center">Keterangan</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {cleanDocItems.map((item, idx) => {
+                          const itemKey = item.ID_Detail || item.ID_Produk;
+                          return (
+                            <tr key={idx} className="border-b border-black">
+                              <td className="border border-black py-1 px-1.5 text-center font-mono">{idx + 1}</td>
+                              <td className="border border-black py-1 px-2 font-medium text-black">{item.Nama_Produk}</td>
+                              <td className="border border-black py-1 px-2 text-center font-mono font-bold text-black">{item.Qty}</td>
+                              <td className="border border-black py-0 px-1 text-center font-mono font-bold">
+                                <input
+                                  type="text"
+                                  value={item.Kode_Produksi || ''}
+                                  onChange={(e) => handleUpdateDocItemLot(itemKey, e.target.value)}
+                                  title="Klik untuk mengedit Kode Produksi"
+                                  placeholder="P..."
+                                  className="w-full text-center bg-transparent border-0 outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 rounded font-mono font-bold text-black text-xs py-0.5"
+                                />
+                              </td>
+                              <td className="border border-black py-1 px-2 text-slate-800 text-[11px]">
+                                {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
+                              </td>
+                            </tr>
+                          );
+                        })}
 
-                  {/* 4 SIGNATURES BLOCK */}
-                  <div className="grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-2">
-                    {/* 1. DISIAPKAN */}
-                    <div className="flex flex-col items-center justify-between min-h-[110px]">
-                      <p className="font-semibold text-black">Disiapkan</p>
-                      <div className="my-1 h-14 flex items-center justify-center">
-                        {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
-                          <img 
-                            src={docSettings.customTtdImage} 
-                            alt="TTD Disiapkan" 
-                            className="max-h-12 max-w-[90px] object-contain" 
-                          />
-                        )}
-                      </div>
-                      <div className="w-full">
-                        <div className="border-b border-black w-4/5 mx-auto"></div>
-                        <p className="text-[10px] font-semibold text-black mt-1">( Admin Gudang )</p>
-                      </div>
-                    </div>
+                        {/* Baris kosong: Tepat 2 baris jika barang < 6; jika >= 6 tidak ditambahkan baris kosong */}
+                        {Array.from({ length: emptyRowsCount }).map((_, rIdx) => (
+                          <tr key={`empty-${rIdx}`} className="border-b border-black h-6">
+                            <td className="border border-black py-1 px-1.5 text-center font-mono text-slate-400">
+                              {cleanDocItems.length + rIdx + 1}
+                            </td>
+                            <td className="border border-black py-1 px-2"></td>
+                            <td className="border border-black py-1 px-2"></td>
+                            <td className="border border-black py-1 px-2"></td>
+                            <td className="border border-black py-1 px-2"></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
 
-                    {/* 2. DISETUJUI */}
-                    <div className="flex flex-col items-center justify-between min-h-[110px]">
-                      <p className="font-semibold text-black">Disetujui</p>
-                      <div className="my-1 h-14 flex items-center justify-center">
-                        {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
-                          <img 
-                            src={docSettings.customCapImage} 
-                            alt="Stempel Disetujui" 
-                            className="max-h-12 max-w-[90px] object-contain" 
-                          />
-                        )}
+                    {/* 4 SIGNATURES BLOCK */}
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs mt-3.5 pt-1">
+                      {/* 1. DISIAPKAN */}
+                      <div className="flex flex-col items-center justify-between min-h-[75px]">
+                        <p className="font-semibold text-black">Disiapkan</p>
+                        <div className="my-0.5 h-9 flex items-center justify-center">
+                          {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
+                            <img 
+                              src={docSettings.customTtdImage} 
+                              alt="TTD Disiapkan" 
+                              className="max-h-8 max-w-[80px] object-contain" 
+                            />
+                          )}
+                        </div>
+                        <div className="w-full">
+                          <div className="border-b border-black w-4/5 mx-auto"></div>
+                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        </div>
                       </div>
-                      <div className="w-full">
-                        <div className="border-b border-black w-4/5 mx-auto"></div>
-                        <p className="text-[10px] font-semibold text-black mt-1">
-                          ( {docSettings.namaPenandatangan || 'Pimpinan'} )
-                        </p>
-                      </div>
-                    </div>
 
-                    {/* 3. DIANTAR OLEH */}
-                    <div className="flex flex-col items-center justify-between min-h-[110px]">
-                      <p className="font-semibold text-black">Diantar Oleh</p>
-                      <div className="my-1 h-14 flex items-center justify-center">
-                        {viewDocModal.dist.Tanda_Tangan_Sopir ? (
-                          <img 
-                            src={viewDocModal.dist.Tanda_Tangan_Sopir} 
-                            alt="TTD Sopir" 
-                            className="max-h-12 max-w-[90px] object-contain" 
-                          />
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setSignatureModalConfig({
-                                isOpen: true,
-                                dist: viewDocModal.dist,
-                                role: 'sopir'
-                              });
-                            }}
-                            className="px-2 py-0.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
-                          >
-                            + TTD Sopir
-                          </button>
-                        )}
+                      {/* 2. DISETUJUI */}
+                      <div className="flex flex-col items-center justify-between min-h-[75px]">
+                        <p className="font-semibold text-black">Disetujui</p>
+                        <div className="my-0.5 h-9 flex items-center justify-center">
+                          {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
+                            <img 
+                              src={docSettings.customCapImage} 
+                              alt="Stempel Disetujui" 
+                              className="max-h-8 max-w-[80px] object-contain" 
+                            />
+                          )}
+                        </div>
+                        <div className="w-full">
+                          <div className="border-b border-black w-4/5 mx-auto"></div>
+                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        </div>
                       </div>
-                      <div className="w-full">
-                        <div className="border-b border-black w-4/5 mx-auto"></div>
-                        <p className="text-[10px] font-semibold text-black mt-1">
-                          ( {viewDocModal.dist.Pengirim || 'Sopir'} )
-                        </p>
-                      </div>
-                    </div>
 
-                    {/* 4. DITERIMA OLEH */}
-                    <div className="flex flex-col items-center justify-between min-h-[110px]">
-                      <p className="font-semibold text-black">Diterima Oleh</p>
-                      <div className="my-1 h-14 flex items-center justify-center">
-                        {viewDocModal.dist.Tanda_Tangan_Penerima ? (
-                          <img 
-                            src={viewDocModal.dist.Tanda_Tangan_Penerima} 
-                            alt="TTD Penerima" 
-                            className="max-h-12 max-w-[90px] object-contain" 
-                          />
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setSignatureModalConfig({
-                                isOpen: true,
-                                dist: viewDocModal.dist,
-                                role: 'penerima'
-                              });
-                            }}
-                            className="px-2 py-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
-                          >
-                            + TTD Penerima
-                          </button>
-                        )}
+                      {/* 3. DIANTAR OLEH */}
+                      <div className="flex flex-col items-center justify-between min-h-[75px]">
+                        <p className="font-semibold text-black">Diantar Oleh</p>
+                        <div className="my-0.5 h-9 flex items-center justify-center">
+                          {viewDocModal.dist.Tanda_Tangan_Sopir ? (
+                            <img 
+                              src={viewDocModal.dist.Tanda_Tangan_Sopir} 
+                              alt="TTD Sopir" 
+                              className="max-h-8 max-w-[80px] object-contain" 
+                            />
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSignatureModalConfig({
+                                  isOpen: true,
+                                  dist: viewDocModal.dist,
+                                  role: 'sopir'
+                                });
+                              }}
+                              className="px-2 py-0.5 text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
+                            >
+                              + TTD Sopir
+                            </button>
+                          )}
+                        </div>
+                        <div className="w-full">
+                          <div className="border-b border-black w-4/5 mx-auto"></div>
+                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        </div>
                       </div>
-                      <div className="w-full">
-                        <div className="border-b border-black w-4/5 mx-auto"></div>
-                        <p className="text-[10px] font-semibold text-black mt-1">
-                          ( {viewDocModal.dist.Penerima || viewDocModal.dist.Nama_Pelanggan || 'Penerima'} )
-                        </p>
+
+                      {/* 4. DITERIMA OLEH */}
+                      <div className="flex flex-col items-center justify-between min-h-[75px]">
+                        <p className="font-semibold text-black">Diterima Oleh</p>
+                        <div className="my-0.5 h-9 flex items-center justify-center">
+                          {viewDocModal.dist.Tanda_Tangan_Penerima ? (
+                            <img 
+                              src={viewDocModal.dist.Tanda_Tangan_Penerima} 
+                              alt="TTD Penerima" 
+                              className="max-h-8 max-w-[80px] object-contain" 
+                            />
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSignatureModalConfig({
+                                  isOpen: true,
+                                  dist: viewDocModal.dist,
+                                  role: 'penerima'
+                                });
+                              }}
+                              className="px-2 py-0.5 text-[9px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
+                            >
+                              + TTD Penerima
+                            </button>
+                          )}
+                        </div>
+                        <div className="w-full">
+                          <div className="border-b border-black w-4/5 mx-auto"></div>
+                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* DOCUMENT CONTROL CODE AT BOTTOM RIGHT */}
-                  <div className="flex justify-end mt-4 text-[9px] font-mono text-slate-800 leading-tight">
+                  {/* KODE DOKUMEN FM-LOG-01-01 DI LUAR BORDER */}
+                  <div className="flex justify-end mt-1 text-[8.5px] font-mono text-black leading-tight pr-1">
                     <div className="text-right">
                       <div>FM-LOG-01-01</div>
                       <div>0/1</div>
