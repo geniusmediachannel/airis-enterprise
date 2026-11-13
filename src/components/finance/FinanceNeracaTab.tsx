@@ -128,7 +128,7 @@ export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
                 <span className="text-xs text-slate-700 block break-words mt-0.5">
                   {isBalance 
                     ? 'NERACA SEIMBANG (BALANCED): Total Aktiva sama persis dengan Total Pasiva.' 
-                    : `PERINGATAN SELISIH: Terdapat perbedaan Rp ${selisihNeraca.toLocaleString('id-ID')} antara Aktiva dan Pasiva.`}
+                    : `PERINGATAN SELISIH: Terdapat perbedaan Rp ${(selisihBalance || 0).toLocaleString('id-ID')} antara Aktiva dan Pasiva.`}
                 </span>
               </div>
             </div>

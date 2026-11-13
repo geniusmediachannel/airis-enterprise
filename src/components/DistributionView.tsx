@@ -581,21 +581,77 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // 046 = urutan input data dalam bulan itu (reset setiap pergantian bulan)
   // X = Bulan dalam Romawi
   // 26 = 2 digit tahun
-  const formatInvoiceNumber = (distId?: string, tanggalStr?: string, customDistList?: DistributionItem[]): string => {
-    // 1. Cek apakah record sudah memiliki No_Invoice valid tersimpan
+  const formatInvoiceNumber = (distId?: string, tanggalStr?: string, customDistList?: DistributionItem[], directNoInvoice?: string): string => {
+    // 0. Cek apakah ada No_Invoice valid yang diberikan secara langsung
+    const isValidInv = (val?: string): boolean => {
+      if (!val) return false;
+      const s = String(val).trim();
+      return s !== '' && s !== '-' && s !== '--' && s.toLowerCase() !== 'null' && s.toLowerCase() !== 'undefined';
+    };
+
+    if (isValidInv(directNoInvoice)) {
+      return String(directNoInvoice).trim();
+    }
+
+    // 1. Cek apakah record sudah memiliki No_Invoice valid tersimpan di database
     if (distId) {
-      const existing = (distributions || []).find(d => d.ID_Distribusi === distId);
-      if (existing && existing.No_Invoice && existing.No_Invoice.trim() !== '') {
-        return existing.No_Invoice;
+      const existing = (distributions || []).find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
+      if (existing && isValidInv(existing.No_Invoice)) {
+        return existing.No_Invoice!.trim();
       }
     }
 
-    const d = tanggalStr ? new Date(tanggalStr) : new Date();
-    const validD = isNaN(d.getTime()) ? new Date() : d;
+    // Helper parser tanggal fleksibel (ISO, DD-MM-YYYY, DD/MM/YYYY, DD-Mmm-YYYY)
+    const parseSafe = (raw: any): Date => {
+      if (!raw) return new Date();
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? new Date() : raw;
+      const s = String(raw).trim();
+      if (!s || s === '-') return new Date();
+      // YYYY-MM-DD
+      const mIso = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (mIso) {
+        const d = new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]));
+        if (!isNaN(d.getTime())) return d;
+      }
+      // DD-MM-YYYY
+      const mDmy = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
+      if (mDmy) {
+        let yr = Number(mDmy[3]);
+        if (yr < 100) yr += 2000;
+        const d = new Date(yr, Number(mDmy[2]) - 1, Number(mDmy[1]));
+        if (!isNaN(d.getTime())) return d;
+      }
+      // DD-Mmm-YYYY
+      const mInd = s.match(/^(\d{1,2})[-\s]([A-Za-z]+)[-\s](\d{2,4})/);
+      if (mInd) {
+        const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
+        const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        const day = Number(mInd[1]);
+        const mStr = mInd[2].toLowerCase().slice(0, 3);
+        let mIdx = months.indexOf(mStr);
+        if (mIdx === -1) mIdx = monthsEn.indexOf(mStr);
+        let yr = Number(mInd[3]);
+        if (yr < 100) yr += 2000;
+        if (mIdx !== -1) return new Date(yr, mIdx, day);
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    // Cari tanggal yang akurat jika distId ada tetapi tanggalStr kosong/tidak ada
+    let effectiveTanggal = tanggalStr;
+    if ((!effectiveTanggal || effectiveTanggal === '-') && distId) {
+      const matchDist = (distributions || []).find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
+      if (matchDist && matchDist.Tanggal && matchDist.Tanggal !== '-') {
+        effectiveTanggal = matchDist.Tanggal;
+      }
+    }
+
+    const validD = parseSafe(effectiveTanggal);
     const targetYear = validD.getFullYear();
     const targetMonth = validD.getMonth(); // 0 = Jan, 9 = Oct
     const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-    const romanMonth = romanMonths[targetMonth];
+    const romanMonth = romanMonths[targetMonth] || 'X';
     const year2Digits = String(targetYear).slice(-2);
 
     // Source list of distributions (preserves original input order)
@@ -606,34 +662,49 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         : getTableData<DistributionItem>('Distribusi', []);
 
     // Filter distributions for this specific month & year
-    let seqNumber = 1;
+    let seqNumber = 0;
     let countInMonth = 0;
     for (let i = 0; i < distSource.length; i++) {
       const item = distSource[i];
       if (!item || !item.Tanggal) continue;
-      // Fast date prefix check (e.g. "2026-10" or "26-10") before Date object instantiation
-      const targetPrefix = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
-      let match = item.Tanggal.startsWith(targetPrefix);
-      if (!match) {
-        const itemD = new Date(item.Tanggal);
-        if (!isNaN(itemD.getTime()) && itemD.getFullYear() === targetYear && itemD.getMonth() === targetMonth) {
-          match = true;
-        }
-      }
-      if (match) {
+      const itemD = parseSafe(item.Tanggal);
+      if (itemD.getFullYear() === targetYear && itemD.getMonth() === targetMonth) {
         countInMonth++;
-        if (distId && item.ID_Distribusi === distId) {
+        if (distId && (String(item.ID_Distribusi).trim() === String(distId).trim() || String(item.No_Surat_Jalan).trim() === String(distId).trim())) {
           seqNumber = countInMonth;
           break;
         }
       }
     }
 
-    if (!distId) {
+    // Jika distId tidak ditemukan di perulangan bulan, coba ekstraksi angka dari No_Surat_Jalan atau ID_Distribusi
+    if (distId && seqNumber === 0) {
+      const matchDist = distSource.find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
+      if (matchDist && matchDist.No_Surat_Jalan) {
+        const numMatch = matchDist.No_Surat_Jalan.match(/\b(\d+)\b/);
+        if (numMatch) {
+          const rawNum = parseInt(numMatch[1], 10);
+          if (rawNum > 645) {
+            seqNumber = Math.max(1, rawNum - 645);
+          } else {
+            seqNumber = rawNum;
+          }
+        }
+      }
+      if (seqNumber === 0) {
+        const idNumMatch = String(distId).match(/\b(\d+)\b/);
+        if (idNumMatch) {
+          seqNumber = parseInt(idNumMatch[1], 10);
+        }
+      }
+    }
+
+    if (!distId && seqNumber === 0) {
       seqNumber = countInMonth + 1;
     }
 
-    const numStr = String(seqNumber).padStart(3, '0');
+    const finalSeq = seqNumber > 0 ? seqNumber : (countInMonth > 0 ? countInMonth : 1);
+    const numStr = String(finalSeq).padStart(3, '0');
     return `${numStr}-INV-${romanMonth}-${year2Digits}`;
   };
 
@@ -1735,7 +1806,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     const potong = dist.Metode_Kirim === 'Ambil Sendiri' ? (totalQty * 1000) : 0;
     const grandTotal = subtotal - potong;
-    const invoiceNo = formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal);
+    const invoiceNo = formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, undefined, dist.No_Invoice);
 
     await generateInvoicePDF({
       noInvoice: invoiceNo,
@@ -2855,12 +2926,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <span className="text-[10px] text-slate-500 font-semibold uppercase block">Tanggal Kirim</span>
                     <span className="font-mono font-bold text-slate-800 text-xs">{formatDisplayDate(dist.Tanggal)}</span>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-semibold uppercase block">No. Invoice</span>
-                    <span className="font-mono font-bold text-blue-700 text-xs">
-                      {dist.No_Invoice && dist.No_Invoice !== '-' ? dist.No_Invoice : (dist.No_Invoice === '-' ? '-' : formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal))}
-                    </span>
-                  </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-semibold uppercase block">No. Invoice</span>
+                      <span className="font-mono font-bold text-blue-700 text-xs">
+                        {formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, undefined, dist.No_Invoice)}
+                      </span>
+                    </div>
                   <div>
                     <span className="text-[10px] text-slate-500 font-semibold uppercase block">Metode Pengiriman</span>
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -4505,7 +4576,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       });
                       const potong = viewDocModal.dist.Metode_Kirim === 'Ambil Sendiri' ? (totalQty * 1000) : 0;
                       const grandTotal = Math.max(0, subtotal - potong);
-                      const invoiceNo = formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal);
+                      const invoiceNo = formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, undefined, viewDocModal.dist.No_Invoice);
 
                       await printInvoicePDF({
                         noInvoice: invoiceNo,
@@ -4682,7 +4753,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         <span>No. Invoice</span>
                         <span>:</span>
                         <span style={{ fontWeight: 700 }}>
-                          {formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal)}
+                          {formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, undefined, viewDocModal.dist.No_Invoice)}
                         </span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>

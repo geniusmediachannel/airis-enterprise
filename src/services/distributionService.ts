@@ -326,8 +326,9 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
       if (!anyDist.No_Surat_Jalan || String(anyDist.No_Surat_Jalan).trim() === '') {
         anyDist.No_Surat_Jalan = '-';
       }
-      if (!anyDist.No_Invoice || String(anyDist.No_Invoice).trim() === '') {
-        anyDist.No_Invoice = '-';
+      if (!anyDist.No_Invoice || String(anyDist.No_Invoice).trim() === '' || String(anyDist.No_Invoice).trim() === '-') {
+        anyDist.No_Invoice = `${seqPadded}-INV-${romanM}-${yy}`;
+        isModified = true;
       }
       if (!anyDist.Keterangan || String(anyDist.Keterangan).trim() === '') {
         anyDist.Keterangan = '-';
