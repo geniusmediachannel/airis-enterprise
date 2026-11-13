@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Camera, AlertCircle, Search, CheckCircle2, 
-  Upload, FileText, PenTool, RefreshCw, Smartphone, SwitchCamera
+  Upload, FileText, PenTool, RefreshCw, Smartphone, SwitchCamera,
+  AlertTriangle, Volume2
 } from 'lucide-react';
 import { DistributionItem } from '../types';
+import { scanCanvasForQR, decodeQRFromImageData } from '../utils/qrReader';
 
 interface QRScannerModalProps {
   isOpen: boolean;
@@ -23,7 +25,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualQuery, setManualQuery] = useState('');
   const [matchedDist, setMatchedDist] = useState<DistributionItem | null>(null);
-  const [scanStatus, setScanStatus] = useState<string>('Mempersiapkan kamera...');
+  const [unmatchedCode, setUnmatchedCode] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<string>('Mempersiapkan sensor kamera...');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
 
@@ -31,6 +34,32 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Play pleasant acoustic feedback beep on successful QR scan
+  const playBeep = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.15);
+      }
+    } catch (_) {}
+
+    try {
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+    } catch (_) {}
+  };
 
   // Normalize scanned code (handles prefixes like "AIRIS:SJ:707/X/26", "SJ:...", or plain ID/No_SJ)
   const parseScannedCode = (raw: string): string => {
@@ -40,24 +69,43 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     } else if (clean.startsWith('SJ:')) {
       clean = clean.replace('SJ:', '');
     }
+    // Check if JSON formatted
+    if (clean.startsWith('{') && clean.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(clean);
+        return String(parsed.sj || parsed.no_sj || parsed.id || clean).trim();
+      } catch (_) {}
+    }
     return clean.trim();
   };
 
   // Find distribution matching scanned string
   const findShipment = (code: string): DistributionItem | null => {
-    const parsed = parseScannedCode(code).toLowerCase();
+    const rawClean = parseScannedCode(code);
+    const parsed = rawClean.toLowerCase();
     if (!parsed) return null;
+
+    // Alphanumeric normalized for fuzzy comparison (e.g. 001/SJ/AIRIS/XI/2026 -> 001sjairisxi2026)
+    const alphaNumericOnly = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const parsedAlpha = alphaNumericOnly(parsed);
 
     return distributions.find(d => {
       const sj = (d.No_Surat_Jalan || '').toLowerCase().trim();
       const id = (d.ID_Distribusi || '').toLowerCase().trim();
       const cust = (d.Nama_Pelanggan || '').toLowerCase().trim();
-      return (
-        sj === parsed ||
-        id === parsed ||
-        (sj && sj.includes(parsed)) ||
-        (cust && cust.includes(parsed))
-      );
+
+      if (sj === parsed || id === parsed) return true;
+      if (sj && sj.includes(parsed)) return true;
+      if (id && id.includes(parsed)) return true;
+      if (cust && cust.includes(parsed)) return true;
+
+      // Alphanumeric comparison if formatting slashes differ
+      if (parsedAlpha && parsedAlpha.length >= 4) {
+        if (alphaNumericOnly(sj) === parsedAlpha) return true;
+        if (alphaNumericOnly(id) === parsedAlpha) return true;
+      }
+
+      return false;
     }) || null;
   };
 
@@ -70,31 +118,6 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }).catch(() => {});
     }
   }, []);
-
-  // Helper load jsQR library dynamically if BarcodeDetector is not supported natively
-  const ensureJsQRLoaded = async (): Promise<any> => {
-    if ((window as any).jsQR) return (window as any).jsQR;
-    return new Promise((resolve) => {
-      if (document.getElementById('jsqr-cdn-script')) {
-        let attempts = 0;
-        const check = setInterval(() => {
-          attempts++;
-          if ((window as any).jsQR || attempts > 20) {
-            clearInterval(check);
-            resolve((window as any).jsQR || null);
-          }
-        }, 150);
-        return;
-      }
-      const script = document.createElement('script');
-      script.id = 'jsqr-cdn-script';
-      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
-      script.async = true;
-      script.onload = () => resolve((window as any).jsQR || null);
-      script.onerror = () => resolve(null);
-      document.head.appendChild(script);
-    });
-  };
 
   // Stop camera
   const stopCamera = () => {
@@ -156,7 +179,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
       streamRef.current = stream;
 
-      // Wait a tick to ensure video element is ready in DOM
+      // Attach stream to video element
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         try {
@@ -169,7 +192,6 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         setScanStatus('Arahkan kamera ke QR Code Surat Jalan');
         startDetectionLoop();
       } else {
-        // Retry attaching stream if ref not ready yet
         setTimeout(async () => {
           if (videoRef.current && streamRef.current) {
             videoRef.current.srcObject = streamRef.current;
@@ -209,30 +231,22 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     startCamera(nextMode);
   };
 
-  // Barcode / QR detection loop (Hybrid: Native BarcodeDetector + jsQR Fallback)
+  // Barcode / QR detection loop (Dual-Engine: Native BarcodeDetector + Embedded jsQR Reader)
   const startDetectionLoop = () => {
     if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
 
-    const hasBarcodeDetector = 'BarcodeDetector' in window;
-
-    let detector: any = null;
-    if (hasBarcodeDetector) {
+    // Initialize native detector safely with qr_code only
+    let nativeDetector: any = null;
+    if ('BarcodeDetector' in window) {
       try {
-        detector = new (window as any).BarcodeDetector({
-          formats: ['qr_code', 'code_128', 'code_39', 'ean_13']
-        });
+        nativeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
       } catch (e) {
-        detector = null;
-      }
-    }
-
-    // Pre-load jsQR in background if native detector not present
-    if (!detector) {
-      ensureJsQRLoaded().then(jsQR => {
-        if (!jsQR) {
-          setScanStatus('Deteksi otomatis aktif (Gunakan Unggah Foto atau Cari SJ jika QR tidak terbaca)');
+        try {
+          nativeDetector = new (window as any).BarcodeDetector();
+        } catch (_) {
+          nativeDetector = null;
         }
-      });
+      }
     }
 
     scanIntervalRef.current = window.setInterval(async () => {
@@ -242,53 +256,56 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       try {
         let rawCode: string | null = null;
 
-        // Method A: Native hardware BarcodeDetector (Chrome Android, Safari iOS)
-        if (detector) {
-          try {
-            const barcodes = await detector.detect(video);
-            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-              rawCode = barcodes[0].rawValue;
-            }
-          } catch (_) {}
+        // Ensure canvas matches video resolution
+        if (!canvasRef.current) {
+          canvasRef.current = document.createElement('canvas');
+        }
+        const canvas = canvasRef.current;
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
         }
 
-        // Method B: jsQR canvas fallback (Desktop Chrome, Firefox, Edge)
-        if (!rawCode && (window as any).jsQR) {
-          try {
-            if (!canvasRef.current) {
-              canvasRef.current = document.createElement('canvas');
-            }
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (ctx) {
-              // Scale down slightly for rapid 60fps analysis
-              const scale = Math.min(1, 640 / video.videoWidth);
-              canvas.width = Math.round(video.videoWidth * scale);
-              canvas.height = Math.round(video.videoHeight * scale);
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const result = (window as any).jsQR(imgData.data, imgData.width, imgData.height, {
-                inversionAttempts: 'dontInvert'
-              });
-              if (result && result.data) {
-                rawCode = result.data;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Engine 1: Embedded pure JS decoder (Viewfinder center crop + full frame)
+          rawCode = scanCanvasForQR(canvas, true);
+
+          // Engine 2: Native BarcodeDetector fallback/reinforcement
+          if (!rawCode && nativeDetector) {
+            try {
+              const barcodes = await nativeDetector.detect(canvas);
+              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                rawCode = barcodes[0].rawValue;
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
         }
 
-        if (rawCode) {
-          const matched = findShipment(rawCode);
+        // Process detected QR code
+        if (rawCode && rawCode.trim()) {
+          const cleanCode = rawCode.trim();
+          playBeep();
+
+          const matched = findShipment(cleanCode);
           if (matched) {
             setMatchedDist(matched);
-            setScanStatus(`QR Terdeteksi: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
+            setUnmatchedCode(null);
+            setScanStatus(`QR Terverifikasi: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
+            stopCamera();
+          } else {
+            // QR was successfully read, but not found in active dataset -> NEVER FAIL SILENTLY!
+            setUnmatchedCode(cleanCode);
+            setScanStatus(`QR Terbaca: ${cleanCode}`);
             stopCamera();
           }
         }
       } catch (e) {
-        // Ignore single-frame glitches
+        // Ignore single frame parsing errors
       }
-    }, 280);
+    }, 180);
   };
 
   // Handle file photo scan
@@ -298,54 +315,49 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
     setScanStatus('Menganalisis foto QR Code...');
 
-    // Method A: BarcodeDetector with Image
-    if ('BarcodeDetector' in window) {
-      try {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await img.decode();
-        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-        const barcodes = await detector.detect(img);
-        if (barcodes.length > 0 && barcodes[0].rawValue) {
-          const matched = findShipment(barcodes[0].rawValue);
+    try {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      await img.decode();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+
+        // Decode with embedded pure JS QR decoder
+        let detected = scanCanvasForQR(canvas, false);
+
+        // Fallback to BarcodeDetector if needed
+        if (!detected && 'BarcodeDetector' in window) {
+          try {
+            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+            const barcodes = await detector.detect(canvas);
+            if (barcodes.length > 0 && barcodes[0].rawValue) {
+              detected = barcodes[0].rawValue;
+            }
+          } catch (_) {}
+        }
+
+        if (detected) {
+          playBeep();
+          const matched = findShipment(detected);
           if (matched) {
             setMatchedDist(matched);
+            setUnmatchedCode(null);
             setScanStatus(`QR Berhasil dibaca: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
             return;
-          }
-        }
-      } catch (err) {
-        console.warn('BarcodeDetector file error:', err);
-      }
-    }
-
-    // Method B: jsQR Canvas decode
-    try {
-      const jsQR = await ensureJsQRLoaded();
-      if (jsQR) {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await img.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const res = jsQR(imgData.data, imgData.width, imgData.height);
-          if (res && res.data) {
-            const matched = findShipment(res.data);
-            if (matched) {
-              setMatchedDist(matched);
-              setScanStatus(`QR Berhasil dibaca: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
-              return;
-            }
+          } else {
+            setUnmatchedCode(detected);
+            setScanStatus(`QR Terbaca: ${detected}`);
+            return;
           }
         }
       }
     } catch (err) {
-      console.warn('jsQR file error:', err);
+      console.warn('File decode error:', err);
     }
 
     // Fallback: search by filename
@@ -353,6 +365,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     const matched = findShipment(nameWithoutExt);
     if (matched) {
       setMatchedDist(matched);
+      setUnmatchedCode(null);
     } else {
       setCameraError('QR Code tidak dapat terbaca dari gambar yang dipilih. Silakan ketik No. Surat Jalan pada kotak pencarian cepat di bawah.');
       setScanStatus('Foto tidak terdeteksi. Gunakan pencarian nomor SJ di bawah.');
@@ -363,6 +376,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setMatchedDist(null);
+      setUnmatchedCode(null);
       setManualQuery('');
       setCameraError(null);
       startCamera();
@@ -443,12 +457,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
             {/* Target overlay active when camera is streaming */}
             {cameraActive && (
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                <div className="w-56 h-56 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] animate-pulse">
+                <div className="w-56 h-56 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]">
                   <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1 rounded-tl-lg" />
                   <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1 rounded-tr-lg" />
                   <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1 rounded-bl-lg" />
                   <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1 rounded-br-lg" />
-                  <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399]" />
+                  <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399] animate-pulse" />
                 </div>
               </div>
             )}
@@ -492,7 +506,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
             {/* Status pill on camera */}
             <div className="absolute bottom-2 inset-x-2 text-center pointer-events-none z-20">
-              <span className="px-2.5 py-1 bg-black/70 backdrop-blur-xs text-white text-[11px] rounded-full border border-white/10 font-medium inline-block shadow-sm">
+              <span className="px-3 py-1 bg-black/75 backdrop-blur-xs text-white text-[11px] rounded-full border border-white/10 font-medium inline-block shadow-sm">
                 {scanStatus}
               </span>
             </div>
@@ -522,6 +536,48 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               <span>Cari Nomor SJ</span>
             </button>
           </div>
+
+          {/* UNMATCHED QR CODE BANNER (SHOWS SCANNED CODE WHEN NOT IN CURRENT LIST) */}
+          {unmatchedCode && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 animate-in fade-in duration-200">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <div className="text-xs space-y-1">
+                  <p className="font-bold text-amber-900">
+                    QR Berhasil Terbaca!
+                  </p>
+                  <p className="font-mono text-amber-800 font-bold bg-white/70 px-2 py-0.5 rounded border border-amber-200 inline-block text-[11px]">
+                    {unmatchedCode}
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    Nomor Surat Jalan ini tidak ditemukan pada database pengiriman bulan ini. Silakan cari di semua periode atau buat pengiriman baru.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualQuery(parseScannedCode(unmatchedCode));
+                    setUnmatchedCode(null);
+                  }}
+                  className="flex-1 py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer text-center"
+                >
+                  Cari Nomor Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnmatchedCode(null);
+                    startCamera();
+                  }}
+                  className="py-1.5 px-3 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Pindai Ulang
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* MANUAL SEARCH INPUT */}
           <div className="space-y-1.5">
