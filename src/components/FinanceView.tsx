@@ -53,7 +53,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [activeTab, setActiveTab] = useState<'neraca' | 'labarugi' | 'drafts' | 'jurnal' | 'coa' | 'aset' | 'piutang' | 'biaya_distribusi'>('neraca');
 
   const now = new Date();
-  const defaultPeriod = ${now.getFullYear()}-;
+  const defaultPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [filterPeriod, setFilterPeriod] = useState<string>(defaultPeriod);
   const [searchCoa, setSearchCoa] = useState<string>('');
   const [draftFilterMonth, setDraftFilterMonth] = useState<string>(defaultPeriod);
@@ -132,8 +132,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [driverSettlements, setDriverSettlements] = useState<DriverSettlementItem[]>(() => 
     getTableData<DriverSettlementItem>('Pencairan_Biaya_Distribusi', [])
   );
-    onRefresh();
-  };
 
   // Helper pencetakan resmi Voucher Kas Keluar Biaya Distribusi via hidden iframe (eksklusif voucher, bebas background halaman)
   const handlePrintVoucher = (item: DriverSettlementItem) => {
@@ -908,11 +906,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               else if (activeTab === 'labarugi') handleExportLabaRugiPDF();
               else {
                 generateTableReportPDF({
-                  title: LAPORAN KEUANGAN (),
-                  subtitle: Periode:  | PT. Anugerah Illahi Rabbi,
+                  title: `LAPORAN KEUANGAN (${activeTab.toUpperCase()})`,
+                  subtitle: `Periode: ${filterPeriod} | PT. Anugerah Illahi Rabbi`,
                   headers: ['Deskripsi', 'Nilai'],
                   rows: [['Laporan Keuangan Resmi', 'Tercatat']],
-                  filename: Keuangan_.pdf
+                  filename: `Keuangan_${activeTab}_${filterPeriod}.pdf`
                 });
               }
             }}
@@ -1159,7 +1157,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           onDeleteCoa={async (kode) => {
             const ok = await confirmAction({
               title: 'Hapus Akun COA',
-              message: Hapus akun ? Pastikan akun ini tidak memiliki riwayat jurnal transaksi.,
+              message: `Hapus akun ${kode}? Pastikan akun ini tidak memiliki riwayat jurnal transaksi.`,
               confirmText: 'Ya, Hapus Akun',
               cancelText: 'Batal',
               type: 'danger'
@@ -1167,7 +1165,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             if (!ok) return;
             const updated = coas.filter(c => c.KODE_AKUN !== kode);
             setTableData('Bagan_Akun', updated);
-            showToast('success', Akun  berhasil dihapus.);
+            showToast('success', `Akun ${kode} berhasil dihapus.`);
             onRefresh();
           }}
           handleExportCoaExcel={() => {
@@ -1200,7 +1198,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           onOpenAddAsset={() => {
             setEditingAsset(null);
             setAssetForm({
-              ID_ASET: AST-,
+              ID_ASET: `AST-${Date.now()}`,
               NAMA_ASET: '',
               KATEGORI: 'Mesin & Peralatan Pabrik',
               TANGGAL_PEROLEHAN: new Date().toISOString().slice(0, 10),
@@ -1222,7 +1220,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           onDeleteAsset={async (id) => {
             const ok = await confirmAction({
               title: 'Hapus Aset Tetap',
-              message: Hapus data aset ?,
+              message: `Hapus data aset ${id}?`,
               confirmText: 'Ya, Hapus Aset',
               cancelText: 'Batal',
               type: 'danger'
@@ -1230,7 +1228,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             if (!ok) return;
             const updated = assets.filter(a => a.ID_ASET !== id);
             setTableData('Aset_Tetap', updated);
-            showToast('success', Aset  berhasil dihapus.);
+            showToast('success', `Aset ${id} berhasil dihapus.`);
             onRefresh();
           }}
           handleExportAssetExcel={() => {

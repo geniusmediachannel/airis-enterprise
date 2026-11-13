@@ -647,190 +647,6 @@ export const FinancePiutangTab: React.FC<FinancePiutangTabProps> = ({
     });
   }, [customers, distributions, distributionsByCustMap, distItemsMap, customerPaymentsByNameMap]);
 
-    // 2. Sinkronkan pembatalan ke Draf Jurnal
-    const currentDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
-    const cleanDrafts = currentDrafts.filter(d => {
-      if (!d) return false;
-      if (d.ID_Draf === item.ID_JURNAL) return false;
-      if (refStr && d.Referensi === refStr) return false;
-      if (matchedSettlement && (d.Referensi === matchedSettlement.ID_Pencairan || (d.Referensi && d.Referensi.includes(matchedSettlement.ID_Pencairan)))) return false;
-      return true;
-    });
-    if (cleanDrafts.length !== currentDrafts.length) {
-      setTableData('Draf_Jurnal', cleanDrafts);
-    }
-
-    // 3. Jika jurnal pembayaran piutang (PAY-), sinkronkan penghapusan ke Data_Pembayaran_Pelanggan
-    if (refStr.startsWith('PAY-')) {
-      const payId = refStr.replace('PAY-', '');
-      const currentPays = getTableData<any>('Data_Pembayaran_Pelanggan', []);
-      const cleanPays = currentPays.filter((p: any) => p.ID_Pembayaran !== payId && p.ID_Bayar !== payId && p.ID_Pembayaran !== refStr);
-      if (cleanPays.length !== currentPays.length) {
-        setTableData('Data_Pembayaran_Pelanggan', cleanPays);
-        setCustomerPayments(cleanPays);
-      }
-    }
-
-    showToast('success', `Seluruh transaksi jurnal ${item.ID_JURNAL} telah dihapus.${matchedSettlement ? ' Status biaya distribusi armada telah dikembalikan ke Belum Dicairkan.' : ''}`);
-    onRefresh();
-  };
-
-  const handleReconcileJournals = () => {
-    const res = reconcileAndBalanceJournals();
-    if (res.fixedCount > 0) {
-      showToast('success', res.message);
-    } else {
-      showToast('info', res.message);
-    }
-    onRefresh();
-  };
-
-  // -------------------------------------------------------------
-  // COA CRUD
-  // -------------------------------------------------------------
-  const handleOpenAddCoa = () => {
-    setEditingCoa(null);
-    setCoaForm({
-      KODE_AKUN: '',
-      NAMA_AKUN: '',
-      KATEGORI: 'Aset Lancar',
-      SALDO_NORMAL: 'Debit',
-      STATUS: 'Aktif'
-    });
-    setShowCoaModal(true);
-  };
-
-  const handleOpenEditCoa = (c: COAItem) => {
-    setEditingCoa(c);
-    setCoaForm({
-      KODE_AKUN: c.KODE_AKUN,
-      NAMA_AKUN: c.NAMA_AKUN,
-      KATEGORI: c.KATEGORI,
-      SALDO_NORMAL: c.SALDO_NORMAL,
-      STATUS: c.STATUS
-    });
-    setShowCoaModal(true);
-  };
-
-  const handleSaveCoa = () => {
-    if (editingCoa) {
-      const updated = coas.map(c => c.KODE_AKUN === editingCoa.KODE_AKUN ? {
-        ...c,
-        NAMA_AKUN: coaForm.NAMA_AKUN,
-        KATEGORI: coaForm.KATEGORI,
-        SALDO_NORMAL: coaForm.SALDO_NORMAL,
-        STATUS: coaForm.STATUS
-      } : c);
-      setTableData('Master_COA', updated);
-      showToast('success', 'Akun COA berhasil diperbarui.');
-    } else {
-      if (!coaForm.KODE_AKUN || !coaForm.NAMA_AKUN) {
-        showToast('error', 'Mohon lengkapi kode dan nama akun COA!');
-        return;
-      }
-      setTableData('Master_COA', [...coas, coaForm]);
-      showToast('success', 'Akun COA baru berhasil didaftarkan.');
-    }
-    setShowCoaModal(false);
-    setEditingCoa(null);
-    onRefresh();
-  };
-
-  const handleDeleteCoa = async (code: string) => {
-    const coa = coas.find(c => c.KODE_AKUN === code);
-    const ok = await confirmAction({
-      title: 'Hapus Akun COA',
-      message: `Hapus akun "${code} - ${coa?.NAMA_AKUN || ''}"? Pastikan tidak ada transaksi aktif pada akun ini.`,
-      confirmText: 'Ya, Hapus Akun',
-      cancelText: 'Batal',
-      type: 'danger',
-      itemDetails: {
-        'Kode Akun': code,
-        'Nama Akun': coa?.NAMA_AKUN || '-',
-        'Kategori': coa?.KATEGORI || '-'
-      }
-    });
-    if (!ok) return;
-
-    const updated = coas.filter(c => c.KODE_AKUN !== code);
-    setTableData('Master_COA', updated);
-    showToast('success', `Akun ${code} berhasil dihapus.`);
-    onRefresh();
-  };
-
-  // -------------------------------------------------------------
-  // ASET TETAP CRUD
-  // -------------------------------------------------------------
-  const handleOpenAddAsset = () => {
-    setEditingAsset(null);
-    setAssetForm({
-      ID_ASET: `AST-${String(assets.length + 1).padStart(3, '0')}`,
-      NAMA_ASET: '',
-      TGL_BELI: new Date().toISOString().slice(0, 10),
-      NILAI_PEROLEHAN: '' as any,
-      NILAI_RESIDU: '' as any,
-      UMUR_EKONOMIS_BLN: '' as any,
-      BEBAN_PENYUSUTAN_BLN: '' as any,
-      AKUN_ASET: '121-20',
-      AKUN_AKUMULASI: '122-20',
-      AKUN_BEBAN: '514-20'
-    });
-    setShowAssetModal(true);
-  };
-
-  const handleOpenEditAsset = (a: FixedAssetItem) => {
-    setEditingAsset(a);
-    setAssetForm({
-      ID_ASET: a.ID_ASET,
-      NAMA_ASET: a.NAMA_ASET,
-      TGL_BELI: a.TGL_BELI,
-      NILAI_PEROLEHAN: a.NILAI_PEROLEHAN,
-      NILAI_RESIDU: a.NILAI_RESIDU,
-      UMUR_EKONOMIS_BLN: a.UMUR_EKONOMIS_BLN,
-      BEBAN_PENYUSUTAN_BLN: a.BEBAN_PENYUSUTAN_BLN,
-      AKUN_ASET: a.AKUN_ASET,
-      AKUN_AKUMULASI: a.AKUN_AKUMULASI,
-      AKUN_BEBAN: a.AKUN_BEBAN
-    });
-    setShowAssetModal(true);
-  };
-
-  const handleSaveAsset = () => {
-    if (editingAsset) {
-      const updated = assets.map(a => a.ID_ASET === editingAsset.ID_ASET ? { ...assetForm } : a);
-      setTableData('Data_Aset_Tetap', updated);
-      showToast('success', 'Data aset tetap berhasil diperbarui.');
-    } else {
-      setTableData('Data_Aset_Tetap', [...assets, assetForm]);
-      showToast('success', 'Aset tetap baru berhasil didaftarkan.');
-    }
-    setShowAssetModal(false);
-    setEditingAsset(null);
-    onRefresh();
-  };
-
-  const handleDeleteAsset = async (id: string) => {
-    const asset = assets.find(a => a.ID_ASET === id);
-    const ok = await confirmAction({
-      title: 'Hapus Aset Tetap',
-      message: `Hapus catatan inventaris aset tetap "${asset?.NAMA_ASET || id}"?`,
-      confirmText: 'Ya, Hapus Aset',
-      cancelText: 'Batal',
-      type: 'danger',
-      itemDetails: {
-        'ID Aset': id,
-        'Nama Aset': asset?.NAMA_ASET || '-',
-        'Nilai Perolehan': `Rp ${(asset?.NILAI_PEROLEHAN || 0).toLocaleString('id-ID')}`
-      }
-    });
-    if (!ok) return;
-
-    const updated = assets.filter(a => a.ID_ASET !== id);
-    setTableData('Data_Aset_Tetap', updated);
-    showToast('success', `Aset ${id} telah dihapus.`);
-    onRefresh();
-  };
-
   // -------------------------------------------------------------
   // PIUTANG / UTANG CRUD - WITH FIXED ROBUST DATA NORMALIZATION!
   // Prevents the white-screen bug!
@@ -1138,7 +954,10 @@ export const FinancePiutangTab: React.FC<FinancePiutangTabProps> = ({
     showToast('success', `Berhasil mencairkan ${newRecords.length} transaksi kompensasi ongkir (Total Rp ${totalNominal.toLocaleString('id-ID')}) ke saldo piutang!`);
     onRefresh();
   };
-        <div className="space-y-4">
+
+  return (
+    <>
+      <div className="space-y-4">
           {/* Header Bar */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
             <div>
@@ -3116,6 +2935,6 @@ export const FinancePiutangTab: React.FC<FinancePiutangTabProps> = ({
         </div>
         );
       })()}
-    </div>
+    </>
   );
 };

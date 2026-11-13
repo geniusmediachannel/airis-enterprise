@@ -176,11 +176,5 @@ export const FinanceLabaRugiTab: React.FC<FinanceLabaRugiTabProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* 4. TAB: JURNAL UMUM (DENGAN TAMBAH, EDIT & HAPUS)         */}
-      {/* ========================================================= */}
-      {activeTab === 'jurnal' && (
   );
 };

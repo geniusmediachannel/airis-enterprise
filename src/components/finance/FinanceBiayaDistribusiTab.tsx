@@ -719,7 +719,10 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
       }
     }
   };
-        <div className="space-y-4">
+
+  return (
+    <>
+      <div className="space-y-4">
           {/* Header Bar */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
             <div>
@@ -1320,7 +1323,6 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
             </div>
           )}
         </div>
-      )}
 
       {/* MODAL PROSES PENCAIRAN BIAYA DISTRIBUSI */}
       {showClaimModal && (() => {
@@ -1668,6 +1670,6 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
           </div>
         );
       })()}
-    </div>
+    </>
   );
 };

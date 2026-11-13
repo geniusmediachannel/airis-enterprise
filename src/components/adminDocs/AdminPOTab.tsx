@@ -140,7 +140,7 @@ export const AdminPOTab: React.FC<AdminPOTabProps> = ({
   // Helper ekstraksi bulan YYYY-MM dari record PO
   const getPoMonthKey = (p: AdminPOHeader): string => {
     const parts = extractPoDateParts(p.Tanggal_PO);
-    return parts ? ${parts.year}- : '';
+    return parts ? `${parts.year}-${parts.month}` : '';
   };
 
   const getPoYear = (p: AdminPOHeader): string => {

@@ -278,11 +278,5 @@ export const FinanceDraftsTab: React.FC<FinanceDraftsTabProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* 3. TAB: LAPORAN LABA RUGI                                 */}
-      {/* ========================================================= */}
-      {activeTab === 'labarugi' && (
   );
 };

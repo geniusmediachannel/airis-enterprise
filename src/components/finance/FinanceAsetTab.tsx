@@ -98,12 +98,9 @@ export const FinanceAsetTab: React.FC<FinanceAsetTabProps> = ({
             </div>
           </div>
         </div>
-      )}
 
-      {/* ========================================================= */}
-      {/* 7. TAB: PIUTANG & UTANG REKAP - SINKRONISASI DISTRIBUSI & BUKU PELANGGAN */}
-      {/* ========================================================= */}
-      {activeTab === 'piutang' && (
+      {/* Modal Add/Edit Asset */}
+      {showAssetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto no-print">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden my-6">
             <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
@@ -204,9 +201,6 @@ export const FinanceAsetTab: React.FC<FinanceAsetTabProps> = ({
           </div>
         </div>
       )}
-
-      {/* Modal Add/Edit Piutang & Utang */}
-      {showReceivableModal && (
     </>
   );
 };

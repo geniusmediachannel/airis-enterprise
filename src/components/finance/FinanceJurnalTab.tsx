@@ -288,12 +288,9 @@ export const FinanceJurnalTab: React.FC<FinanceJurnalTabProps> = ({
             </div>
           </div>
         </div>
-      )}
 
-      {/* ========================================================= */}
-      {/* 5. TAB: BAGAN AKUN (COA)                                  */}
-      {/* ========================================================= */}
-      {activeTab === 'coa' && (
+      {/* Modal Double Entry / Edit Journal */}
+      {showJournalModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto no-print">
           <div className={`bg-white rounded-xl shadow-2xl w-full border border-slate-200 overflow-hidden my-6 ${editingJournal ? 'max-w-md' : 'max-w-xl'}`}>
             <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
@@ -542,9 +539,6 @@ export const FinanceJurnalTab: React.FC<FinanceJurnalTabProps> = ({
           </div>
         </div>
       )}
-
-      {/* Modal Edit/Add COA */}
-      {showCoaModal && (
     </>
   );
 };

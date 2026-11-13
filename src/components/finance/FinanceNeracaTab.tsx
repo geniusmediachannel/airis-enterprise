@@ -295,11 +295,5 @@ export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* 2. TAB: VERIFIKASI DRAF JURNAL                            */}
-      {/* ========================================================= */}
-      {activeTab === 'drafts' && (
   );
 };
