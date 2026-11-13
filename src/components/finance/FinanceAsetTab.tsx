@@ -40,7 +40,7 @@ export const FinanceAsetTab: React.FC<FinanceAsetTabProps> = ({
               <p className="text-xs text-slate-500 mt-0.5">Pencatatan aset mesin, armada, dan fasilitas pabrik AMDK.</p>
             </div>
             <button
-              onClick={handleOpenAddAsset}
+              onClick={onOpenAddAsset}
               className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus size={14} />
@@ -82,10 +82,10 @@ export const FinanceAsetTab: React.FC<FinanceAsetTabProps> = ({
                         <td className="p-3 text-right font-bold text-red-600 tabular-nums">Rp {a.BEBAN_PENYUSUTAN_BLN.toLocaleString('id-ID')}</td>
                         <td className="p-3 text-center font-sans">
                           <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => handleOpenEditAsset(a)} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded cursor-pointer" title="Edit Aset">
+                            <button onClick={() => onEditAsset(a)} className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded cursor-pointer" title="Edit Aset">
                               <Edit2 size={13} />
                             </button>
-                            <button onClick={() => handleDeleteAsset(a.ID_ASET)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer" title="Hapus Aset">
+                            <button onClick={() => onDeleteAsset(a.ID_ASET)} className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer" title="Hapus Aset">
                               <Trash2 size={13} />
                             </button>
                           </div>

@@ -4,13 +4,14 @@ import {
   Trash2, Edit2, FileCheck, X, Building, Save, FileText,
   FileDown, Send, CheckCircle2, Search, Check, RefreshCw, Calendar,
   RotateCcw, Filter, ExternalLink, Clock, PackageCheck, AlertCircle, FileSpreadsheet,
-  ArrowRight, ArrowUpRight, ArrowDownLeft, ChevronRight, ShieldCheck, Wallet, Calculator
+  ArrowRight, ArrowUpRight, ArrowDownLeft, ChevronRight, ShieldCheck, Wallet, Calculator,
+  TrendingUp, Building2, ArrowLeft, Truck, Coins, ShoppingBag, History
 } from 'lucide-react';
 import { 
   ReceivablePayableItem, DistributionItem, DistributionProductDetail, 
   CustomerItem, CustomerPaymentRecord, CustomerLedgerSummary 
 } from '../../types';
-import { getTableData, setTableData, deleteTableRow, isRadityaVariant } from '../../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, isRadityaVariant, normalizeDistributionDriver } from '../../services/dbAdapter';
 import { exportDataToExcel } from '../../services/excelService';
 import { generateTableReportPDF, formatRupiahSen, angkaKeTerbilang } from '../../services/pdfService';
 import { showToast as showToastGlobal } from '../ToastContainer';
@@ -27,6 +28,8 @@ interface FinancePiutangTabProps {
   defaultPeriod: string;
   onRefresh: () => void;
   showToast: (type: 'success' | 'warning' | 'error' | 'info', text: string) => void;
+  purchases?: any[];
+  handleExportPiutangPDF?: () => void;
 }
 
 export const FinancePiutangTab: React.FC<FinancePiutangTabProps> = ({
@@ -38,7 +41,9 @@ export const FinancePiutangTab: React.FC<FinancePiutangTabProps> = ({
   setCustomerPayments,
   defaultPeriod,
   onRefresh,
-  showToast
+  showToast,
+  purchases = getTableData('Pembelian_Bahan_Baku') || [],
+  handleExportPiutangPDF = () => {}
 }) => {
   const [showReceivableModal, setShowReceivableModal] = useState<boolean>(false);
   const [editingReceivable, setEditingReceivable] = useState<ReceivablePayableItem | null>(null);

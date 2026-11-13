@@ -1027,17 +1027,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           setFilterPeriod={setFilterPeriod}
           kasKecil={kasKecil}
           kasBankBSI={kasBankBSI}
+          kasBankBRI={kasBankBRI}
           piutangUsaha={piutangUsaha}
+          piutangKasbon={piutangKasbon}
           persediaanBahan={persediaanBahan}
           persediaanBarangJadi={persediaanBarangJadi}
           totalAktivaLancar={totalAktivaLancar}
           totalAktivaTetap={totalAktivaTetapNetto}
+          tanahBangunan={tanahBangunan}
+          mesinProduksi={mesinProduksi}
+          kendaraanArmada={kendaraanArmada}
+          totalAkumulasiPenyusutan={totalAkumulasiPenyusutan}
+          totalAktivaTetapNetto={totalAktivaTetapNetto}
           akumulasiPenyusutan={totalAkumulasiPenyusutan}
           nilaiBukuAset={totalAktivaTetapNetto}
           totalAktiva={totalAktiva}
           utangUsaha={utangUsahaSupplier}
+          utangUsahaSupplier={utangUsahaSupplier}
           utangGaji={utangGaji}
+          utangBPJSPajak={utangBPJSPajak}
+          totalKewajibanPendek={totalKewajibanPendek}
           totalKewajibanLancar={totalKewajibanPendek}
+          utangBank={utangBank}
           totalKewajiban={totalKewajiban}
           modalDisetor={modalDisetor}
           labaDitahan={labaDitahan}
@@ -1067,6 +1078,24 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           totalBeban={totalBebanOperasional}
           labaBersih={labaBersihOperasional}
           handleExportLabaRugiPDF={handleExportLabaRugiPDF}
+          revCup={revCup}
+          revBotol={revBotol}
+          revGalon={revGalon}
+          diskonPenjualan={diskonPenjualan}
+          totalRevBersih={totalRevBersih}
+          hppBahan={hppBahan}
+          hppTenagaKerja={hppTenagaKerja}
+          hppListrikPabrik={hppListrikPabrik}
+          hppSusutMesin={hppSusutMesin}
+          totalHPP={totalHPP}
+          bebanGajiStaff={bebanGajiStaff}
+          bebanPemasaran={bebanPemasaran}
+          bebanDistribusiArmada={bebanDistribusiArmada}
+          bebanQCSNI={bebanQCSNI}
+          bebanSusutKendaraan={bebanSusutKendaraan}
+          totalBebanOperasional={totalBebanOperasional}
+          labaBersihOperasional={labaBersihOperasional}
+          periodJournals={periodJournals}
         />
       )}
 
@@ -1106,6 +1135,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           }}
           handleSyncAllModules={async () => handleSyncAllModules()}
           isSyncing={isSyncing}
+          coas={coas}
         />
       )}
 
@@ -1122,7 +1152,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           onEditJournal={handleOpenEditJournal}
           onDeleteJournal={handleDeleteJournal}
           handleExportJournalExcel={() => {
-            exportDataToExcel(filteredJournals, 'Jurnal_Umum', AIRIS_Jurnal_);
+            exportDataToExcel(filteredJournals, 'Jurnal_Umum', `AIRIS_Jurnal_${filterPeriod}`);
           }}
           showJournalModal={showJournalModal}
           setShowJournalModal={setShowJournalModal}
@@ -1130,6 +1160,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           journalForm={journalForm}
           setJournalForm={setJournalForm}
           handleSaveJournal={handleSaveJournal}
+          doubleEntryForm={doubleEntryForm}
+          setDoubleEntryForm={setDoubleEntryForm}
+          setEditingJournal={setEditingJournal}
         />
       )}
 
@@ -1138,6 +1171,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           filteredCoas={filteredCoas}
           searchCoa={searchCoa}
           setSearchCoa={setSearchCoa}
+          coas={coas}
+          getBalance={getBalance}
           onOpenAddCoa={() => {
             setEditingCoa(null);
             setCoaForm({
@@ -1265,6 +1300,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           defaultPeriod={defaultPeriod}
           onRefresh={onRefresh}
           showToast={showToast}
+          purchases={purchases}
+          handleExportPiutangPDF={handleExportPiutangPDF}
         />
       )}
 

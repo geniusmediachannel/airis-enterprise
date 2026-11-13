@@ -18,6 +18,24 @@ interface FinanceLabaRugiTabProps {
   totalBeban: number;
   labaBersih: number;
   handleExportLabaRugiPDF: () => void;
+  revCup?: number;
+  revBotol?: number;
+  revGalon?: number;
+  diskonPenjualan?: number;
+  totalRevBersih?: number;
+  hppBahan?: number;
+  hppTenagaKerja?: number;
+  hppListrikPabrik?: number;
+  hppSusutMesin?: number;
+  totalHPP?: number;
+  bebanGajiStaff?: number;
+  bebanPemasaran?: number;
+  bebanDistribusiArmada?: number;
+  bebanQCSNI?: number;
+  bebanSusutKendaraan?: number;
+  totalBebanOperasional?: number;
+  labaBersihOperasional?: number;
+  periodJournals?: any[];
 }
 
 export const FinanceLabaRugiTab: React.FC<FinanceLabaRugiTabProps> = ({
@@ -33,7 +51,25 @@ export const FinanceLabaRugiTab: React.FC<FinanceLabaRugiTabProps> = ({
   bebanGaji,
   totalBeban,
   labaBersih,
-  handleExportLabaRugiPDF
+  handleExportLabaRugiPDF,
+  revCup = 0,
+  revBotol = 0,
+  revGalon = 0,
+  diskonPenjualan = 0,
+  totalRevBersih = totalPendapatan,
+  hppBahan = 0,
+  hppTenagaKerja = 0,
+  hppListrikPabrik = 0,
+  hppSusutMesin = 0,
+  totalHPP = hppTotal,
+  bebanGajiStaff = bebanGaji,
+  bebanPemasaran = 0,
+  bebanDistribusiArmada = 0,
+  bebanQCSNI = 0,
+  bebanSusutKendaraan = bebanPenyusutan,
+  totalBebanOperasional = totalBeban,
+  labaBersihOperasional = labaBersih,
+  periodJournals = []
 }) => {
   return (
         <div className="space-y-5 w-full min-w-0">

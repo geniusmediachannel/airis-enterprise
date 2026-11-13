@@ -1,8 +1,12 @@
 import React from 'react';
 import { 
-  FileText, Plus, Download, Printer, Search, Edit2, Trash2, X, Save 
+  FileText, Plus, Download, Printer, Search, Edit2, Trash2, X, Save,
+  CheckCircle2, AlertTriangle, FileDown, RefreshCw, Scale
 } from 'lucide-react';
 import { GeneralJournalItem, COAItem } from '../../types';
+import { exportDataToExcel } from '../../services/excelService';
+import { generateTableReportPDF } from '../../services/pdfService';
+import { formatDateDDMMYYYY } from '../../services/formatters';
 
 interface FinanceJurnalTabProps {
   filteredJournals: GeneralJournalItem[];
@@ -22,6 +26,9 @@ interface FinanceJurnalTabProps {
   journalForm: any;
   setJournalForm: React.Dispatch<React.SetStateAction<any>>;
   handleSaveJournal: () => void;
+  doubleEntryForm?: any;
+  setDoubleEntryForm?: any;
+  setEditingJournal?: (val: GeneralJournalItem | null) => void;
 }
 
 export const FinanceJurnalTab: React.FC<FinanceJurnalTabProps> = ({
@@ -41,8 +48,30 @@ export const FinanceJurnalTab: React.FC<FinanceJurnalTabProps> = ({
   editingJournal,
   journalForm,
   setJournalForm,
-  handleSaveJournal
+  handleSaveJournal,
+  doubleEntryForm = {
+    ID_JURNAL: `JRN-${Date.now()}`,
+    TANGGAL: new Date().toISOString().slice(0, 10),
+    PERIODE: new Date().toISOString().slice(0, 7),
+    REFERENSI: 'MANUAL',
+    KETERANGAN: '',
+    KODE_DEBIT: '111-10',
+    KODE_KREDIT: '111-20',
+    NOMINAL: 0,
+    PEMBUAT: 'Admin Finance'
+  },
+  setDoubleEntryForm = () => {},
+  setEditingJournal = () => {}
 }) => {
+  const defaultPeriod = new Date().toISOString().slice(0, 7);
+  const journalTotalDebit = filteredJournals.reduce((sum, j) => sum + (Number(j.DEBIT) || 0), 0);
+  const journalTotalKredit = filteredJournals.reduce((sum, j) => sum + (Number(j.KREDIT) || 0), 0);
+  const journalDiff = Math.abs(journalTotalDebit - journalTotalKredit);
+  const isJournalBalanced = journalDiff < 1;
+  const handleOpenAddJournal = onOpenAddJournal;
+  const handleOpenEditJournal = onEditJournal;
+  const handleDeleteJournal = (j: GeneralJournalItem) => onDeleteJournal(j.ID_JURNAL);
+  const handleReconcileJournals = () => {};
   return (
     <>
         <div className="space-y-4">

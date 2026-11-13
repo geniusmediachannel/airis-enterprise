@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  FolderOpen, Plus, Download, Search, Edit2, Trash2, X, Save, Sparkles, Building2 
+  FolderOpen, Plus, Download, Search, Edit2, Trash2, X, Save, Sparkles, Building2, RefreshCw 
 } from 'lucide-react';
 import { COAItem } from '../../types';
 
@@ -19,6 +19,8 @@ interface FinanceCOATabProps {
   coaForm: any;
   setCoaForm: React.Dispatch<React.SetStateAction<any>>;
   handleSaveCoa: () => void;
+  coas?: COAItem[];
+  getBalance?: (kode: string) => number;
 }
 
 export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
@@ -35,7 +37,9 @@ export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
   editingCoa,
   coaForm,
   setCoaForm,
-  handleSaveCoa
+  handleSaveCoa,
+  coas = filteredCoas,
+  getBalance = () => 0
 }) => {
   return (
     <>
@@ -54,7 +58,7 @@ export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
                 className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none w-52"
               />
               <button
-                onClick={handleResetFactoryCoa}
+                onClick={handleUpgradeCOA}
                 className="px-3.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
                 title="Terapkan Seluruh Bagan Akun Standar Akuntansi Pabrik & Manufaktur"
               >
@@ -62,7 +66,7 @@ export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
                 <span>Terapkan Standar Pabrik</span>
               </button>
               <button
-                onClick={handleOpenAddCoa}
+                onClick={onOpenAddCoa}
                 className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
               >
                 <Plus size={14} />
@@ -114,14 +118,14 @@ export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
                           <td className="p-3 text-center font-sans">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
-                                onClick={() => handleOpenEditCoa(c)}
+                                onClick={() => onEditCoa(c)}
                                 className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded cursor-pointer"
                                 title="Edit Akun"
                               >
                                 <Edit2 size={13} />
                               </button>
                               <button
-                                onClick={() => handleDeleteCoa(c.KODE_AKUN)}
+                                onClick={() => onDeleteCoa(c.KODE_AKUN)}
                                 className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer"
                                 title="Hapus Akun"
                               >
@@ -220,73 +224,6 @@ export const FinanceCOATab: React.FC<FinanceCOATabProps> = ({
               <button onClick={handleSaveCoa} className="px-5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer">
                 <Save size={14} />
                 <span>Simpan Akun</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Edit Draf Jurnal */}
-      {showDraftModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto no-print">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden my-6">
-            <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
-              <h3 className="font-bold text-xs uppercase tracking-wider">
-                Edit Draf Jurnal ({editingDraft?.ID_Draf})
-              </h3>
-              <button onClick={() => setShowDraftModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
-            </div>
-            <div className="p-5 space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Keterangan Transaksi</label>
-                <input
-                  type="text"
-                  value={draftForm.Keterangan}
-                  onChange={e => setDraftForm({ ...draftForm, Keterangan: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-900"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Akun Debit</label>
-                  <select
-                    value={draftForm.Kode_Debit}
-                    onChange={e => setDraftForm({ ...draftForm, Kode_Debit: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  >
-                    {coas.map(c => (
-                      <option key={c.KODE_AKUN} value={c.KODE_AKUN}>{c.KODE_AKUN} - {c.NAMA_AKUN}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Akun Kredit</label>
-                  <select
-                    value={draftForm.Kode_Kredit}
-                    onChange={e => setDraftForm({ ...draftForm, Kode_Kredit: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  >
-                    {coas.map(c => (
-                      <option key={c.KODE_AKUN} value={c.KODE_AKUN}>{c.KODE_AKUN} - {c.NAMA_AKUN}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nominal Transaksi (Rp)</label>
-                <input
-                  type="number"
-                  value={draftForm.Nominal}
-                  onChange={e => setDraftForm({ ...draftForm, Nominal: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 outline-none"
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-3 bg-slate-50 border-t border-slate-200">
-              <button onClick={() => setShowDraftModal(false)} className="px-3.5 py-1.5 text-xs text-slate-600 font-medium cursor-pointer">Batal</button>
-              <button onClick={handleSaveDraft} className="px-5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer">
-                <Save size={14} />
-                <span>Simpan Perubahan</span>
               </button>
             </div>
           </div>

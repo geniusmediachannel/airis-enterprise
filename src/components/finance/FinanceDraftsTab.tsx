@@ -1,8 +1,10 @@
 import React from 'react';
 import { 
-  FileCheck, RefreshCw, CheckSquare, Trash2, ArrowUpDown, Search, Calendar, Check, X 
+  FileCheck, RefreshCw, CheckSquare, Trash2, ArrowUpDown, Search, Calendar, Check, X,
+  ArrowUp, ArrowDown, Edit2 
 } from 'lucide-react';
-import { DraftJournalItem } from '../../types';
+import { DraftJournalItem, COAItem } from '../../types';
+import { formatDateDDMMYYYY } from '../../services/formatters';
 
 interface FinanceDraftsTabProps {
   draftJournals: DraftJournalItem[];
@@ -22,6 +24,8 @@ interface FinanceDraftsTabProps {
   handleDeleteBatchDrafts: () => Promise<void>;
   handleSyncAllModules: () => Promise<void>;
   isSyncing: boolean;
+  coas?: COAItem[];
+  onEditDraft?: (draft: DraftJournalItem) => void;
 }
 
 export const FinanceDraftsTab: React.FC<FinanceDraftsTabProps> = ({
@@ -41,8 +45,18 @@ export const FinanceDraftsTab: React.FC<FinanceDraftsTabProps> = ({
   handleDeleteDraft,
   handleDeleteBatchDrafts,
   handleSyncAllModules,
-  isSyncing
+  isSyncing,
+  coas = [],
+  onEditDraft
 }) => {
+  const filteredDraftJournals = filteredDrafts || draftJournals || [];
+  const handleBulkVerifyDrafts = handleVerifyBatchDrafts;
+  const handleVerifyDraft = (id: string) => {
+    const item = draftJournals.find(d => d.ID_Draf === id);
+    if (item) handleVerifyAndPostDraft(item);
+  };
+  const handleOpenEditDraft = onEditDraft || (() => {});
+  const defaultPeriod = new Date().toISOString().slice(0, 7);
   return (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">

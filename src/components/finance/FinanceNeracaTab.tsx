@@ -10,17 +10,28 @@ interface FinanceNeracaTabProps {
   setFilterPeriod: (val: string) => void;
   kasKecil: number;
   kasBankBSI: number;
+  kasBankBRI?: number;
   piutangUsaha: number;
+  piutangKasbon?: number;
   persediaanBahan: number;
   persediaanBarangJadi: number;
   totalAktivaLancar: number;
   totalAktivaTetap: number;
+  tanahBangunan?: number;
+  mesinProduksi?: number;
+  kendaraanArmada?: number;
+  totalAkumulasiPenyusutan?: number;
+  totalAktivaTetapNetto?: number;
   akumulasiPenyusutan: number;
   nilaiBukuAset: number;
   totalAktiva: number;
   utangUsaha: number;
+  utangUsahaSupplier?: number;
   utangGaji: number;
+  utangBPJSPajak?: number;
+  totalKewajibanPendek?: number;
   totalKewajibanLancar: number;
+  utangBank?: number;
   totalKewajiban: number;
   modalDisetor: number;
   labaDitahan: number;
@@ -37,31 +48,46 @@ interface FinanceNeracaTabProps {
 export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
   filterPeriod,
   setFilterPeriod,
-  kasKecil,
-  kasBankBSI,
-  piutangUsaha,
-  persediaanBahan,
-  persediaanBarangJadi,
-  totalAktivaLancar,
-  totalAktivaTetap,
-  akumulasiPenyusutan,
-  nilaiBukuAset,
-  totalAktiva,
-  utangUsaha,
-  utangGaji,
-  totalKewajibanLancar,
-  totalKewajiban,
-  modalDisetor,
-  labaDitahan,
-  labaTahunBerjalan,
-  totalEkuitas,
-  totalPasiva,
-  isBalance,
-  selisihBalance,
+  kasKecil = 0,
+  kasBankBSI = 0,
+  kasBankBRI = 0,
+  piutangUsaha = 0,
+  piutangKasbon = 0,
+  persediaanBahan = 0,
+  persediaanBarangJadi = 0,
+  totalAktivaLancar = 0,
+  totalAktivaTetap = 0,
+  tanahBangunan = 0,
+  mesinProduksi = 0,
+  kendaraanArmada = 0,
+  totalAkumulasiPenyusutan = 0,
+  totalAktivaTetapNetto = 0,
+  akumulasiPenyusutan = 0,
+  nilaiBukuAset = 0,
+  totalAktiva = 0,
+  utangUsaha = 0,
+  utangUsahaSupplier = 0,
+  utangGaji = 0,
+  utangBPJSPajak = 0,
+  totalKewajibanPendek = 0,
+  totalKewajibanLancar = 0,
+  utangBank = 0,
+  totalKewajiban = 0,
+  modalDisetor = 0,
+  labaDitahan = 0,
+  labaTahunBerjalan = 0,
+  totalEkuitas = 0,
+  totalPasiva = 0,
+  isBalance = false,
+  selisihBalance = 0,
   handleExportNeracaPDF,
-  assets,
-  coas
+  assets = [],
+  coas = []
 }) => {
+  const finalAkumulasiPenyusutan = totalAkumulasiPenyusutan || akumulasiPenyusutan || 0;
+  const finalAktivaTetapNetto = totalAktivaTetapNetto || totalAktivaTetap || nilaiBukuAset || 0;
+  const finalUtangUsaha = utangUsahaSupplier || utangUsaha || 0;
+  const finalKewajibanPendek = totalKewajibanPendek || totalKewajibanLancar || 0;
   return (
         <div className="space-y-5 w-full min-w-0">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 sm:p-4 bg-white rounded-xl border border-slate-200 shadow-xs no-print w-full min-w-0">
@@ -208,11 +234,11 @@ export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-100 text-red-600">
                       <span>Akumulasi Penyusutan Mesin & Armada</span>
-                      <span className="font-mono tabular-nums font-semibold">(Rp {totalAkumulasiPenyusutan.toLocaleString('id-ID')})</span>
+                      <span className="font-mono tabular-nums font-semibold">(Rp {finalAkumulasiPenyusutan.toLocaleString('id-ID')})</span>
                     </div>
                     <div className="flex justify-between pt-2 font-bold text-slate-800 bg-slate-50 px-2 py-1 rounded">
                       <span>Nilai Buku Aset Tetap</span>
-                      <span className="font-mono tabular-nums">Rp {totalAktivaTetapNetto.toLocaleString('id-ID')}</span>
+                      <span className="font-mono tabular-nums">Rp {finalAktivaTetapNetto.toLocaleString('id-ID')}</span>
                     </div>
                   </div>
                 </div>
@@ -234,7 +260,7 @@ export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
                   <div className="space-y-1.5 text-xs">
                     <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-600">Utang Usaha (Supplier Bahan)</span>
-                      <span className="font-mono tabular-nums font-semibold">Rp {utangUsahaSupplier.toLocaleString('id-ID')}</span>
+                      <span className="font-mono tabular-nums font-semibold">Rp {finalUtangUsaha.toLocaleString('id-ID')}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-100">
                       <span className="text-slate-600">Utang Gaji & Upah Karyawan</span>
@@ -246,7 +272,7 @@ export const FinanceNeracaTab: React.FC<FinanceNeracaTabProps> = ({
                     </div>
                     <div className="flex justify-between pt-2 font-bold text-slate-800 bg-slate-50 px-2 py-1 rounded">
                       <span>Total Liabilitas Pendek</span>
-                      <span className="font-mono tabular-nums">Rp {totalKewajibanPendek.toLocaleString('id-ID')}</span>
+                      <span className="font-mono tabular-nums">Rp {finalKewajibanPendek.toLocaleString('id-ID')}</span>
                     </div>
                   </div>
                 </div>
