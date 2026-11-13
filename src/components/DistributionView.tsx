@@ -26,6 +26,7 @@ import { confirmAction } from './ConfirmDialog';
 import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
 import { formatDateDDMMYYYY } from '../services/formatters';
 import { getPriceAtDate } from '../services/priceService';
+import { getAutoProductionCode, formatProductionCode } from '../services/lotTrackingService';
 
 interface DistributionViewProps {
   distributions: DistributionItem[];
@@ -757,8 +758,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     Keterangan: ''
   });
 
-  const [formItems, setFormItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number }[]>([
-    { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: '' as any }
+  const [formItems, setFormItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number; Kode_Produksi?: string }[]>([
+    { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: '' as any, Kode_Produksi: '' }
   ]);
   const [isSavingDist, setIsSavingDist] = useState<boolean>(false);
 
@@ -840,8 +841,21 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     });
     setCustomerSearchQuery('');
     setIsCustomerDropdownOpen(false);
+    const defaultP = products[0];
+    const defaultPId = defaultP?.ID_Produk || '';
+    const initialLot = getAutoProductionCode({
+      productId: defaultPId,
+      productName: defaultP?.Nama_Produk,
+      qty: 0,
+      deliveryDate: today,
+    });
     setFormItems([
-      { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: products[0] ? (products[0].Harga_Distributor || 0) : '' as any }
+      { 
+        ID_Produk: defaultPId, 
+        Qty: '' as any, 
+        Harga_Satuan: defaultP ? (defaultP.Harga_Distributor || 0) : '' as any,
+        Kode_Produksi: initialLot
+      }
     ]);
     setShowAddDistModal(true);
   };
@@ -878,7 +892,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setIsCustomerDropdownOpen(false);
 
     const rawItems = distributionItems.filter(i => i.ID_Distribusi === dist.ID_Distribusi);
-    let finalItems: { ID_Produk: string; Qty: number; Harga_Satuan: number }[] = [];
+    let finalItems: { ID_Produk: string; Qty: number; Harga_Satuan: number; Kode_Produksi?: string }[] = [];
     const DUMMY_OLD_PRICES = [12000, 14500, 24000, 28000, 9000];
 
     if (rawItems.length > 0) {
@@ -900,10 +914,19 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             ? (calculatedMasterPrice || rawPrice)
             : rawPrice;
 
+          const lotCode = it.Kode_Produksi || getAutoProductionCode({
+            productId: pId,
+            productName: matchedProd?.Nama_Produk,
+            qty: Number(it.Qty) || 0,
+            deliveryDate: dist.Tanggal,
+            currentDistId: dist.ID_Distribusi,
+          });
+
           return {
             ID_Produk: pId,
             Qty: it.Qty,
-            Harga_Satuan: price
+            Harga_Satuan: price,
+            Kode_Produksi: lotCode
           };
         });
     }
@@ -914,10 +937,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         const q = getDistProductQty(dist, p);
         if (q > 0) {
           const price = getProductPriceForCustomer(p.ID_Produk, finalCustId, dist.Tanggal) || (finalCustLevel === 'Agen' ? (p.Harga_Agen || p.Harga_Distributor) : (p.Harga_Distributor || 0));
+          const lotCode = getAutoProductionCode({
+            productId: p.ID_Produk,
+            productName: p.Nama_Produk,
+            qty: q,
+            deliveryDate: dist.Tanggal,
+            currentDistId: dist.ID_Distribusi,
+          });
           finalItems.push({
             ID_Produk: p.ID_Produk,
             Qty: q,
-            Harga_Satuan: price
+            Harga_Satuan: price,
+            Kode_Produksi: lotCode
           });
         }
       });
@@ -925,10 +956,19 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     // If still completely empty (brand new empty distribution), create 1 blank row
     if (finalItems.length === 0) {
+      const firstP = products[0];
+      const pId = firstP?.ID_Produk || '';
       finalItems = [{
-        ID_Produk: products[0]?.ID_Produk || '',
+        ID_Produk: pId,
         Qty: '' as any,
-        Harga_Satuan: products[0] ? getProductPriceForCustomer(products[0].ID_Produk, finalCustId, dist.Tanggal) : 0
+        Harga_Satuan: firstP ? getProductPriceForCustomer(pId, finalCustId, dist.Tanggal) : 0,
+        Kode_Produksi: getAutoProductionCode({
+          productId: pId,
+          productName: firstP?.Nama_Produk,
+          qty: 0,
+          deliveryDate: dist.Tanggal,
+          currentDistId: dist.ID_Distribusi,
+        })
       }];
     }
 
@@ -1032,7 +1072,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const nextP = getNextProductForItems(formItems) || products[0];
     const pId = nextP?.ID_Produk || '';
     const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
-    setFormItems([...formItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price }]);
+    const autoLot = getAutoProductionCode({
+      productId: pId,
+      productName: nextP?.Nama_Produk,
+      qty: 0,
+      deliveryDate: formData.Tanggal,
+      currentDistId: editingDist?.ID_Distribusi,
+    });
+    setFormItems([...formItems, { ID_Produk: pId, Qty: '' as any, Harga_Satuan: price, Kode_Produksi: autoLot }]);
   };
 
   const handleRemoveItemRow = (idx: number) => {
@@ -1104,6 +1151,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           const subtotal = Number(item.Qty) * Number(item.Harga_Satuan);
           totalTagihanAwal += subtotal;
           totalQty += Number(item.Qty);
+          const rawLot = item.Kode_Produksi && item.Kode_Produksi.trim();
+          const lotCode = rawLot || getAutoProductionCode({
+            productId: item.ID_Produk,
+            productName: prod?.Nama_Produk,
+            qty: Number(item.Qty),
+            deliveryDate: formData.Tanggal,
+            currentDistId: distId,
+          });
           return {
             ID_Detail: `${distId}-D${idx + 1}`,
             ID_Distribusi: distId,
@@ -1111,7 +1166,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             Nama_Produk: prod?.Nama_Produk || item.ID_Produk,
             Qty: Number(item.Qty),
             Harga_Satuan: Number(item.Harga_Satuan),
-            Subtotal: subtotal
+            Subtotal: subtotal,
+            Kode_Produksi: lotCode
           };
         });
 
@@ -1700,10 +1756,19 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const handleDownloadSuratJalanPDF = (dist: DistributionItem, items: DistributionProductDetail[]) => {
     const pdfItems = items.map(it => {
       const prod = products.find(p => p.ID_Produk === it.ID_Produk);
+      const lotCode = it.Kode_Produksi || getAutoProductionCode({
+        productId: it.ID_Produk,
+        productName: it.Nama_Produk,
+        qty: it.Qty,
+        deliveryDate: dist.Tanggal,
+        currentDistId: dist.ID_Distribusi,
+      });
       return {
         nama: it.Nama_Produk,
         qty: it.Qty,
-        satuan: prod?.Satuan || 'Dus'
+        satuan: prod?.Satuan || 'Dus',
+        kodeProduksi: lotCode,
+        keterangan: it.Keterangan || ''
       };
     });
 
@@ -1746,6 +1811,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         if (cP > 0) finalPrice = cP;
       }
 
+      const lotCode = it.Kode_Produksi || getAutoProductionCode({
+        productId: pId,
+        productName: pName,
+        qty: Number(it.Qty),
+        deliveryDate: dist.Tanggal,
+        currentDistId: dist.ID_Distribusi,
+      });
+
       if (!itemsMap.has(key)) {
         itemsMap.set(key, {
           ...it,
@@ -1753,7 +1826,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           Nama_Produk: pName,
           Qty: Number(it.Qty),
           Harga_Satuan: finalPrice,
-          Subtotal: Number(it.Qty) * finalPrice
+          Subtotal: Number(it.Qty) * finalPrice,
+          Kode_Produksi: lotCode
         });
       } else {
         // Jika sudah ada item untuk produk ini (duplikasi), ambil Qty yang cocok dengan kolom direct
@@ -1765,7 +1839,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             Nama_Produk: pName,
             Qty: Number(it.Qty),
             Harga_Satuan: finalPrice,
-            Subtotal: Number(it.Qty) * finalPrice
+            Subtotal: Number(it.Qty) * finalPrice,
+            Kode_Produksi: lotCode
           });
         }
       }
@@ -1777,6 +1852,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         const q = getDistProductQty(dist, p);
         if (q > 0) {
           const cP = getProductPriceForCustomer(p.ID_Produk, dist.ID_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal) || p.Harga_Distributor || 0;
+          const lotCode = getAutoProductionCode({
+            productId: p.ID_Produk,
+            productName: p.Nama_Produk,
+            qty: q,
+            deliveryDate: dist.Tanggal,
+            currentDistId: dist.ID_Distribusi,
+          });
           itemsMap.set(p.ID_Produk.toLowerCase(), {
             ID_Detail: `${dist.ID_Distribusi}-${getProductShortCode(p)}`,
             ID_Distribusi: dist.ID_Distribusi,
@@ -1785,7 +1867,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             Qty: q,
             Harga_Satuan: cP,
             Subtotal: q * cP,
-            Satuan: p.Satuan || 'Dus'
+            Satuan: p.Satuan || 'Dus',
+            Kode_Produksi: lotCode
           });
         }
       });
@@ -3942,7 +4025,19 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             const pId = e.target.value;
                             const price = getProductPriceForCustomer(pId, formData.ID_Pelanggan, formData.Tanggal);
                             const updated = [...formItems];
-                            updated[idx] = { ...updated[idx], ID_Produk: pId, Harga_Satuan: price };
+                            const autoLot = getAutoProductionCode({
+                              productId: pId,
+                              productName: products.find(p => p.ID_Produk === pId)?.Nama_Produk,
+                              qty: Number(item.Qty) || 0,
+                              deliveryDate: formData.Tanggal,
+                              currentDistId: editingDist?.ID_Distribusi,
+                            });
+                            updated[idx] = { 
+                              ...updated[idx], 
+                              ID_Produk: pId, 
+                              Harga_Satuan: price,
+                              Kode_Produksi: (!updated[idx].Kode_Produksi || updated[idx].Kode_Produksi.startsWith('P')) ? autoLot : updated[idx].Kode_Produksi
+                            };
                             setFormItems(updated);
                           }}
                           className="flex-1 min-w-[160px] px-2.5 py-1 text-xs border border-slate-300 rounded bg-white font-medium"
@@ -3957,11 +4052,34 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             placeholder="0"
                             value={item.Qty ?? ''}
                             onChange={e => {
+                              const newQty = e.target.value === '' ? ('' as any) : (Number(e.target.value) || 0);
                               const updated = [...formItems];
-                              updated[idx].Qty = e.target.value === '' ? ('' as any) : (Number(e.target.value) || 0);
+                              updated[idx].Qty = newQty;
+                              if (!updated[idx].Kode_Produksi || updated[idx].Kode_Produksi.startsWith('P')) {
+                                updated[idx].Kode_Produksi = getAutoProductionCode({
+                                  productId: item.ID_Produk,
+                                  productName: products.find(p => p.ID_Produk === item.ID_Produk)?.Nama_Produk,
+                                  qty: Number(newQty) || 0,
+                                  deliveryDate: formData.Tanggal,
+                                  currentDistId: editingDist?.ID_Distribusi,
+                                });
+                              }
                               setFormItems(updated);
                             }}
                             className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white font-mono text-center font-bold"
+                          />
+                        </div>
+                        <div className="w-28" title="Kode Produksi (Otomatis FIFO dari Hasil Produksi, dapat diedit)">
+                          <input
+                            type="text"
+                            placeholder="Kode Prod"
+                            value={item.Kode_Produksi ?? ''}
+                            onChange={e => {
+                              const updated = [...formItems];
+                              updated[idx].Kode_Produksi = e.target.value;
+                              setFormItems(updated);
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-blue-200 rounded bg-blue-50/70 font-mono text-center font-bold text-blue-900 placeholder:font-normal placeholder:text-[10px]"
                           />
                         </div>
                         <div className="w-28 text-right font-mono text-xs font-semibold text-slate-700 flex flex-col items-end">
@@ -4612,136 +4730,242 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 );
               })() : (() => {
                 const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
+
+                // Inline handler to update Kode Produksi and persist into database
+                const handleUpdateDocItemLot = (itemKey: string, newLotCode: string) => {
+                  const updatedItems = (viewDocModal?.items || []).map(it => {
+                    const key = it.ID_Detail || it.ID_Produk || it.Nama_Produk;
+                    if (key === itemKey || it.ID_Produk === itemKey) {
+                      return { ...it, Kode_Produksi: newLotCode };
+                    }
+                    return it;
+                  });
+
+                  setViewDocModal(prev => prev ? { ...prev, items: updatedItems } : null);
+
+                  const distId = viewDocModal.dist.ID_Distribusi;
+                  const allDistItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
+                  let changed = false;
+                  const updatedAll = allDistItems.map(it => {
+                    if (it.ID_Distribusi === distId && (it.ID_Detail === itemKey || it.ID_Produk === itemKey)) {
+                      changed = true;
+                      return { ...it, Kode_Produksi: newLotCode };
+                    }
+                    return it;
+                  });
+
+                  if (changed) {
+                    setTableData('Distribusi_Item', updatedAll);
+                    onRefresh();
+                  }
+                };
+
+                const emptyRowsCount = Math.max(0, 8 - cleanDocItems.length);
+
                 return (
                 /* ============================================================== */
-                /* SURAT JALAN PENGIRIMAN TEMPLATE                                */
+                /* SURAT JALAN PENGIRIMAN TEMPLATE (AIRIS RESMI TEMPLATE FISIK)   */
                 /* ============================================================== */
-                <div className="space-y-4 max-w-2xl mx-auto">
-                  {docSettings.useCustomKopImage && docSettings.customKopImage ? (
-                    <img 
-                      src={docSettings.customKopImage} 
-                      alt="Kop Surat" 
-                      className="w-full h-auto max-h-24 object-contain mb-2" 
-                    />
-                  ) : (
-                    <div className="text-center pb-3 border-b-2 border-slate-900">
-                      <h1 className="text-xl font-black text-blue-900 tracking-wide uppercase">
-                        {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
-                      </h1>
-                      <p className="text-xs text-slate-600 font-medium">
-                        {docSettings.subNamaPerusahaan || 'Produsen Air Minum Dalam Kemasan (AMDK) As-Shofaa'}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} • Telp: {docSettings.kontakPerusahaan || '(0272) 898123'}
-                      </p>
+                <div className="border border-black p-4 sm:p-6 bg-white text-black font-sans max-w-4xl mx-auto shadow-xs print:shadow-none print:border-black print:p-2 print:max-w-none">
+                  {/* HEADER PERUSAHAAN */}
+                  <div className="text-center">
+                    <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-black">
+                      {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
+                    </h1>
+                    <p className="text-xs font-semibold text-black mt-0.5 leading-tight">
+                      {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,'}
+                    </p>
+                    <p className="text-xs font-semibold text-black leading-tight">
+                      Kec. Klaten Utara, Kab. Klaten, 57438
+                    </p>
+                    <div className="flex items-center justify-center gap-4 text-[11px] font-semibold text-black mt-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-[#38bdf8] text-white flex items-center justify-center text-[9px] font-bold">
+                          ☎
+                        </span>
+                        <span>{docSettings.kontakPerusahaan || '0856 4000 1926'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-[#38bdf8] text-white flex items-center justify-center text-[9px] font-bold">
+                          ✉
+                        </span>
+                        <span>anugerahillahirabbi@gmail.com</span>
+                      </div>
                     </div>
-                  )}
+                  </div>
 
-                  <div className="flex items-center justify-between my-2 border-b border-slate-200 pb-3">
+                  {/* TWO-TONE DECORATIVE BAR (CYAN & DARK NAVY) */}
+                  <div className="flex w-full h-1.5 mt-2.5">
+                    <div className="w-[30%] bg-[#38bdf8]"></div>
+                    <div className="w-[70%] bg-[#1e3a8a]"></div>
+                  </div>
+
+                  {/* DOCUMENT META & BANNER */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 items-start">
+                    {/* LEFT COLUMN: BANNER SURAT JALAN + NOMOR + QR VALIDASI */}
                     <div>
-                      <h2 className="text-base font-black underline uppercase tracking-widest text-slate-900">
-                        SURAT JALAN PENGIRIMAN
-                      </h2>
-                      <p className="text-xs font-mono font-semibold text-slate-600 mt-0.5">
-                        No: {viewDocModal.dist.No_Surat_Jalan}
-                      </p>
+                      <div className="flex items-stretch h-8 mb-2">
+                        <div className="bg-[#1e3a8a] text-white font-black text-sm sm:text-base tracking-widest px-5 flex items-center uppercase">
+                          SURAT JALAN
+                        </div>
+                        <div className="w-8 bg-[#38bdf8] [clip-path:polygon(0_0,100%_0,0_100%)]"></div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 mt-1.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-black flex-1">
+                          <span className="w-16">Nomer</span>
+                          <span>:</span>
+                          <span className="font-mono font-bold border-b border-black flex-1 pb-0.5">
+                            {viewDocModal.dist.No_Surat_Jalan || '-'}
+                          </span>
+                        </div>
+                        {/* Compact QR Validation for Camera Scanning */}
+                        <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded print:border-none print:bg-transparent" title="QR Code Resmi untuk Validasi & Tanda Tangan Scanner">
+                          <QRCodeDisplay
+                            value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
+                            size={44}
+                            showLabel={false}
+                          />
+                          <span className="text-[8px] font-mono text-slate-500 leading-tight hidden sm:inline">QR Validasi</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-center">
-                      <QRCodeDisplay
-                        value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
-                        size={64}
-                        showLabel={false}
-                      />
-                      <span className="text-[9px] font-mono text-slate-500 mt-0.5">QR Validasi</span>
+
+                    {/* RIGHT COLUMN: METADATA PENGIRIMAN */}
+                    <div className="space-y-1 text-xs">
+                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
+                        <span className="font-semibold text-black">Tgl Kirim</span>
+                        <span>:</span>
+                        <span className="font-mono font-bold border-b border-black pb-0.5">
+                          {formatDisplayDate(viewDocModal.dist.Tanggal)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
+                        <span className="font-semibold text-black">Kepada</span>
+                        <span>:</span>
+                        <span className="font-bold uppercase border-b border-black pb-0.5 truncate">
+                          {viewDocModal.dist.Nama_Pelanggan}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
+                        <span className="font-semibold text-black">Alamat</span>
+                        <span>:</span>
+                        <span className="border-b border-black pb-0.5 truncate">
+                          {viewDocModal.dist.Tujuan || '-'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[80px_10px_1fr] items-center">
+                        <span className="font-semibold text-black">Pengemudi</span>
+                        <span>:</span>
+                        <span className="font-semibold border-b border-black pb-0.5">
+                          {viewDocModal.dist.Pengirim || '-'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 text-xs p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                    <div className="space-y-1">
-                      <div><span className="text-slate-500 inline-block w-24">Tanggal Kirim:</span><span className="font-semibold font-mono">{formatDisplayDate(viewDocModal.dist.Tanggal)}</span></div>
-                      <div><span className="text-slate-500 inline-block w-24">Pengemudi/PIC:</span><span className="font-semibold">{viewDocModal.dist.Pengirim || '-'}</span></div>
-                      <div><span className="text-slate-500 inline-block w-24">Metode Kirim:</span><span className="font-semibold">{viewDocModal.dist.Metode_Kirim}</span></div>
-                    </div>
-                    <div className="space-y-1">
-                      <div><span className="text-slate-500 inline-block w-24">Kepada Yth:</span><span className="font-bold text-blue-900">{viewDocModal.dist.Nama_Pelanggan}</span></div>
-                      <div><span className="text-slate-500 inline-block w-24">Alamat Tujuan:</span><span className="font-medium text-slate-700">{viewDocModal.dist.Tujuan}</span></div>
-                      <div><span className="text-slate-500 inline-block w-24">Jenis Mitra:</span><span className="font-semibold">{viewDocModal.dist.Level_Pelanggan || 'Distributor'}</span></div>
-                    </div>
-                  </div>
-
-                  <table className="w-full text-xs border-collapse border border-slate-400">
+                  {/* ITEMS TABLE WITH CYAN HEADER */}
+                  <table className="w-full text-xs border-collapse border border-black mt-3">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-900 font-bold text-center border-b border-slate-400">
-                        <th className="border border-slate-400 p-2 w-12">No</th>
-                        <th className="border border-slate-400 p-2 text-left">Nama Barang / Produk</th>
-                        <th className="border border-slate-400 p-2 w-28 text-center">Jumlah Terkirim</th>
-                        <th className="border border-slate-400 p-2 w-24 text-center">Satuan</th>
+                      <tr style={{ backgroundColor: '#67c0de' }} className="border-b border-black font-bold text-center text-black">
+                        <th className="border border-black py-1.5 px-2 w-10 text-center">No</th>
+                        <th className="border border-black py-1.5 px-2 text-center">Nama Barang</th>
+                        <th className="border border-black py-1.5 px-2 w-28 text-center">Jumlah Dikirim</th>
+                        <th className="border border-black py-1.5 px-2 w-32 text-center" title="Kode Produksi FIFO (Dapat Diedit Langsung)">
+                          Kode Produksi
+                        </th>
+                        <th className="border border-black py-1.5 px-2 w-40 text-center">Keterangan</th>
                       </tr>
                     </thead>
                     <tbody>
                       {cleanDocItems.map((item, idx) => {
-                        const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
-                        const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
+                        const itemKey = item.ID_Detail || item.ID_Produk;
                         return (
-                          <tr key={idx} className="border-b border-slate-300">
-                            <td className="border border-slate-300 p-2.5 text-center font-mono">{idx + 1}</td>
-                            <td className="border border-slate-300 p-2.5 font-medium">{item.Nama_Produk}</td>
-                            <td className="border border-slate-300 p-2.5 text-center font-mono font-bold text-blue-800">{item.Qty}</td>
-                            <td className="border border-slate-300 p-2.5 text-center font-mono">
-                              {satuanStr}
+                          <tr key={idx} className="border-b border-black">
+                            <td className="border border-black py-1.5 px-2 text-center font-mono">{idx + 1}</td>
+                            <td className="border border-black py-1.5 px-2 font-medium text-black">{item.Nama_Produk}</td>
+                            <td className="border border-black py-1.5 px-2 text-center font-mono font-bold text-black">{item.Qty}</td>
+                            <td className="border border-black py-0 px-1 text-center font-mono font-bold">
+                              <input
+                                type="text"
+                                value={item.Kode_Produksi || ''}
+                                onChange={(e) => handleUpdateDocItemLot(itemKey, e.target.value)}
+                                title="Klik untuk mengedit Kode Produksi"
+                                placeholder="P..."
+                                className="w-full text-center bg-transparent border-0 outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 rounded font-mono font-bold text-black text-xs py-1"
+                              />
+                            </td>
+                            <td className="border border-black py-1.5 px-2 text-slate-800 text-[11px]">
+                              {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
                             </td>
                           </tr>
                         );
                       })}
+
+                      {/* Empty padding rows to preserve authentic printed appearance */}
+                      {Array.from({ length: emptyRowsCount }).map((_, rIdx) => (
+                        <tr key={`empty-${rIdx}`} className="border-b border-black h-7">
+                          <td className="border border-black py-1.5 px-2 text-center font-mono text-slate-400">
+                            {cleanDocItems.length + rIdx + 1}
+                          </td>
+                          <td className="border border-black py-1.5 px-2"></td>
+                          <td className="border border-black py-1.5 px-2"></td>
+                          <td className="border border-black py-1.5 px-2"></td>
+                          <td className="border border-black py-1.5 px-2"></td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
 
-                  {viewDocModal.dist.Keterangan && (
-                    <div className="p-2.5 bg-amber-50 rounded border border-amber-200 text-xs text-amber-900">
-                      <strong>Catatan:</strong> {viewDocModal.dist.Keterangan}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-3 text-center text-xs pt-6 border-t border-slate-200 mt-6 gap-4">
-                    {/* PENERIMA */}
-                    <div className="flex flex-col items-center justify-between min-h-[140px]">
-                      <p className="text-slate-500 font-medium">Penerima Barang,</p>
-                      <div className="my-2 h-16 flex items-center justify-center">
-                        {viewDocModal.dist.Tanda_Tangan_Penerima ? (
-                          <img
-                            src={viewDocModal.dist.Tanda_Tangan_Penerima}
-                            alt="TTD Penerima"
-                            className="max-h-14 max-w-[120px] object-contain"
+                  {/* 4 SIGNATURES BLOCK */}
+                  <div className="grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-2">
+                    {/* 1. DISIAPKAN */}
+                    <div className="flex flex-col items-center justify-between min-h-[110px]">
+                      <p className="font-semibold text-black">Disiapkan</p>
+                      <div className="my-1 h-14 flex items-center justify-center">
+                        {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
+                          <img 
+                            src={docSettings.customTtdImage} 
+                            alt="TTD Disiapkan" 
+                            className="max-h-12 max-w-[90px] object-contain" 
                           />
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setSignatureModalConfig({
-                                isOpen: true,
-                                dist: viewDocModal.dist,
-                                role: 'penerima'
-                              });
-                            }}
-                            className="px-2.5 py-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-semibold cursor-pointer transition-colors shadow-2xs"
-                          >
-                            + TTD Penerima
-                          </button>
                         )}
                       </div>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
-                        ( {viewDocModal.dist.Penerima || '.....................'} )
-                      </p>
+                      <div className="w-full">
+                        <div className="border-b border-black w-4/5 mx-auto"></div>
+                        <p className="text-[10px] font-semibold text-black mt-1">( Admin Gudang )</p>
+                      </div>
                     </div>
 
-                    {/* SOPIR / PENGIRIM */}
-                    <div className="flex flex-col items-center justify-between min-h-[140px]">
-                      <p className="text-slate-500 font-medium">Sopir / Pengirim,</p>
-                      <div className="my-2 h-16 flex items-center justify-center">
+                    {/* 2. DISETUJUI */}
+                    <div className="flex flex-col items-center justify-between min-h-[110px]">
+                      <p className="font-semibold text-black">Disetujui</p>
+                      <div className="my-1 h-14 flex items-center justify-center">
+                        {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
+                          <img 
+                            src={docSettings.customCapImage} 
+                            alt="Stempel Disetujui" 
+                            className="max-h-12 max-w-[90px] object-contain" 
+                          />
+                        )}
+                      </div>
+                      <div className="w-full">
+                        <div className="border-b border-black w-4/5 mx-auto"></div>
+                        <p className="text-[10px] font-semibold text-black mt-1">
+                          ( {docSettings.namaPenandatangan || 'Pimpinan'} )
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 3. DIANTAR OLEH */}
+                    <div className="flex flex-col items-center justify-between min-h-[110px]">
+                      <p className="font-semibold text-black">Diantar Oleh</p>
+                      <div className="my-1 h-14 flex items-center justify-center">
                         {viewDocModal.dist.Tanda_Tangan_Sopir ? (
-                          <img
-                            src={viewDocModal.dist.Tanda_Tangan_Sopir}
-                            alt="TTD Sopir"
-                            className="max-h-14 max-w-[120px] object-contain"
+                          <img 
+                            src={viewDocModal.dist.Tanda_Tangan_Sopir} 
+                            alt="TTD Sopir" 
+                            className="max-h-12 max-w-[90px] object-contain" 
                           />
                         ) : (
                           <button
@@ -4752,26 +4976,59 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                                 role: 'sopir'
                               });
                             }}
-                            className="px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md font-semibold cursor-pointer transition-colors shadow-2xs"
+                            className="px-2 py-0.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
                           >
                             + TTD Sopir
                           </button>
                         )}
                       </div>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
-                        ( {viewDocModal.dist.Pengirim || 'Armada Pabrik'} )
-                      </p>
+                      <div className="w-full">
+                        <div className="border-b border-black w-4/5 mx-auto"></div>
+                        <p className="text-[10px] font-semibold text-black mt-1">
+                          ( {viewDocModal.dist.Pengirim || 'Sopir'} )
+                        </p>
+                      </div>
                     </div>
 
-                    {/* PETUGAS GUDANG */}
-                    <div className="flex flex-col items-center justify-between min-h-[140px]">
-                      <p className="text-slate-500 font-medium">Petugas Gudang,</p>
-                      <div className="my-2 h-16 flex items-center justify-center">
-                        <span className="text-[10px] text-slate-400 italic">Disahkan</span>
+                    {/* 4. DITERIMA OLEH */}
+                    <div className="flex flex-col items-center justify-between min-h-[110px]">
+                      <p className="font-semibold text-black">Diterima Oleh</p>
+                      <div className="my-1 h-14 flex items-center justify-center">
+                        {viewDocModal.dist.Tanda_Tangan_Penerima ? (
+                          <img 
+                            src={viewDocModal.dist.Tanda_Tangan_Penerima} 
+                            alt="TTD Penerima" 
+                            className="max-h-12 max-w-[90px] object-contain" 
+                          />
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSignatureModalConfig({
+                                isOpen: true,
+                                dist: viewDocModal.dist,
+                                role: 'penerima'
+                              });
+                            }}
+                            className="px-2 py-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded font-semibold cursor-pointer transition-colors shadow-2xs print:hidden"
+                          >
+                            + TTD Penerima
+                          </button>
+                        )}
                       </div>
-                      <p className="font-bold text-slate-900 border-t border-slate-300 pt-1 inline-block min-w-[120px]">
-                        Admin Gudang
-                      </p>
+                      <div className="w-full">
+                        <div className="border-b border-black w-4/5 mx-auto"></div>
+                        <p className="text-[10px] font-semibold text-black mt-1">
+                          ( {viewDocModal.dist.Penerima || viewDocModal.dist.Nama_Pelanggan || 'Penerima'} )
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DOCUMENT CONTROL CODE AT BOTTOM RIGHT */}
+                  <div className="flex justify-end mt-4 text-[9px] font-mono text-slate-800 leading-tight">
+                    <div className="text-right">
+                      <div>FM-LOG-01-01</div>
+                      <div>0/1</div>
                     </div>
                   </div>
                 </div>

@@ -664,7 +664,7 @@ export function generateSuratJalanPDF(params: {
   tanggal: string;
   sopir: string;
   metodeKirim: string;
-  items: { nama: string; qty: number; satuan: string }[];
+  items: { nama: string; qty: number; satuan?: string; kodeProduksi?: string; keterangan?: string }[];
   catatan?: string;
   customSettings?: {
     namaPerusahaan?: string;
@@ -680,91 +680,150 @@ export function generateSuratJalanPDF(params: {
 
   const cs = params.customSettings;
   const companyName = cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI';
-  const subName = cs?.subNamaPerusahaan || 'Pabrik Air Minum Dalam Kemasan (AMDK) As-Shofaa';
-  const addressLine = cs?.alamatPerusahaan 
-    ? `${cs.alamatPerusahaan} ${cs.kontakPerusahaan ? '| Telp: ' + cs.kontakPerusahaan : ''}`
-    : 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara | Telp: (0272) 898123';
+  const addressLine1 = cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,';
+  const addressLine2 = 'Kec. Klaten Utara, Kab. Klaten, 57438';
+  const phoneText = cs?.kontakPerusahaan || '0856 4000 1926';
+  const emailText = 'anugerahillahirabbi@gmail.com';
 
+  // Outer border
+  doc.setDrawColor(30, 30, 30);
+  doc.setLineWidth(0.4);
+  doc.rect(10, 10, pageWidth - 20, 277);
+
+  // Header Company
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(26, 54, 138);
+  doc.setFontSize(15);
+  doc.setTextColor(20, 20, 20);
   doc.text(companyName, pageWidth / 2, 20, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(70, 70, 70);
-  doc.text(subName, pageWidth / 2, 25, { align: 'center' });
-  doc.text(addressLine, pageWidth / 2, 29, { align: 'center' });
-
-  doc.setDrawColor(26, 54, 138);
-  doc.setLineWidth(0.8);
-  doc.line(15, 33, pageWidth - 15, 33);
-  doc.setLineWidth(0.2);
-  doc.line(15, 34.2, pageWidth - 15, 34.2);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(15, 23, 42);
-  doc.text('SURAT JALAN PENGIRIMAN', pageWidth / 2, 44, { align: 'center' });
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`No. Surat Jalan: ${params.noSuratJalan}`, pageWidth / 2, 49, { align: 'center' });
-
-  // Metadata
-  doc.setDrawColor(200, 210, 220);
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(15, 54, pageWidth - 30, 22, 2, 2, 'FD');
-
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(50, 50, 50);
-  doc.text(`Tanggal Kirim : ${params.tanggal}`, 20, 61);
-  doc.text(`Pengemudi/PIC : ${params.sopir}`, 20, 67);
-  doc.text(`Metode Kirim  : ${params.metodeKirim}`, 20, 72);
+  doc.text(addressLine1, pageWidth / 2, 24.5, { align: 'center' });
+  doc.text(addressLine2, pageWidth / 2, 28.5, { align: 'center' });
+  doc.text(`${phoneText}    |    ${emailText}`, pageWidth / 2, 32.5, { align: 'center' });
 
-  doc.text(`Kepada Yth    : ${params.namaPelanggan}`, 110, 61);
-  doc.text(`Alamat Tujuan : ${params.alamatPelanggan.slice(0, 35)}`, 110, 67);
+  // Two-tone divider bar (cyan + navy)
+  doc.setFillColor(56, 189, 248); // Cyan
+  doc.rect(15, 35, 45, 1.5, 'F');
+  doc.setFillColor(30, 58, 138); // Navy
+  doc.rect(60, 35, pageWidth - 75, 1.5, 'F');
+
+  // SURAT JALAN Banner
+  doc.setFillColor(30, 58, 138);
+  doc.rect(15, 42, 60, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(255, 255, 255);
+  doc.text('SURAT JALAN', 45, 47.5, { align: 'center' });
+
+  // Slanted cyan triangle next to banner
+  doc.setFillColor(56, 189, 248);
+  doc.triangle(75, 42, 85, 42, 75, 50, 'F');
+
+  // Nomer on left
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(20, 20, 20);
+  doc.text(`Nomer    : ${params.noSuratJalan || '-'}`, 15, 56);
+
+  // Metadata on right
+  const metaX = 125;
+  doc.text(`Tgl Kirim    : ${params.tanggal || '-'}`, metaX, 45);
+  doc.text(`Kepada      : ${params.namaPelanggan || '-'}`, metaX, 50);
+  doc.text(`Alamat       : ${(params.alamatPelanggan || '-').slice(0, 32)}`, metaX, 55);
+  doc.text(`Pengemudi : ${params.sopir || '-'}`, metaX, 60);
 
   // Table
-  let y = 82;
-  doc.setFillColor(241, 245, 249);
-  doc.rect(15, y, pageWidth - 30, 8, 'F');
-  doc.rect(15, y, pageWidth - 30, 8, 'S');
+  let y = 65;
+  const colW = { no: 12, name: 60, qty: 28, lot: 40, ket: 50 };
+  const tableX = 15;
+  const totalW = pageWidth - 30; // 190mm
+
+  // Cyan table header
+  doc.setFillColor(103, 192, 222); // #67c0de
+  doc.rect(tableX, y, totalW, 7, 'F');
+  doc.rect(tableX, y, totalW, 7, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.text('No', 20, y + 5.5);
-  doc.text('Nama Barang / Produk', 35, y + 5.5);
-  doc.text('Jumlah Terkirim', 130, y + 5.5, { align: 'center' });
-  doc.text('Satuan', 175, y + 5.5, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
 
-  y += 8;
+  doc.text('No', tableX + 6, y + 5, { align: 'center' });
+  doc.text('Nama Barang', tableX + colW.no + colW.name / 2, y + 5, { align: 'center' });
+  doc.text('Jumlah Dikirim', tableX + colW.no + colW.name + colW.qty / 2, y + 5, { align: 'center' });
+  doc.text('Kode Produksi', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 5, { align: 'center' });
+  doc.text('Keterangan', tableX + colW.no + colW.name + colW.qty + colW.lot + colW.ket / 2, y + 5, { align: 'center' });
+
+  // Column vertical lines in header
+  let curX = tableX + colW.no;
+  doc.line(curX, y, curX, y + 7);
+  curX += colW.name;
+  doc.line(curX, y, curX, y + 7);
+  curX += colW.qty;
+  doc.line(curX, y, curX, y + 7);
+  curX += colW.lot;
+  doc.line(curX, y, curX, y + 7);
+
+  y += 7;
   doc.setFont('helvetica', 'normal');
-  params.items.forEach((it, idx) => {
-    doc.rect(15, y, pageWidth - 30, 8, 'S');
-    doc.text(String(idx + 1), 20, y + 5.5);
-    doc.text(it.nama, 35, y + 5.5);
-    doc.text(String(it.qty), 130, y + 5.5, { align: 'center' });
-    doc.text(it.satuan, 175, y + 5.5, { align: 'center' });
-    y += 8;
-  });
+  doc.setFontSize(8.5);
 
-  if (params.catatan) {
-    y += 5;
-    doc.setFontSize(8.5);
-    doc.text(`Catatan: ${params.catatan}`, 15, y);
-    y += 6;
+  const rowHeight = 6.5;
+  const minRows = 8;
+  const displayItems = [...params.items];
+
+  // Fill up to at least minRows
+  while (displayItems.length < minRows) {
+    displayItems.push({ nama: '', qty: 0, kodeProduksi: '', keterangan: '' });
   }
 
-  // Signatures
-  y += 10;
-  doc.setFontSize(9);
-  doc.text('Penerima Barang,', 25, y);
-  doc.text('( ................................. )', 25, y + 22);
+  displayItems.forEach((it, idx) => {
+    doc.rect(tableX, y, totalW, rowHeight, 'S');
+    // Vertical dividers
+    curX = tableX + colW.no;
+    doc.line(curX, y, curX, y + rowHeight);
+    curX += colW.name;
+    doc.line(curX, y, curX, y + rowHeight);
+    curX += colW.qty;
+    doc.line(curX, y, curX, y + rowHeight);
+    curX += colW.lot;
+    doc.line(curX, y, curX, y + rowHeight);
 
-  doc.text('Pengirim (Driver),', 90, y);
-  doc.text(`( ${params.sopir} )`, 90, y + 22);
+    if (it.nama) {
+      doc.text(String(idx + 1), tableX + 6, y + 4.5, { align: 'center' });
+      doc.text(it.nama, tableX + colW.no + 3, y + 4.5);
+      doc.text(String(it.qty), tableX + colW.no + colW.name + colW.qty / 2, y + 4.5, { align: 'center' });
+      doc.text(it.kodeProduksi || '-', tableX + colW.no + colW.name + colW.qty + colW.lot / 2, y + 4.5, { align: 'center' });
+      doc.text(it.keterangan || params.catatan || '', tableX + colW.no + colW.name + colW.qty + colW.lot + 3, y + 4.5);
+    }
+    y += rowHeight;
+  });
 
-  doc.text('Petugas Gudang,', 155, y);
-  doc.text('( Admin Gudang AIRIS )', 155, y + 22);
+  // 4 Signatures Block
+  y += 18;
+  const sigColW = totalW / 4;
+  const sigTitles = ['Disiapkan', 'Disetujui', 'Diantar Oleh', 'Diterima Oleh'];
+  const sigNames = ['Admin Gudang', 'Pimpinan', params.sopir || 'Sopir', params.namaPelanggan || 'Penerima'];
+
+  sigTitles.forEach((title, i) => {
+    const sX = tableX + i * sigColW;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(title, sX + sigColW / 2, y, { align: 'center' });
+
+    // Underline for signature
+    const lineY = y + 22;
+    doc.line(sX + 5, lineY, sX + sigColW - 5, lineY);
+    doc.setFontSize(8);
+    doc.text(`( ${sigNames[i]} )`, sX + sigColW / 2, lineY + 4.5, { align: 'center' });
+  });
+
+  // Document code bottom right
+  doc.setFontSize(7.5);
+  doc.setTextColor(80, 80, 80);
+  doc.text('FM-LOG-01-01', pageWidth - 15, 280, { align: 'right' });
+  doc.text('0/1', pageWidth - 15, 283.5, { align: 'right' });
 
   const filename = `SJ-${sanitizeFilename(params.noSuratJalan)} (${sanitizeFilename(params.namaPelanggan)}).pdf`;
   doc.save(filename);

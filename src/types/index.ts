@@ -256,6 +256,7 @@ export interface DistributionProductDetail {
   Harga_Satuan: number;
   Subtotal: number;
   Satuan?: string;
+  Kode_Produksi?: string;
 }
 
 export interface RawMaterialPurchase {
