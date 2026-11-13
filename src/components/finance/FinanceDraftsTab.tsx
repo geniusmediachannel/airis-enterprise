@@ -150,7 +150,7 @@ export const FinanceDraftsTab: React.FC<FinanceDraftsTabProps> = ({
               {/* Tombol Sort Tanggal */}
               <button
                 type="button"
-                onClick={() => setDraftSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                onClick={() => setDraftSortOrder(draftSortOrder === 'desc' ? 'asc' : 'desc')}
                 className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
                 title={draftSortOrder === 'desc' ? 'Urutan saat ini: Terbaru ke Terlama. Klik untuk Terlama ke Terbaru' : 'Urutan saat ini: Terlama ke Terbaru. Klik untuk Terbaru ke Terlama'}
               >
@@ -184,7 +184,7 @@ export const FinanceDraftsTab: React.FC<FinanceDraftsTabProps> = ({
                   <tr>
                     <th 
                       className="p-3 cursor-pointer hover:bg-slate-100 select-none transition-colors"
-                      onClick={() => setDraftSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                      onClick={() => setDraftSortOrder(draftSortOrder === 'desc' ? 'asc' : 'desc')}
                       title="Klik untuk mengubah urutan tanggal transaksi (Terlama ↔ Terbaru)"
                     >
                       <div className="flex items-center gap-1.5">

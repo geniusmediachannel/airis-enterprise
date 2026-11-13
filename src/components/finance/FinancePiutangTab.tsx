@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { 
   ReceivablePayableItem, DistributionItem, DistributionProductDetail, 
-  CustomerItem, CustomerPaymentRecord, CustomerLedgerSummary 
+  CustomerItem, CustomerPaymentRecord 
 } from '../../types';
 import { getTableData, setTableData, deleteTableRow, isRadityaVariant, normalizeDistributionDriver } from '../../services/dbAdapter';
 import { exportDataToExcel } from '../../services/excelService';

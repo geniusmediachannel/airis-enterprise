@@ -3,7 +3,8 @@ import {
   Truck, Coins, Plus, Printer, Download, Eye, 
   Trash2, Edit2, FileCheck, X, Building, Save, FileText,
   FileDown, Send, CheckCircle2, Search, Check, RefreshCw, Calendar,
-  RotateCcw, Filter, ExternalLink, Clock, PackageCheck, AlertCircle, FileSpreadsheet
+  RotateCcw, Filter, ExternalLink, Clock, PackageCheck, AlertCircle, FileSpreadsheet,
+  Scale, Users, History, CheckSquare
 } from 'lucide-react';
 import { 
   DistributionItem, DistributionProductDetail, DriverSettlementItem, DriverSettlementDetail,
@@ -47,6 +48,13 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
   // Modal pencairan biaya distribusi driver
   const [showClaimModal, setShowClaimModal] = useState<boolean>(false);
   const [claimModalDriver, setClaimModalDriver] = useState<string>('');
+  const [claimForm, setClaimForm] = useState({
+    Tanggal: new Date().toISOString().slice(0, 10),
+    Akun_Kas: '111-10',
+    Keterangan: '',
+    Catat_Ke_Jurnal: true
+  });
+  const [showDetailSettlementModal, setShowDetailSettlementModal] = useState<DriverSettlementItem | null>(null);
   const distItemsMap = useMemo(() => {
     const map = new Map<string, DistributionProductDetail[]>();
     (distributionItems || []).forEach(it => {
@@ -545,7 +553,7 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
               No_Surat_Jalan: d.No_Surat_Jalan || '-',
               Tanggal: d.Tanggal,
               Pelanggan: d.Nama_Pelanggan || 'Pelanggan',
-              Tujuan: d.Tujuan_Pengiriman || d.Alamat || '-',
+              Tujuan: (d as any).Tujuan_Pengiriman || (d as any).Alamat || '-',
               Dus: dus,
               Tarif: tarif,
               Biaya: dus * tarif
@@ -1517,7 +1525,7 @@ export const FinanceBiayaDistribusiTab: React.FC<FinanceBiayaDistribusiTabProps>
                   No_Surat_Jalan: d.No_Surat_Jalan || '-',
                   Tanggal: d.Tanggal,
                   Pelanggan: d.Nama_Pelanggan || 'Pelanggan',
-                  Tujuan: d.Tujuan_Pengiriman || d.Alamat || '-',
+                  Tujuan: (d as any).Tujuan_Pengiriman || (d as any).Alamat || '-',
                   Dus: dus,
                   Tarif: tarif,
                   Biaya: dus * tarif

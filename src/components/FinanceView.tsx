@@ -13,8 +13,22 @@ import {
 import { syncAllModulesToFinance } from '../services/financeSyncService';
 import { exportDataToExcel } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
+import { formatDateDDMMYYYY } from '../services/formatters';
 import { showToast as showToastGlobal } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
+
+const safeList = (val: any): string[] => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map(String);
+  if (typeof val === 'string') {
+    try {
+      const p = JSON.parse(val);
+      if (Array.isArray(p)) return p.map(String);
+    } catch {}
+    return val.split(',').map((s: string) => s.trim()).filter(Boolean);
+  }
+  return [];
+};
 
 import { FinanceNeracaTab } from './finance/FinanceNeracaTab';
 import { FinanceLabaRugiTab } from './finance/FinanceLabaRugiTab';
@@ -114,6 +128,61 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     AKUN_BEBAN: '514-20'
   });
 
+  const [showDraftModal, setShowDraftModal] = useState<boolean>(false);
+  const [editingDraft, setEditingDraft] = useState<DraftJournalItem | null>(null);
+  const [draftForm, setDraftForm] = useState({
+    Tanggal: '',
+    Sumber: '',
+    Referensi: '',
+    Keterangan: '',
+    Kode_Debit: '',
+    Kode_Kredit: '',
+    Nominal: 0
+  });
+
+  const filteredDrafts = useMemo(() => {
+    return (draftJournals || []).filter(d => {
+      const matchPeriod = draftFilterMonth === 'all' || (d.Tanggal && d.Tanggal.startsWith(draftFilterMonth));
+      const matchQuery = !draftSearchQuery || 
+        (d.Referensi || '').toLowerCase().includes(draftSearchQuery.toLowerCase()) ||
+        (d.Keterangan || '').toLowerCase().includes(draftSearchQuery.toLowerCase()) ||
+        (d.Kode_Debit || '').toLowerCase().includes(draftSearchQuery.toLowerCase()) ||
+        (d.Kode_Kredit || '').toLowerCase().includes(draftSearchQuery.toLowerCase()) ||
+        (d.Sumber || '').toLowerCase().includes(draftSearchQuery.toLowerCase());
+      return matchPeriod && matchQuery;
+    }).sort((a, b) => {
+      const dateA = a.Tanggal || '';
+      const dateB = b.Tanggal || '';
+      return draftSortOrder === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
+    });
+  }, [draftJournals, draftFilterMonth, draftSearchQuery, draftSortOrder]);
+
+  const filteredCoas = useMemo(() => {
+    return (coas || []).filter(c => {
+      const q = (searchCoa || '').toLowerCase();
+      return (c.KODE_AKUN || '').toLowerCase().includes(q) || (c.NAMA_AKUN || '').toLowerCase().includes(q);
+    });
+  }, [coas, searchCoa]);
+
+  const handleExportPiutangPDF = () => {
+    generateTableReportPDF({
+      title: 'LAPORAN PIUTANG & UTANG USAHA',
+      subtitle: `Periode ${defaultPeriod}`,
+      headers: ['Tanggal', 'No. Ref', 'Jenis', 'Entitas', 'Total Tagihan', 'Sisa Saldo', 'Jatuh Tempo', 'Status'],
+      rows: (receivables || []).map(r => [
+        r.Tanggal || '-',
+        r.No_Ref || r.ID_Transaksi || '-',
+        r.Jenis || '-',
+        r.Entitas || '-',
+        `Rp ${(r.Nominal || 0).toLocaleString('id-ID')}`,
+        `Rp ${(r.Sisa || 0).toLocaleString('id-ID')}`,
+        r.Tgl_Jatuh_Tempo || '-',
+        r.Status || '-'
+      ]),
+      filename: `Piutang_Utang_${defaultPeriod}.pdf`
+    });
+  };
+
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -153,7 +222,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               No_Surat_Jalan: d.No_Surat_Jalan || '-',
               Tanggal: d.Tanggal,
               Pelanggan: d.Nama_Pelanggan || 'Pelanggan',
-              Tujuan: d.Tujuan_Pengiriman || d.Alamat || '-',
+              Tujuan: (d as any).Tujuan_Pengiriman || (d as any).Alamat || '-',
               Dus: dus,
               Tarif: tarif,
               Biaya: dus * tarif
@@ -750,7 +819,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     onRefresh();
   };
 
-  const handleDeleteJournal = async (item: GeneralJournalItem) => {
+  const handleDeleteJournal = async (itemOrId: GeneralJournalItem | string) => {
+    const item = typeof itemOrId === 'string' ? journals.find(j => j.ID_JURNAL === itemOrId) : itemOrId;
+    if (!item) return;
     const relatedEntries = journals.filter(j => j.ID_JURNAL === item.ID_JURNAL);
     const isMulti = relatedEntries.length > 1;
 
@@ -1150,7 +1221,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           onOpenAddJournal={handleOpenAddJournal}
           onOpenDoubleEntry={handleOpenAddJournal}
           onEditJournal={handleOpenEditJournal}
-          onDeleteJournal={handleDeleteJournal}
+          onDeleteJournal={(id: string) => handleDeleteJournal(id)}
           handleExportJournalExcel={() => {
             exportDataToExcel(filteredJournals, 'Jurnal_Umum', `AIRIS_Jurnal_${filterPeriod}`);
           }}
@@ -1249,7 +1320,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           }}
           onEditAsset={(a) => {
             setEditingAsset(a);
-            setAssetForm(a);
+            setAssetForm(a as any);
             setShowAssetModal(true);
           }}
           onDeleteAsset={async (id) => {
