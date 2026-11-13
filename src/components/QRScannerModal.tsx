@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Camera, AlertCircle, Search, CheckCircle2, 
-  Upload, FileText, PenTool, RefreshCw, Smartphone
+  Upload, FileText, PenTool, RefreshCw, Smartphone, SwitchCamera
 } from 'lucide-react';
 import { DistributionItem } from '../types';
 
@@ -19,18 +19,22 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   onSelectDistribution
 }) => {
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualQuery, setManualQuery] = useState('');
   const [matchedDist, setMatchedDist] = useState<DistributionItem | null>(null);
   const [scanStatus, setScanStatus] = useState<string>('Mempersiapkan kamera...');
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<number | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Normalize scanned code (handles prefixes like "AIRIS:SJ:707/X/26", "SJ-123", or JSON)
+  // Normalize scanned code (handles prefixes like "AIRIS:SJ:707/X/26", "SJ:...", or plain ID/No_SJ)
   const parseScannedCode = (raw: string): string => {
-    let clean = raw.trim();
+    let clean = (raw || '').trim();
     if (clean.startsWith('AIRIS:SJ:')) {
       clean = clean.replace('AIRIS:SJ:', '');
     } else if (clean.startsWith('SJ:')) {
@@ -57,36 +61,39 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }) || null;
   };
 
-  // Start camera
-  const startCamera = async () => {
-    setCameraError(null);
-    setScanStatus('Membuka kamera...');
-
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Fitur kamera tidak didukung di peramban ini. Silakan gunakan pencarian manual atau unggah foto.');
-      }
-
-      // Request back camera first (environment)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false
-      });
-
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraActive(true);
-        setScanStatus('Arahkan kamera ke QR Code Surat Jalan');
-        startDetectionLoop();
-      }
-    } catch (err: any) {
-      console.warn('Camera error:', err);
-      setCameraActive(false);
-      setCameraError(err.message || 'Gagal mengakses kamera perangkat.');
-      setScanStatus('Kamera tidak aktif. Gunakan pencarian manual di bawah.');
+  // Check if multiple camera devices exist
+  useEffect(() => {
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices().then(devices => {
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        setHasMultipleCameras(videoDevices.length > 1);
+      }).catch(() => {});
     }
+  }, []);
+
+  // Helper load jsQR library dynamically if BarcodeDetector is not supported natively
+  const ensureJsQRLoaded = async (): Promise<any> => {
+    if ((window as any).jsQR) return (window as any).jsQR;
+    return new Promise((resolve) => {
+      if (document.getElementById('jsqr-cdn-script')) {
+        let attempts = 0;
+        const check = setInterval(() => {
+          attempts++;
+          if ((window as any).jsQR || attempts > 20) {
+            clearInterval(check);
+            resolve((window as any).jsQR || null);
+          }
+        }, 150);
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'jsqr-cdn-script';
+      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+      script.async = true;
+      script.onload = () => resolve((window as any).jsQR || null);
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
   };
 
   // Stop camera
@@ -96,52 +103,192 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       scanIntervalRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(track => {
+        try { track.stop(); } catch (_) {}
+      });
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setCameraActive(false);
+    setCameraLoading(false);
   };
 
-  // Barcode / QR detection loop
+  // Start camera with dual-fallback constraints
+  const startCamera = async (overrideFacingMode?: 'environment' | 'user') => {
+    stopCamera();
+    setCameraLoading(true);
+    setCameraError(null);
+    setScanStatus('Menghubungkan ke sensor kamera...');
+
+    const targetMode = overrideFacingMode || facingMode;
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Peramban atau protokol web ini tidak mengizinkan akses kamera (perlu HTTPS). Silakan gunakan pencarian manual atau unggah foto.');
+      }
+
+      let stream: MediaStream | null = null;
+
+      // Attempt 1: with ideal facingMode & resolution
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: targetMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      } catch (err1) {
+        console.warn('Initial camera constraints failed, attempting generic video fallback...', err1);
+        // Attempt 2: generic video constraints (works for laptops, desktops, webcams)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
+
+      if (!stream) {
+        throw new Error('Tidak dapat memperoleh stream video dari kamera.');
+      }
+
+      streamRef.current = stream;
+
+      // Wait a tick to ensure video element is ready in DOM
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('Video play triggered exception, waiting for metadata:', playErr);
+        }
+        setCameraActive(true);
+        setCameraLoading(false);
+        setScanStatus('Arahkan kamera ke QR Code Surat Jalan');
+        startDetectionLoop();
+      } else {
+        // Retry attaching stream if ref not ready yet
+        setTimeout(async () => {
+          if (videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            try { await videoRef.current.play(); } catch (_) {}
+            setCameraActive(true);
+            setCameraLoading(false);
+            setScanStatus('Arahkan kamera ke QR Code Surat Jalan');
+            startDetectionLoop();
+          }
+        }, 100);
+      }
+    } catch (err: any) {
+      console.warn('Camera access error:', err);
+      setCameraActive(false);
+      setCameraLoading(false);
+
+      let msg = 'Gagal mengakses kamera perangkat.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = 'Izin kamera diblokir oleh browser. Klik ikon gembok / kamera di sebelah alamat URL browser Anda, pilih Izinkan (Allow), lalu klik "Coba Buka Kamera Lagi".';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'Kamera tidak ditemukan pada perangkat Anda. Silakan gunakan opsi Unggah Foto QR atau Cari Nomor SJ di bawah.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        msg = 'Kamera sedang digunakan oleh aplikasi lain. Tutup aplikasi yang menggunakan webcam lalu coba lagi.';
+      } else if (err.message) {
+        msg = err.message;
+      }
+
+      setCameraError(msg);
+      setScanStatus('Kamera tidak aktif. Gunakan pencarian manual di bawah.');
+    }
+  };
+
+  // Switch camera front/back
+  const handleToggleCamera = () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    startCamera(nextMode);
+  };
+
+  // Barcode / QR detection loop (Hybrid: Native BarcodeDetector + jsQR Fallback)
   const startDetectionLoop = () => {
     if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
 
     const hasBarcodeDetector = 'BarcodeDetector' in window;
 
-    if (!hasBarcodeDetector) {
-      setScanStatus('Deteksi visual otomatis tidak didukung peramban. Anda dapat memasukkan No Surat Jalan di bawah.');
-      return;
+    let detector: any = null;
+    if (hasBarcodeDetector) {
+      try {
+        detector = new (window as any).BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'code_39', 'ean_13']
+        });
+      } catch (e) {
+        detector = null;
+      }
     }
 
-    try {
-      const detector = new (window as any).BarcodeDetector({
-        formats: ['qr_code', 'code_128', 'code_39', 'ean_13']
+    // Pre-load jsQR in background if native detector not present
+    if (!detector) {
+      ensureJsQRLoaded().then(jsQR => {
+        if (!jsQR) {
+          setScanStatus('Deteksi otomatis aktif (Gunakan Unggah Foto atau Cari SJ jika QR tidak terbaca)');
+        }
       });
+    }
 
-      scanIntervalRef.current = window.setInterval(async () => {
-        if (!videoRef.current || videoRef.current.readyState < 2) return;
+    scanIntervalRef.current = window.setInterval(async () => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || video.videoWidth === 0) return;
 
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes && barcodes.length > 0) {
-            const rawVal = barcodes[0].rawValue;
-            if (rawVal) {
-              const matched = findShipment(rawVal);
-              if (matched) {
-                setMatchedDist(matched);
-                setScanStatus(`QR Terdeteksi: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
-                // Stop camera on match
-                stopCamera();
+      try {
+        let rawCode: string | null = null;
+
+        // Method A: Native hardware BarcodeDetector (Chrome Android, Safari iOS)
+        if (detector) {
+          try {
+            const barcodes = await detector.detect(video);
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              rawCode = barcodes[0].rawValue;
+            }
+          } catch (_) {}
+        }
+
+        // Method B: jsQR canvas fallback (Desktop Chrome, Firefox, Edge)
+        if (!rawCode && (window as any).jsQR) {
+          try {
+            if (!canvasRef.current) {
+              canvasRef.current = document.createElement('canvas');
+            }
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              // Scale down slightly for rapid 60fps analysis
+              const scale = Math.min(1, 640 / video.videoWidth);
+              canvas.width = Math.round(video.videoWidth * scale);
+              canvas.height = Math.round(video.videoHeight * scale);
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const result = (window as any).jsQR(imgData.data, imgData.width, imgData.height, {
+                inversionAttempts: 'dontInvert'
+              });
+              if (result && result.data) {
+                rawCode = result.data;
               }
             }
-          }
-        } catch (e) {
-          // ignore frame detection glitches
+          } catch (_) {}
         }
-      }, 350);
-    } catch (e) {
-      console.warn('BarcodeDetector initialization error:', e);
-    }
+
+        if (rawCode) {
+          const matched = findShipment(rawCode);
+          if (matched) {
+            setMatchedDist(matched);
+            setScanStatus(`QR Terdeteksi: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
+            stopCamera();
+          }
+        }
+      } catch (e) {
+        // Ignore single-frame glitches
+      }
+    }, 280);
   };
 
   // Handle file photo scan
@@ -149,6 +296,9 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setScanStatus('Menganalisis foto QR Code...');
+
+    // Method A: BarcodeDetector with Image
     if ('BarcodeDetector' in window) {
       try {
         const img = new Image();
@@ -156,9 +306,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         await img.decode();
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         const barcodes = await detector.detect(img);
-        if (barcodes.length > 0) {
-          const raw = barcodes[0].rawValue;
-          const matched = findShipment(raw);
+        if (barcodes.length > 0 && barcodes[0].rawValue) {
+          const matched = findShipment(barcodes[0].rawValue);
           if (matched) {
             setMatchedDist(matched);
             setScanStatus(`QR Berhasil dibaca: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
@@ -166,17 +315,47 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           }
         }
       } catch (err) {
-        console.warn('File decode error:', err);
+        console.warn('BarcodeDetector file error:', err);
       }
     }
 
-    // Fallback: search by filename or prompt
+    // Method B: jsQR Canvas decode
+    try {
+      const jsQR = await ensureJsQRLoaded();
+      if (jsQR) {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        await img.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const res = jsQR(imgData.data, imgData.width, imgData.height);
+          if (res && res.data) {
+            const matched = findShipment(res.data);
+            if (matched) {
+              setMatchedDist(matched);
+              setScanStatus(`QR Berhasil dibaca: ${matched.No_Surat_Jalan || matched.ID_Distribusi}`);
+              return;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('jsQR file error:', err);
+    }
+
+    // Fallback: search by filename
     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
     const matched = findShipment(nameWithoutExt);
     if (matched) {
       setMatchedDist(matched);
     } else {
-      setCameraError('QR Code tidak dapat terbaca dari gambar yang dipilih. Silakan ketik No. Surat Jalan pada kotak pencarian.');
+      setCameraError('QR Code tidak dapat terbaca dari gambar yang dipilih. Silakan ketik No. Surat Jalan pada kotak pencarian cepat di bawah.');
+      setScanStatus('Foto tidak terdeteksi. Gunakan pencarian nomor SJ di bawah.');
     }
   };
 
@@ -228,62 +407,92 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {hasMultipleCameras && (
+              <button
+                type="button"
+                onClick={handleToggleCamera}
+                className="p-1.5 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                title="Ganti Kamera Depan / Belakang"
+              >
+                <SwitchCamera size={18} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              title="Tutup"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-4">
-          {/* CAMERA VIEWPORT */}
+          {/* CAMERA VIEWPORT - VIDEO ALWAYS MOUNTED IN DOM */}
           <div className="relative w-full aspect-4/3 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
-            {cameraActive ? (
-              <>
-                <video
-                  ref={videoRef}
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-                {/* Target overlay */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="w-56 h-56 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] animate-pulse">
-                    <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1 rounded-tl-lg" />
-                    <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1 rounded-tr-lg" />
-                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1 rounded-bl-lg" />
-                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1 rounded-br-lg" />
-                    <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399]" />
-                  </div>
+            {/* The video element remains continuously mounted so videoRef.current is always accessible */}
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className={`w-full h-full object-cover transition-opacity duration-300 ${cameraActive ? 'opacity-100' : 'opacity-0 absolute'}`}
+            />
+
+            {/* Target overlay active when camera is streaming */}
+            {cameraActive && (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div className="w-56 h-56 border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.4)] animate-pulse">
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1 rounded-tl-lg" />
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1 rounded-tr-lg" />
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1 rounded-bl-lg" />
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1 rounded-br-lg" />
+                  <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399]" />
                 </div>
-              </>
-            ) : (
-              <div className="p-6 text-center space-y-3">
+              </div>
+            )}
+
+            {/* Placeholder / Error / Loading view when camera is not actively streaming */}
+            {!cameraActive && (
+              <div className="p-6 text-center space-y-3 z-10 max-w-sm">
                 <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
-                  <Smartphone size={24} />
+                  {cameraLoading ? (
+                    <RefreshCw size={22} className="animate-spin text-blue-400" />
+                  ) : (
+                    <Smartphone size={24} />
+                  )}
                 </div>
                 <div>
-                  <p className="text-xs font-semibold text-slate-300">
-                    {cameraError ? 'Kamera Tidak Tersedia' : 'Kamera Nonaktif'}
+                  <p className="text-xs font-semibold text-slate-200">
+                    {cameraLoading 
+                      ? 'Menghubungkan Kamera...' 
+                      : cameraError 
+                      ? 'Kendala Akses Kamera' 
+                      : 'Kamera Nonaktif'}
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
-                    {cameraError || 'Anda dapat mengaktifkan kamera atau memilih opsi alternatif di bawah.'}
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                    {cameraLoading
+                      ? 'Mohon tunggu sebentar, sedang meminta izin ke perangkat...'
+                      : cameraError || 'Klik tombol di bawah untuk mengaktifkan scanner atau gunakan opsi alternatif di bawah.'}
                   </p>
                 </div>
-                <button
-                  onClick={startCamera}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-                >
-                  <RefreshCw size={13} />
-                  <span>Coba Buka Kamera Lagi</span>
-                </button>
+                {!cameraLoading && (
+                  <button
+                    type="button"
+                    onClick={() => startCamera()}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 shadow-md cursor-pointer transition-colors"
+                  >
+                    <RefreshCw size={13} />
+                    <span>Coba Buka Kamera Lagi</span>
+                  </button>
+                )}
               </div>
             )}
 
             {/* Status pill on camera */}
-            <div className="absolute bottom-2 inset-x-2 text-center pointer-events-none">
-              <span className="px-2.5 py-1 bg-black/60 backdrop-blur-xs text-white text-[11px] rounded-full border border-white/10 font-medium inline-block">
+            <div className="absolute bottom-2 inset-x-2 text-center pointer-events-none z-20">
+              <span className="px-2.5 py-1 bg-black/70 backdrop-blur-xs text-white text-[11px] rounded-full border border-white/10 font-medium inline-block shadow-sm">
                 {scanStatus}
               </span>
             </div>
@@ -291,7 +500,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
           {/* ACTION ALTERNATIVES: UPLOAD FILE & SEARCH MANUAL */}
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <label className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-700 font-medium">
+            <label className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-700 font-medium shadow-2xs">
               <Upload size={14} className="text-blue-600" />
               <span>Unggah Foto QR</span>
               <input
@@ -302,11 +511,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               />
             </label>
             <button
+              type="button"
               onClick={() => {
                 const el = document.getElementById('manual-search-sj-input');
                 el?.focus();
               }}
-              className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-700 font-medium"
+              className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-colors text-slate-700 font-medium shadow-2xs"
             >
               <Search size={14} className="text-indigo-600" />
               <span>Cari Nomor SJ</span>
@@ -379,8 +589,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   </div>
                 </div>
                 <button
-                  onClick={() => setMatchedDist(null)}
-                  className="text-slate-400 hover:text-slate-600 text-xs underline cursor-pointer"
+                  type="button"
+                  onClick={() => {
+                    setMatchedDist(null);
+                    startCamera();
+                  }}
+                  className="text-slate-500 hover:text-slate-700 text-xs underline cursor-pointer"
                 >
                   Pindai Ulang
                 </button>
@@ -416,6 +630,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               {/* Action buttons */}
               <div className="flex items-center gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={() => {
                     onSelectDistribution(matchedDist, 'sign');
                     onClose();
@@ -426,6 +641,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
                   <span>Tanda Tangan Digital</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     onSelectDistribution(matchedDist, 'view');
                     onClose();
@@ -443,6 +659,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         {/* Footer */}
         <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer shadow-2xs"
           >
