@@ -4,6 +4,7 @@
  */
 
 import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
 import { getKopSuratPng, getCapStampPng, getTtdMarkoPng } from '../assets/invoiceAssets';
 
 // Helper to sanitize filename (replace invalid path chars)
@@ -657,7 +658,7 @@ export async function generateInvoicePDF(params: {
 /**
  * Downloads an official Surat Jalan PDF
  */
-export function generateSuratJalanPDF(params: {
+export interface SuratJalanPDFParams {
   noSuratJalan: string;
   namaPelanggan: string;
   alamatPelanggan: string;
@@ -674,7 +675,12 @@ export function generateSuratJalanPDF(params: {
     namaPenandatangan?: string;
     jabatanPenandatangan?: string;
   };
-}) {
+}
+
+/**
+ * Builds the official A5 Landscape Surat Jalan jsPDF document
+ */
+export async function buildSuratJalanPDFDoc(params: SuratJalanPDFParams): Promise<jsPDF> {
   // Format A5 Landscape (210mm x 148mm)
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a5', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
@@ -692,7 +698,7 @@ export function generateSuratJalanPDF(params: {
   const borderH = 133; // leaves room for FM-LOG outside border
 
   // Outer border
-  doc.setDrawColor(20, 20, 20);
+  doc.setDrawColor(30, 41, 59);
   doc.setLineWidth(0.35);
   doc.rect(marginX, marginY, borderW, borderH);
 
@@ -704,14 +710,14 @@ export function generateSuratJalanPDF(params: {
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(40, 40, 40);
+  doc.setTextColor(51, 65, 85);
   doc.text(addressLine, pageWidth / 2, 15.5, { align: 'center' });
   doc.text(`${phoneText}    |    ${emailText}`, pageWidth / 2, 19, { align: 'center' });
 
   // Two-tone divider bar (cyan + navy)
-  doc.setFillColor(56, 189, 248); // Cyan
+  doc.setFillColor(56, 189, 248); // Cyan #38bdf8
   doc.rect(marginX + 3, 21, 50, 1.2, 'F');
-  doc.setFillColor(30, 58, 138); // Navy
+  doc.setFillColor(30, 58, 138); // Navy #1e3a8a
   doc.rect(marginX + 53, 21, borderW - 56, 1.2, 'F');
 
   // SURAT JALAN Banner
@@ -729,8 +735,23 @@ export function generateSuratJalanPDF(params: {
   // Nomer on left
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(20, 20, 20);
+  doc.setTextColor(15, 23, 42);
   doc.text(`Nomer    : ${params.noSuratJalan || '-'}`, marginX + 3, 35.5);
+
+  // Pure Full QR Code on PDF (Beside Nomer / Banner)
+  try {
+    const qrVal = `AIRIS:SJ:${params.noSuratJalan || ''}`;
+    const qrDataUrl = await QRCode.toDataURL(qrVal, {
+      margin: 0,
+      errorCorrectionLevel: 'M',
+      width: 140,
+    });
+    if (qrDataUrl) {
+      doc.addImage(qrDataUrl, 'PNG', 86, 24.5, 14, 14, undefined, 'FAST');
+    }
+  } catch (err) {
+    console.warn('QR Code drawing failed for Surat Jalan PDF', err);
+  }
 
   // Metadata on right
   const metaX = 125;
@@ -808,7 +829,7 @@ export function generateSuratJalanPDF(params: {
   });
 
   // 4 Signatures Block
-  y = Math.max(y + 3, 114);
+  y = Math.max(y + 3, 112);
   const sigColW = totalW / 4;
   const sigTitles = ['Disiapkan', 'Disetujui', 'Diantar Oleh', 'Diterima Oleh'];
 
@@ -827,12 +848,50 @@ export function generateSuratJalanPDF(params: {
 
   // Document code bottom right (OUTSIDE BORDER)
   doc.setFontSize(7);
-  doc.setTextColor(60, 60, 60);
+  doc.setTextColor(71, 85, 105);
   doc.text('FM-LOG-01-01', pageWidth - marginX - 1, 142.5, { align: 'right' });
   doc.text('0/1', pageWidth - marginX - 1, 145.2, { align: 'right' });
 
+  return doc;
+}
+
+/**
+ * Downloads Surat Jalan PDF
+ */
+export async function generateSuratJalanPDF(params: SuratJalanPDFParams): Promise<void> {
+  const doc = await buildSuratJalanPDFDoc(params);
   const filename = `SJ-${sanitizeFilename(params.noSuratJalan)} (${sanitizeFilename(params.namaPelanggan)}).pdf`;
   doc.save(filename);
+}
+
+/**
+ * Directly prints the official vector Surat Jalan PDF via a hidden print iframe
+ */
+export async function printSuratJalanPDF(params: SuratJalanPDFParams): Promise<void> {
+  const doc = await buildSuratJalanPDFDoc(params);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.src = blobUrl;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      window.print();
+    }
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(blobUrl);
+    }, 60000);
+  };
 }
 
 /**

@@ -19,7 +19,7 @@ import {
 import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
-  generateInvoicePDF, generateSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
+  generateInvoicePDF, generateSuratJalanPDF, printSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
 } from '../services/pdfService';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
@@ -4421,7 +4421,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* Modal: View Printable A4 Document (Surat Jalan / Invoice) */}
       {viewDocModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto printable-modal-overlay">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full border border-slate-200 overflow-hidden my-6 printable-modal-card">
+          <div className={`bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-4 printable-modal-card ${viewDocModal.docType === 'sj' ? 'max-w-[230mm]' : 'max-w-3xl'}`}>
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 bg-slate-900 text-white no-print border-b border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -4461,9 +4461,36 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   <span>Pengaturan Dokumen</span>
                 </button>
                 <button
-                  onClick={() => window.print()}
+                  onClick={async () => {
+                    if (viewDocModal.docType === 'sj') {
+                      const cleanItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
+                      const pdfItems = cleanItems.map(it => {
+                        const prod = products.find(p => p.ID_Produk === it.ID_Produk);
+                        return {
+                          nama: it.Nama_Produk,
+                          qty: it.Qty,
+                          satuan: prod?.Satuan || 'Dus',
+                          kodeProduksi: it.Kode_Produksi || '',
+                          keterangan: it.Keterangan || ''
+                        };
+                      });
+                      await printSuratJalanPDF({
+                        noSuratJalan: viewDocModal.dist.No_Surat_Jalan,
+                        namaPelanggan: viewDocModal.dist.Nama_Pelanggan,
+                        alamatPelanggan: viewDocModal.dist.Tujuan,
+                        tanggal: viewDocModal.dist.Tanggal,
+                        sopir: viewDocModal.dist.Pengirim,
+                        metodeKirim: viewDocModal.dist.Metode_Kirim,
+                        items: pdfItems,
+                        catatan: viewDocModal.dist.Keterangan,
+                        customSettings: docSettings
+                      });
+                    } else {
+                      window.print();
+                    }
+                  }}
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
-                  title="Cetak Dokumen"
+                  title="Cetak Dokumen (Sesuai Format PDF Resmi)"
                 >
                   <Printer size={14} />
                   <span>Cetak</span>
@@ -4503,8 +4530,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               </div>
             </div>
 
-            {/* A4 Paper Canvas */}
-            <div className="p-6 sm:p-8 lg:p-10 font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content" style={{ minHeight: '650px' }}>
+            {/* Document Canvas */}
+            <div 
+              className={`font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content ${viewDocModal.docType === 'sj' ? 'p-3 sm:p-5 bg-slate-100/70 flex justify-center' : 'p-6 sm:p-8 lg:p-10'}`} 
+              style={{ minHeight: viewDocModal.docType === 'sj' ? 'auto' : '650px' }}
+            >
               {viewDocModal.docType === 'inv' ? (() => {
                 const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
                 return (
@@ -4764,14 +4794,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
                 return (
                 /* ============================================================== */
-                /* SURAT JALAN PENGIRIMAN TEMPLATE (A5 LANDSCAPE RESMI FISIK)     */
+                /* SURAT JALAN PENGIRIMAN TEMPLATE (EXACT 1:1 DENGAN HASIL PDF)   */
                 /* ============================================================== */
-                <div className="surat-jalan-a5-wrapper w-full max-w-[205mm] mx-auto text-black font-sans my-1">
+                <div 
+                  className="surat-jalan-a5-sheet shadow-md print:shadow-none"
+                  style={{
+                    width: '210mm',
+                    height: '148mm',
+                    minWidth: '210mm',
+                    maxWidth: '210mm',
+                    minHeight: '148mm',
+                    maxHeight: '148mm',
+                    padding: '6mm',
+                    boxSizing: 'border-box',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    fontFamily: 'Arial, Helvetica, sans-serif',
+                    position: 'relative',
+                    margin: '0 auto',
+                  }}
+                >
                   {/* Print Page Setup specifically for A5 Landscape */}
                   <style>{`
                     @page {
-                      size: A5 landscape !important;
-                      margin: 5mm !important;
+                      size: 210mm 148mm !important;
+                      margin: 0 !important;
                     }
                     @media print {
                       html, body {
@@ -4781,204 +4828,279 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         padding: 0 !important;
                         background: #ffffff !important;
                       }
-                      .surat-jalan-a5-wrapper {
-                        width: 100% !important;
-                        max-width: none !important;
-                        margin: 0 !important;
+                      .printable-modal-overlay,
+                      .printable-modal-card,
+                      .printable-content {
                         padding: 0 !important;
+                        margin: 0 !important;
+                        background: #ffffff !important;
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        max-width: 210mm !important;
+                        max-height: 148mm !important;
+                      }
+                      .surat-jalan-a5-sheet {
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        max-width: 210mm !important;
+                        max-height: 148mm !important;
+                        margin: 0 !important;
+                        padding: 6mm !important;
+                        box-shadow: none !important;
                         page-break-inside: avoid !important;
+                        page-break-after: avoid !important;
                       }
                     }
                   `}</style>
 
-                  {/* KOTAK UTAMA BER-BORDER */}
-                  <div className="border border-black p-3 sm:p-4 bg-white text-black shadow-xs print:shadow-none print:border-black print:p-2.5">
-                    {/* HEADER PERUSAHAAN */}
-                    <div className="text-center">
-                      <h1 className="text-base sm:text-lg font-black uppercase tracking-wide text-black leading-tight">
-                        {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
-                      </h1>
-                      <p className="text-[10px] sm:text-[11px] font-semibold text-black mt-0.5 leading-tight">
-                        {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,'} Kec. Klaten Utara, Kab. Klaten, 57438
-                      </p>
-                      {/* Kontak Bersih Tanpa Ikon & Tanpa Duplikasi Email */}
-                      <div className="flex items-center justify-center gap-3 text-[10px] sm:text-[11px] font-semibold text-black mt-0.5">
-                        <span>0856 4000 1926</span>
-                        <span>|</span>
-                        <span>anugerahillahirabbi@gmail.com</span>
+                  {/* KOTAK UTAMA BER-BORDER (198mm x 133mm - SAMA PERSIS DENGAN PDF) */}
+                  <div 
+                    style={{
+                      width: '198mm',
+                      height: '133mm',
+                      border: '0.35mm solid #1e293b',
+                      boxSizing: 'border-box',
+                      padding: '2.5mm 3.5mm',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    {/* 1. HEADER PERUSAHAAN (FONT 13pt & 7.5pt PERSIS PDF) */}
+                    <div>
+                      <div style={{ textAlign: 'center' }}>
+                        <h1 
+                          style={{
+                            fontSize: '13pt',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.3px',
+                            color: '#0f172a',
+                            lineHeight: 1.15,
+                            margin: 0,
+                          }}
+                        >
+                          {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
+                        </h1>
+                        <p 
+                          style={{
+                            fontSize: '7.5pt',
+                            fontWeight: 500,
+                            color: '#334155',
+                            lineHeight: 1.2,
+                            margin: '1.5mm 0 0.5mm 0',
+                          }}
+                        >
+                          {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Ds. Belangwetan,'} Kec. Klaten Utara, Kab. Klaten, 57438
+                        </p>
+                        <div 
+                          style={{
+                            fontSize: '7.5pt',
+                            fontWeight: 500,
+                            color: '#334155',
+                            lineHeight: 1.2,
+                            margin: '0.5mm 0 0 0',
+                          }}
+                        >
+                          <span>0856 4000 1926</span> &nbsp;&nbsp;|&nbsp;&nbsp; <span>anugerahillahirabbi@gmail.com</span>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* TWO-TONE DECORATIVE BAR (CYAN & DARK NAVY) */}
-                    <div className="flex w-full h-1 mt-2">
-                      <div className="w-[30%] bg-[#38bdf8]"></div>
-                      <div className="w-[70%] bg-[#1e3a8a]"></div>
-                    </div>
+                      {/* TWO-TONE DECORATIVE BAR (CYAN 50mm + NAVY REST) */}
+                      <div style={{ height: '1.2mm', marginTop: '1.5mm', display: 'flex', width: '100%' }}>
+                        <div style={{ width: '50mm', backgroundColor: '#38bdf8' }}></div>
+                        <div style={{ flex: 1, backgroundColor: '#1e3a8a' }}></div>
+                      </div>
 
-                    {/* DOCUMENT META & BANNER */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2.5 items-start">
-                      {/* LEFT COLUMN: BANNER SURAT JALAN + NOMOR + PURE FULL QR */}
-                      <div>
-                        <div className="flex items-stretch h-7 mb-1.5">
-                          <div className="bg-[#1e3a8a] text-white font-black text-xs sm:text-sm tracking-widest px-4 flex items-center uppercase">
-                            SURAT JALAN
+                      {/* DOCUMENT META & BANNER (POSISI SAMA PERSIS DENGAN PDF) */}
+                      <div style={{ marginTop: '2mm', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        {/* LEFT COLUMN: BANNER SURAT JALAN + NOMOR + PURE FULL QR CODE */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2mm' }}>
+                          <div style={{ display: 'flex', height: '6mm', alignItems: 'stretch' }}>
+                            <div 
+                              style={{
+                                width: '42mm',
+                                backgroundColor: '#1e3a8a',
+                                color: '#ffffff',
+                                fontWeight: 800,
+                                fontSize: '10.5pt',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                letterSpacing: '1.5px',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              SURAT JALAN
+                            </div>
+                            <div style={{ width: '6mm', backgroundColor: '#38bdf8', clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}></div>
                           </div>
-                          <div className="w-7 bg-[#38bdf8] [clip-path:polygon(0_0,100%_0,0_100%)]"></div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3mm' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', fontSize: '8pt', color: '#0f172a' }}>
+                              <span style={{ width: '15mm', fontWeight: 600 }}>Nomer</span>
+                              <span style={{ margin: '0 1.5mm' }}>:</span>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, borderBottom: '0.3mm solid #0f172a', minWidth: '40mm', paddingBottom: '0.3mm' }}>
+                                {viewDocModal.dist.No_Surat_Jalan || '-'}
+                              </span>
+                            </div>
+                            {/* Pure Full QR Code (Beside Nomer) */}
+                            <div style={{ width: '14mm', height: '14mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <QRCodeDisplay
+                                value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
+                                size={48}
+                                showLabel={false}
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="flex items-center justify-between gap-3 mt-1">
-                          <div className="flex items-center gap-2 text-xs font-semibold text-black flex-1">
-                            <span className="w-14">Nomer</span>
+                        {/* RIGHT COLUMN: METADATA PENGIRIMAN */}
+                        <div style={{ width: '75mm', display: 'flex', flexDirection: 'column', gap: '1.2mm', fontSize: '8pt', color: '#0f172a' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '20mm 3mm 1fr', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>Tgl Kirim</span>
                             <span>:</span>
-                            <span className="font-mono font-bold border-b border-black flex-1 pb-0.5">
-                              {viewDocModal.dist.No_Surat_Jalan || '-'}
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, borderBottom: '0.3mm solid #0f172a', paddingBottom: '0.3mm' }}>
+                              {formatDisplayDate(viewDocModal.dist.Tanggal)}
                             </span>
                           </div>
-                          {/* Full Pure QR Code Tanpa Tulisan QR Validasi */}
-                          <div className="p-0.5 bg-white print:p-0 flex items-center justify-center shrink-0" title="QR Code Surat Jalan">
-                            <QRCodeDisplay
-                              value={`AIRIS:SJ:${viewDocModal.dist.No_Surat_Jalan || viewDocModal.dist.ID_Distribusi}`}
-                              size={44}
-                              showLabel={false}
-                            />
+                          <div style={{ display: 'grid', gridTemplateColumns: '20mm 3mm 1fr', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>Kepada</span>
+                            <span>:</span>
+                            <span style={{ fontWeight: 700, textTransform: 'uppercase', borderBottom: '0.3mm solid #0f172a', paddingBottom: '0.3mm', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {viewDocModal.dist.Nama_Pelanggan}
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '20mm 3mm 1fr', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>Alamat</span>
+                            <span>:</span>
+                            <span style={{ borderBottom: '0.3mm solid #0f172a', paddingBottom: '0.3mm', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {viewDocModal.dist.Tujuan || '-'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '20mm 3mm 1fr', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 600 }}>Pengemudi</span>
+                            <span>:</span>
+                            <span style={{ fontWeight: 600, borderBottom: '0.3mm solid #0f172a', paddingBottom: '0.3mm' }}>
+                              {viewDocModal.dist.Pengirim || '-'}
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* RIGHT COLUMN: METADATA PENGIRIMAN */}
-                      <div className="space-y-1 text-xs">
-                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
-                          <span className="font-semibold text-black">Tgl Kirim</span>
-                          <span>:</span>
-                          <span className="font-mono font-bold border-b border-black pb-0.5">
-                            {formatDisplayDate(viewDocModal.dist.Tanggal)}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
-                          <span className="font-semibold text-black">Kepada</span>
-                          <span>:</span>
-                          <span className="font-bold uppercase border-b border-black pb-0.5 truncate">
-                            {viewDocModal.dist.Nama_Pelanggan}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
-                          <span className="font-semibold text-black">Alamat</span>
-                          <span>:</span>
-                          <span className="border-b border-black pb-0.5 truncate">
-                            {viewDocModal.dist.Tujuan || '-'}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-[70px_8px_1fr] items-center">
-                          <span className="font-semibold text-black">Pengemudi</span>
-                          <span>:</span>
-                          <span className="font-semibold border-b border-black pb-0.5">
-                            {viewDocModal.dist.Pengirim || '-'}
-                          </span>
-                        </div>
-                      </div>
+                      {/* 2. ITEMS TABLE (KOLOM 10-68-26-36-52 = 192mm PERSIS PDF) */}
+                      <table 
+                        style={{
+                          width: '191mm',
+                          tableLayout: 'fixed',
+                          borderCollapse: 'collapse',
+                          border: '0.35mm solid #1e293b',
+                          marginTop: '2mm',
+                          fontSize: '7.5pt',
+                        }}
+                      >
+                        <thead>
+                          <tr style={{ backgroundColor: '#67c0de', height: '5.5mm', borderBottom: '0.35mm solid #1e293b', color: '#0f172a', fontWeight: 800 }}>
+                            <th style={{ width: '10mm', border: '0.35mm solid #1e293b', textAlign: 'center', padding: '0 1mm' }}>No</th>
+                            <th style={{ width: '68mm', border: '0.35mm solid #1e293b', textAlign: 'center', padding: '0 2mm' }}>Nama Barang</th>
+                            <th style={{ width: '26mm', border: '0.35mm solid #1e293b', textAlign: 'center', padding: '0 2mm' }}>Jumlah Dikirim</th>
+                            <th style={{ width: '36mm', border: '0.35mm solid #1e293b', textAlign: 'center', padding: '0 2mm' }} title="Kode Produksi FIFO (Dapat Diedit Langsung)">
+                              Kode Produksi
+                            </th>
+                            <th style={{ width: '51mm', border: '0.35mm solid #1e293b', textAlign: 'center', padding: '0 2mm' }}>Keterangan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cleanDocItems.map((item, idx) => {
+                            const itemKey = item.ID_Detail || item.ID_Produk;
+                            return (
+                              <tr key={idx} style={{ height: '5.2mm', borderBottom: '0.35mm solid #1e293b' }}>
+                                <td style={{ border: '0.35mm solid #1e293b', textAlign: 'center', fontFamily: 'monospace' }}>{idx + 1}</td>
+                                <td style={{ border: '0.35mm solid #1e293b', padding: '0 2mm', fontWeight: 500, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                  {item.Nama_Produk}
+                                </td>
+                                <td style={{ border: '0.35mm solid #1e293b', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700 }}>{item.Qty}</td>
+                                <td style={{ border: '0.35mm solid #1e293b', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700 }}>
+                                  <input
+                                    type="text"
+                                    value={item.Kode_Produksi || ''}
+                                    onChange={(e) => handleUpdateDocItemLot(itemKey, e.target.value)}
+                                    title="Klik untuk mengedit Kode Produksi"
+                                    placeholder="P..."
+                                    style={{
+                                      width: '100%',
+                                      textAlign: 'center',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      outline: 'none',
+                                      fontFamily: 'monospace',
+                                      fontWeight: 700,
+                                      color: '#0f172a',
+                                      fontSize: '7.5pt',
+                                      padding: 0,
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ border: '0.35mm solid #1e293b', padding: '0 2mm', color: '#334155', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                  {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* Baris kosong: Tepat 2 baris jika barang < 6; jika >= 6 tidak ditambahkan baris kosong */}
+                          {Array.from({ length: emptyRowsCount }).map((_, rIdx) => (
+                            <tr key={`empty-${rIdx}`} style={{ height: '5.2mm', borderBottom: '0.35mm solid #1e293b' }}>
+                              <td style={{ border: '0.35mm solid #1e293b', textAlign: 'center', fontFamily: 'monospace', color: '#94a3b8' }}>
+                                {cleanDocItems.length + rIdx + 1}
+                              </td>
+                              <td style={{ border: '0.35mm solid #1e293b' }}></td>
+                              <td style={{ border: '0.35mm solid #1e293b' }}></td>
+                              <td style={{ border: '0.35mm solid #1e293b' }}></td>
+                              <td style={{ border: '0.35mm solid #1e293b' }}></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
 
-                    {/* ITEMS TABLE WITH CYAN HEADER */}
-                    <table className="w-full text-xs border-collapse border border-black mt-2.5">
-                      <thead>
-                        <tr style={{ backgroundColor: '#67c0de' }} className="border-b border-black font-bold text-center text-black">
-                          <th className="border border-black py-1 px-1.5 w-9 text-center">No</th>
-                          <th className="border border-black py-1 px-2 text-center">Nama Barang</th>
-                          <th className="border border-black py-1 px-2 w-24 text-center">Jumlah Dikirim</th>
-                          <th className="border border-black py-1 px-2 w-28 text-center" title="Kode Produksi FIFO (Dapat Diedit Langsung)">
-                            Kode Produksi
-                          </th>
-                          <th className="border border-black py-1 px-2 w-36 text-center">Keterangan</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cleanDocItems.map((item, idx) => {
-                          const itemKey = item.ID_Detail || item.ID_Produk;
-                          return (
-                            <tr key={idx} className="border-b border-black">
-                              <td className="border border-black py-1 px-1.5 text-center font-mono">{idx + 1}</td>
-                              <td className="border border-black py-1 px-2 font-medium text-black">{item.Nama_Produk}</td>
-                              <td className="border border-black py-1 px-2 text-center font-mono font-bold text-black">{item.Qty}</td>
-                              <td className="border border-black py-0 px-1 text-center font-mono font-bold">
-                                <input
-                                  type="text"
-                                  value={item.Kode_Produksi || ''}
-                                  onChange={(e) => handleUpdateDocItemLot(itemKey, e.target.value)}
-                                  title="Klik untuk mengedit Kode Produksi"
-                                  placeholder="P..."
-                                  className="w-full text-center bg-transparent border-0 outline-none focus:bg-amber-50 focus:ring-1 focus:ring-blue-500 rounded font-mono font-bold text-black text-xs py-0.5"
-                                />
-                              </td>
-                              <td className="border border-black py-1 px-2 text-slate-800 text-[11px]">
-                                {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
-                              </td>
-                            </tr>
-                          );
-                        })}
-
-                        {/* Baris kosong: Tepat 2 baris jika barang < 6; jika >= 6 tidak ditambahkan baris kosong */}
-                        {Array.from({ length: emptyRowsCount }).map((_, rIdx) => (
-                          <tr key={`empty-${rIdx}`} className="border-b border-black h-6">
-                            <td className="border border-black py-1 px-1.5 text-center font-mono text-slate-400">
-                              {cleanDocItems.length + rIdx + 1}
-                            </td>
-                            <td className="border border-black py-1 px-2"></td>
-                            <td className="border border-black py-1 px-2"></td>
-                            <td className="border border-black py-1 px-2"></td>
-                            <td className="border border-black py-1 px-2"></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* 4 SIGNATURES BLOCK */}
-                    <div className="grid grid-cols-4 gap-2 text-center text-xs mt-3.5 pt-1">
+                    {/* 3. 4 SIGNATURES BLOCK (PROPORSIONAL SAMA DENGAN PDF) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', textAlign: 'center', marginTop: '2mm' }}>
                       {/* 1. DISIAPKAN */}
-                      <div className="flex flex-col items-center justify-between min-h-[75px]">
-                        <p className="font-semibold text-black">Disiapkan</p>
-                        <div className="my-0.5 h-9 flex items-center justify-center">
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '20mm' }}>
+                        <span style={{ fontSize: '8pt', color: '#0f172a', fontWeight: 500 }}>Disiapkan</span>
+                        <div style={{ height: '11mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
-                            <img 
-                              src={docSettings.customTtdImage} 
-                              alt="TTD Disiapkan" 
-                              className="max-h-8 max-w-[80px] object-contain" 
-                            />
+                            <img src={docSettings.customTtdImage} alt="TTD Disiapkan" style={{ maxHeight: '10mm', maxWidth: '30mm', objectFit: 'contain' }} />
                           )}
                         </div>
-                        <div className="w-full">
-                          <div className="border-b border-black w-4/5 mx-auto"></div>
-                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        <div>
+                          <div style={{ borderBottom: '0.35mm solid #0f172a', width: '38mm', margin: '0 auto' }}></div>
+                          <p style={{ fontSize: '7.5pt', fontFamily: 'monospace', color: '#0f172a', margin: '1mm 0 0 0' }}>( ____________________ )</p>
                         </div>
                       </div>
 
                       {/* 2. DISETUJUI */}
-                      <div className="flex flex-col items-center justify-between min-h-[75px]">
-                        <p className="font-semibold text-black">Disetujui</p>
-                        <div className="my-0.5 h-9 flex items-center justify-center">
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '20mm' }}>
+                        <span style={{ fontSize: '8pt', color: '#0f172a', fontWeight: 500 }}>Disetujui</span>
+                        <div style={{ height: '11mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
-                            <img 
-                              src={docSettings.customCapImage} 
-                              alt="Stempel Disetujui" 
-                              className="max-h-8 max-w-[80px] object-contain" 
-                            />
+                            <img src={docSettings.customCapImage} alt="Stempel Disetujui" style={{ maxHeight: '10mm', maxWidth: '30mm', objectFit: 'contain' }} />
                           )}
                         </div>
-                        <div className="w-full">
-                          <div className="border-b border-black w-4/5 mx-auto"></div>
-                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        <div>
+                          <div style={{ borderBottom: '0.35mm solid #0f172a', width: '38mm', margin: '0 auto' }}></div>
+                          <p style={{ fontSize: '7.5pt', fontFamily: 'monospace', color: '#0f172a', margin: '1mm 0 0 0' }}>( ____________________ )</p>
                         </div>
                       </div>
 
                       {/* 3. DIANTAR OLEH */}
-                      <div className="flex flex-col items-center justify-between min-h-[75px]">
-                        <p className="font-semibold text-black">Diantar Oleh</p>
-                        <div className="my-0.5 h-9 flex items-center justify-center">
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '20mm' }}>
+                        <span style={{ fontSize: '8pt', color: '#0f172a', fontWeight: 500 }}>Diantar Oleh</span>
+                        <div style={{ height: '11mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {viewDocModal.dist.Tanda_Tangan_Sopir ? (
-                            <img 
-                              src={viewDocModal.dist.Tanda_Tangan_Sopir} 
-                              alt="TTD Sopir" 
-                              className="max-h-8 max-w-[80px] object-contain" 
-                            />
+                            <img src={viewDocModal.dist.Tanda_Tangan_Sopir} alt="TTD Sopir" style={{ maxHeight: '10mm', maxWidth: '30mm', objectFit: 'contain' }} />
                           ) : (
                             <button
                               onClick={() => {
@@ -4994,22 +5116,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             </button>
                           )}
                         </div>
-                        <div className="w-full">
-                          <div className="border-b border-black w-4/5 mx-auto"></div>
-                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        <div>
+                          <div style={{ borderBottom: '0.35mm solid #0f172a', width: '38mm', margin: '0 auto' }}></div>
+                          <p style={{ fontSize: '7.5pt', fontFamily: 'monospace', color: '#0f172a', margin: '1mm 0 0 0' }}>( ____________________ )</p>
                         </div>
                       </div>
 
                       {/* 4. DITERIMA OLEH */}
-                      <div className="flex flex-col items-center justify-between min-h-[75px]">
-                        <p className="font-semibold text-black">Diterima Oleh</p>
-                        <div className="my-0.5 h-9 flex items-center justify-center">
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '20mm' }}>
+                        <span style={{ fontSize: '8pt', color: '#0f172a', fontWeight: 500 }}>Diterima Oleh</span>
+                        <div style={{ height: '11mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {viewDocModal.dist.Tanda_Tangan_Penerima ? (
-                            <img 
-                              src={viewDocModal.dist.Tanda_Tangan_Penerima} 
-                              alt="TTD Penerima" 
-                              className="max-h-8 max-w-[80px] object-contain" 
-                            />
+                            <img src={viewDocModal.dist.Tanda_Tangan_Penerima} alt="TTD Penerima" style={{ maxHeight: '10mm', maxWidth: '30mm', objectFit: 'contain' }} />
                           ) : (
                             <button
                               onClick={() => {
@@ -5025,20 +5143,29 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                             </button>
                           )}
                         </div>
-                        <div className="w-full">
-                          <div className="border-b border-black w-4/5 mx-auto"></div>
-                          <p className="text-[10px] font-mono text-black mt-0.5">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</p>
+                        <div>
+                          <div style={{ borderBottom: '0.35mm solid #0f172a', width: '38mm', margin: '0 auto' }}></div>
+                          <p style={{ fontSize: '7.5pt', fontFamily: 'monospace', color: '#0f172a', margin: '1mm 0 0 0' }}>( ____________________ )</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* KODE DOKUMEN FM-LOG-01-01 DI LUAR BORDER */}
-                  <div className="flex justify-end mt-1 text-[8.5px] font-mono text-black leading-tight pr-1">
-                    <div className="text-right">
-                      <div>FM-LOG-01-01</div>
-                      <div>0/1</div>
-                    </div>
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      right: '6mm',
+                      bottom: '1.5mm',
+                      fontSize: '7pt',
+                      fontFamily: 'monospace',
+                      color: '#475569',
+                      lineHeight: 1.1,
+                      textAlign: 'right',
+                    }}
+                  >
+                    <div>FM-LOG-01-01</div>
+                    <div>0/1</div>
                   </div>
                 </div>
                 );
