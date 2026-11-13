@@ -13,7 +13,7 @@ import {
 } from '../../types';
 import { getTableData, setTableData, deleteTableRow } from '../../services/dbAdapter';
 import { exportDataToExcel } from '../../services/excelService';
-import { generateInvoicePDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen } from '../../services/pdfService';
+import { generateInvoicePDF, printInvoicePDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen } from '../../services/pdfService';
 import { showToast as showToastGlobal } from '../ToastContainer';
 import { confirmAction } from '../ConfirmDialog';
 import { formatDateDDMMYYYY } from '../../services/formatters';
@@ -789,6 +789,79 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
     } catch (e) {
       console.error(e);
       showToastGlobal('Gagal mengekspor PDF Invoice', 'error');
+    }
+  };
+
+  const handlePrintCustomInvoicePDF = async (inv: CustomInvoiceItem) => {
+    try {
+      const pdfItems = inv.Items.map(item => ({
+        nama: item.Nama_Produk,
+        qty: Number(item.Qty) || 0,
+        satuan: item.Satuan || 'Dus',
+        harga: Number(item.Harga_Satuan) || 0,
+        subtotal: Number(item.Subtotal) || 0,
+        noSuratJalan: item.No_SJ_Referensi,
+        tanggalKirim: item.Tanggal_Kirim
+      }));
+
+      const itemGroups = groupInvoiceItemsByShipment(
+        inv.Items,
+        inv.No_Surat_Jalan_List?.[0] || '-',
+        inv.Tanggal,
+        inv.Kirim_Ke || inv.Penerima || inv.Nama_Pelanggan
+      );
+      const shipmentGroupsForPdf = itemGroups.map(g => ({
+        kirimKe: g.kirimKe,
+        noSuratJalan: g.noSuratJalan,
+        tanggalKirim: g.tanggalKirim,
+        items: g.items.map(it => ({
+          nama: it.Nama_Produk,
+          qty: Number(it.Qty) || 0,
+          satuan: it.Satuan || 'Dus',
+          harga: Number(it.Harga_Satuan) || 0,
+          subtotal: Number(it.Subtotal) || 0
+        }))
+      }));
+
+      const sjDisplay = inv.No_Surat_Jalan_List && inv.No_Surat_Jalan_List.length > 0
+        ? inv.No_Surat_Jalan_List.join(', ')
+        : (itemGroups[0]?.noSuratJalan || '-');
+
+      await printInvoicePDF({
+        noInvoice: inv.No_Invoice,
+        namaPelanggan: inv.Nama_Pelanggan,
+        alamatPelanggan: inv.Alamat_Pelanggan || 'Alamat Mitra Pabrik',
+        levelPelanggan: inv.Level_Pelanggan || 'Distributor',
+        tanggal: inv.Tanggal,
+        metodeKirim: inv.Metode_Kirim || 'Armada Pabrik',
+        noSuratJalan: sjDisplay,
+        penerima: inv.Penerima || inv.Nama_Pelanggan,
+        items: pdfItems,
+        shipmentGroups: shipmentGroupsForPdf,
+        potonganEkspedisi: inv.Potongan_Ekspedisi || 0,
+        grandTotal: inv.Grand_Total,
+        customSettings: {
+          namaPerusahaan: docSettings.namaPerusahaan,
+          subNamaPerusahaan: docSettings.subNamaPerusahaan,
+          alamatPerusahaan: docSettings.alamatPerusahaan,
+          kontakPerusahaan: docSettings.kontakPerusahaan,
+          customKopImage: docSettings.customKopImage,
+          useCustomKopImage: docSettings.useCustomKopImage,
+          customCapImage: docSettings.customCapImage,
+          useCustomCapImage: docSettings.useCustomCapImage,
+          showCap: docSettings.showCap,
+          customTtdImage: docSettings.customTtdImage,
+          useCustomTtdImage: docSettings.useCustomTtdImage,
+          showTtd: docSettings.showTtd,
+          namaPenandatangan: docSettings.namaPenandatangan,
+          jabatanPenandatangan: docSettings.jabatanPenandatangan,
+          infoPembayaranTeks: docSettings.infoPembayaranTeks,
+          bankRekening: docSettings.bankRekening
+        }
+      });
+    } catch (e) {
+      console.error(e);
+      window.print();
     }
   };
 
@@ -1836,8 +1909,9 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => handlePrintCustomInvoicePDF(viewCustomInvoiceModal)}
                   className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="Cetak Dokumen Sesuai Format PDF Resmi"
                 >
                   <Printer size={14} />
                   <span>Cetak Langsung</span>

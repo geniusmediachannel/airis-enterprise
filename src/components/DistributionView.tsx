@@ -19,8 +19,9 @@ import {
 import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
-  generateInvoicePDF, generateSuratJalanPDF, printSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen 
+  generateInvoicePDF, printInvoicePDF, generateSuratJalanPDF, printSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen, formatPdfDisplayDate 
 } from '../services/pdfService';
+import { KOP_SURAT_SVG, CAP_STAMP_SVG, TTD_MARKO_SVG } from '../assets/invoiceAssets';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
 import { sanitizeAndRepairDistributionDatabase } from '../services/distributionService';
@@ -4421,7 +4422,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* Modal: View Printable A4 Document (Surat Jalan / Invoice) */}
       {viewDocModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto printable-modal-overlay">
-          <div className={`bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-4 printable-modal-card ${viewDocModal.docType === 'sj' ? 'max-w-[230mm]' : 'max-w-3xl'}`}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-4 printable-modal-card max-w-[230mm]">
             <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 bg-slate-900 text-white no-print border-b border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
@@ -4486,7 +4487,40 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         customSettings: docSettings
                       });
                     } else {
-                      window.print();
+                      const cleanItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
+                      let subtotal = 0;
+                      let totalQty = 0;
+                      const pdfItems = cleanItems.map(it => {
+                        subtotal += it.Subtotal;
+                        totalQty += it.Qty;
+                        const prod = products.find(p => p.ID_Produk === it.ID_Produk || p.Nama_Produk === it.Nama_Produk);
+                        const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || it.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
+                        return {
+                          nama: it.Nama_Produk,
+                          qty: it.Qty,
+                          satuan: satuanStr,
+                          harga: it.Harga_Satuan,
+                          subtotal: it.Subtotal
+                        };
+                      });
+                      const potong = viewDocModal.dist.Metode_Kirim === 'Ambil Sendiri' ? (totalQty * 1000) : 0;
+                      const grandTotal = Math.max(0, subtotal - potong);
+                      const invoiceNo = formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal);
+
+                      await printInvoicePDF({
+                        noInvoice: invoiceNo,
+                        namaPelanggan: viewDocModal.dist.Nama_Pelanggan,
+                        alamatPelanggan: viewDocModal.dist.Tujuan,
+                        levelPelanggan: viewDocModal.dist.Level_Pelanggan || 'Distributor',
+                        tanggal: viewDocModal.dist.Tanggal,
+                        metodeKirim: viewDocModal.dist.Metode_Kirim,
+                        noSuratJalan: viewDocModal.dist.No_Surat_Jalan,
+                        penerima: viewDocModal.dist.Penerima,
+                        items: pdfItems,
+                        potonganEkspedisi: potong,
+                        grandTotal,
+                        customSettings: docSettings
+                      });
                     }
                   }}
                   className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
@@ -4532,133 +4566,174 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
             {/* Document Canvas */}
             <div 
-              className={`font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content ${viewDocModal.docType === 'sj' ? 'p-3 sm:p-5 bg-slate-100/70 flex justify-center' : 'p-6 sm:p-8 lg:p-10'}`} 
-              style={{ minHeight: viewDocModal.docType === 'sj' ? 'auto' : '650px' }}
+              className={`font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content ${viewDocModal.docType === 'sj' ? 'p-3 sm:p-5 bg-slate-100/70 flex justify-center' : 'p-3 sm:p-6 bg-slate-100/70 flex justify-center'}`} 
+              style={{ minHeight: 'auto' }}
             >
               {viewDocModal.docType === 'inv' ? (() => {
                 const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
                 return (
                 /* ============================================================== */
-                /* EXACT REPLICA OF THE UPLOADED INVOICE TEMPLATE                 */
+                /* EXACT REPLICA OF THE UPLOADED INVOICE TEMPLATE (1:1 DENGAN PDF) */
                 /* ============================================================== */
-                <div className="space-y-3.5 max-w-2xl mx-auto">
-                  {/* Kop Surat Header (Custom upload image atau Kop Teks Resmi yang Rapi) */}
+                <div 
+                  className="invoice-a4-sheet shadow-md print:shadow-none"
+                  style={{
+                    width: '210mm',
+                    minHeight: '297mm',
+                    padding: '10mm 15mm 15mm 15mm',
+                    boxSizing: 'border-box',
+                    backgroundColor: '#ffffff',
+                    color: '#000000',
+                    fontFamily: 'Arial, Helvetica, sans-serif',
+                    position: 'relative',
+                    margin: '0 auto',
+                  }}
+                >
+                  {/* Print Page Setup specifically for A4 Portrait */}
+                  <style>{`
+                    @page {
+                      size: 210mm 297mm !important;
+                      margin: 0 !important;
+                    }
+                    @media print {
+                      html, body {
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #ffffff !important;
+                      }
+                      .printable-modal-overlay,
+                      .printable-modal-card,
+                      .printable-content {
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        background: #ffffff !important;
+                        width: 210mm !important;
+                        min-height: 297mm !important;
+                      }
+                      .invoice-a4-sheet {
+                        width: 210mm !important;
+                        min-height: 297mm !important;
+                        margin: 0 !important;
+                        padding: 10mm 15mm 15mm 15mm !important;
+                        box-shadow: none !important;
+                      }
+                    }
+                  `}</style>
+
+                  {/* 1. KOP SURAT (EXACT OFFICIAL AS-SHOFAA AIR HEADER) */}
                   {docSettings.useCustomKopImage && docSettings.customKopImage ? (
                     <img 
                       src={docSettings.customKopImage} 
                       alt="Kop Surat" 
-                      className="w-full h-auto max-h-24 object-contain mb-1" 
+                      className="w-full h-auto object-contain" 
+                      style={{ maxHeight: '28mm' }}
                     />
                   ) : (
-                    <div className="text-center pb-2.5 border-b-2 border-slate-900 mb-2">
-                      <h1 className="text-xl font-black tracking-wide text-slate-950 uppercase">
-                        {docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
-                      </h1>
-                      <p className="text-xs text-slate-600 font-semibold">
-                        {docSettings.subNamaPerusahaan || 'Produsen Air Minum Dalam Kemasan (AMDK) As-Shofaa'}
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {docSettings.alamatPerusahaan || 'Dk. Gading Baru, RT.03/RW.08, Belangwetan, Klaten Utara'} {docSettings.kontakPerusahaan ? `| Telp: ${docSettings.kontakPerusahaan}` : ''}
-                      </p>
-                    </div>
+                    <img
+                      src={`data:image/svg+xml;utf8,${encodeURIComponent(KOP_SURAT_SVG.trim())}`}
+                      alt="Kop Surat PT. ANUGERAH ILLAHI RABBI"
+                      className="w-full h-auto object-contain select-none"
+                      style={{ maxHeight: '28mm' }}
+                    />
                   )}
 
-                  {/* Document Title: INVOICE with Blue Underline spanning across */}
-                  <div className="text-center pt-0 border-b border-blue-600 pb-2">
-                    <h2 className="text-xl font-black uppercase tracking-widest text-blue-600">
+                  {/* 2. DOCUMENT TITLE: INVOICE WITH BLUE UNDERLINE ACROSS PAGE */}
+                  <div style={{ textAlign: 'center', marginTop: '4mm' }}>
+                    <h2 style={{ fontSize: '16pt', fontWeight: 800, color: '#2563eb', margin: 0, letterSpacing: '1px' }}>
                       INVOICE
                     </h2>
+                    <div style={{ height: '0.7mm', backgroundColor: '#2563eb', width: '100%', marginTop: '3mm' }}></div>
                   </div>
 
-                  {/* 2 Column Metadata with Aligned Colons */}
-                  <div className="grid grid-cols-2 gap-4 text-xs pt-1">
-                    <div className="space-y-1">
-                      <div className="grid grid-cols-[100px_10px_1fr]">
-                        <span className="text-slate-800">Kepada</span>
+                  {/* 3. METADATA SECTION (2 COLUMNS DENGAN TITIK DUA RATA) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8.5pt', color: '#000000', marginTop: '4mm' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4mm' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>Kepada</span>
                         <span>:</span>
-                        <span className="font-bold text-slate-900 uppercase">{viewDocModal.dist.Nama_Pelanggan}</span>
+                        <span style={{ fontWeight: 700, textTransform: 'uppercase' }}>{viewDocModal.dist.Nama_Pelanggan}</span>
                       </div>
-                      <div className="grid grid-cols-[100px_10px_1fr]">
-                        <span className="text-slate-800">Alamat</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>Alamat</span>
                         <span>:</span>
-                        <span className="text-slate-800 uppercase">{viewDocModal.dist.Tujuan}</span>
+                        <span style={{ textTransform: 'uppercase' }}>{viewDocModal.dist.Tujuan || '-'}</span>
                       </div>
-                      <div className="grid grid-cols-[100px_10px_1fr]">
-                        <span className="text-slate-800">Jenis Konsumen</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>Jenis Konsumen</span>
                         <span>:</span>
-                        <span className="text-slate-800">{viewDocModal.dist.Level_Pelanggan || 'Distributor'}</span>
+                        <span>{viewDocModal.dist.Level_Pelanggan || 'Distributor'}</span>
                       </div>
-                      <div className="grid grid-cols-[100px_10px_1fr]">
-                        <span className="text-slate-800">No Surat Jalan</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>No Surat Jalan</span>
                         <span>:</span>
-                        <span className="font-mono text-slate-800">{viewDocModal.dist.No_Surat_Jalan}</span>
+                        <span>{viewDocModal.dist.No_Surat_Jalan || '-'}</span>
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <div className="grid grid-cols-[110px_10px_1fr]">
-                        <span className="text-slate-800">Tanggal Invoice</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4mm', minWidth: '70mm' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>Tanggal Invoice</span>
                         <span>:</span>
-                        <span className="font-mono text-slate-800">{formatDisplayDate(viewDocModal.dist.Tanggal)}</span>
+                        <span>{formatPdfDisplayDate(viewDocModal.dist.Tanggal)}</span>
                       </div>
-                      <div className="grid grid-cols-[110px_10px_1fr]">
-                        <span className="text-slate-800">No. Invoice</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>No. Invoice</span>
                         <span>:</span>
-                        <span className="font-mono font-bold text-slate-900">
+                        <span style={{ fontWeight: 700 }}>
                           {formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal)}
                         </span>
                       </div>
-                      <div className="grid grid-cols-[110px_10px_1fr]">
-                        <span className="text-slate-800">Tanggal Kirim</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>
+                        <span>Tanggal Kirim</span>
                         <span>:</span>
-                        <span className="font-mono text-slate-800">{formatDisplayDate(viewDocModal.dist.Tanggal)}</span>
+                        <span>{formatPdfDisplayDate(viewDocModal.dist.Tanggal)}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Items Table */}
-                  <div className="pt-2">
-                    <table className="w-full text-xs border-collapse border border-black">
-                      <thead>
-                        <tr className="border-b border-black font-bold text-center bg-white">
-                          <th className="border border-black p-2 w-10">No</th>
-                          <th className="border border-black p-2 text-center">Nama Produk</th>
-                          <th className="border border-black p-2 w-14">Qty</th>
-                          <th className="border border-black p-2 w-20">Satuan</th>
-                          <th className="border border-black p-2 w-32">Harga/satuan</th>
-                          <th className="border border-black p-2 w-36">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-black font-sans text-xs">
-                        {cleanDocItems.map((item, idx) => {
-                          const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
-                          const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
-                          return (
-                            <tr key={idx} className="border-b border-black">
-                              <td className="border border-black p-2 text-center font-mono">{idx + 1}</td>
-                              <td className="border border-black p-2 font-medium text-slate-900">{item.Nama_Produk}</td>
-                              <td className="border border-black p-2 text-center font-mono font-bold">{item.Qty}</td>
-                              <td className="border border-black p-2 text-center">{satuanStr}</td>
-                              <td className="border border-black p-2 font-mono">
-                                <div className="flex justify-between items-center px-1">
-                                  <span>Rp</span>
-                                  <span>{formatRupiahSen(item.Harga_Satuan)}</span>
-                                </div>
-                              </td>
-                              <td className="border border-black p-2 font-mono font-semibold">
-                                <div className="flex justify-between items-center px-1">
-                                  <span>Rp</span>
-                                  <span>{formatRupiahSen(item.Subtotal)}</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  {/* 4. ITEMS TABLE (Columns: 10, 68, 14, 18, 35, 35 = 180mm) */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: '0.2mm solid #000000', marginTop: '4.5mm', fontSize: '8pt' }}>
+                    <thead>
+                      <tr style={{ height: '6mm', backgroundColor: '#ffffff', borderBottom: '0.2mm solid #000000', fontWeight: 700 }}>
+                        <th style={{ width: '10mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 1mm' }}>No</th>
+                        <th style={{ width: '68mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 2mm' }}>Nama Produk</th>
+                        <th style={{ width: '14mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 1mm' }}>Qty</th>
+                        <th style={{ width: '18mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 1mm' }}>Satuan</th>
+                        <th style={{ width: '35mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 2mm' }}>Harga/satuan</th>
+                        <th style={{ width: '35mm', border: '0.2mm solid #000000', textAlign: 'center', padding: '0 2mm' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cleanDocItems.map((item, idx) => {
+                        const prod = products.find(p => p.ID_Produk === item.ID_Produk || p.Nama_Produk === item.Nama_Produk);
+                        const satuanStr = (prod?.Satuan?.toLowerCase().includes('galon') || item.Nama_Produk.toLowerCase().includes('galon')) ? 'Galon' : 'Karton';
+                        return (
+                          <tr key={idx} style={{ height: '5.6mm', borderBottom: '0.2mm solid #000000' }}>
+                            <td style={{ border: '0.2mm solid #000000', textAlign: 'center', fontFamily: 'monospace' }}>{idx + 1}</td>
+                            <td style={{ border: '0.2mm solid #000000', padding: '0 2.5mm', fontWeight: 500 }}>{item.Nama_Produk}</td>
+                            <td style={{ border: '0.2mm solid #000000', textAlign: 'center', fontFamily: 'monospace', fontWeight: 700 }}>{item.Qty}</td>
+                            <td style={{ border: '0.2mm solid #000000', textAlign: 'center' }}>{satuanStr}</td>
+                            <td style={{ border: '0.2mm solid #000000', padding: '0 2mm', fontFamily: 'monospace' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>Rp</span>
+                                <span>{formatRupiahSen(item.Harga_Satuan)}</span>
+                              </div>
+                            </td>
+                            <td style={{ border: '0.2mm solid #000000', padding: '0 2mm', fontFamily: 'monospace', fontWeight: 700 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>Rp</span>
+                                <span>{formatRupiahSen(item.Subtotal)}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
 
-                  {/* Summary Section (JUMLAH TAGIHAN, TOTAL, POTONGAN) */}
+                  {/* 5. SUMMARY SECTION (JUMLAH TAGIHAN, TOTAL, POTONGAN EKSPEDISI, GRAND TOTAL) */}
                   {(() => {
                     const subtotal = cleanDocItems.reduce((sum, it) => sum + it.Subtotal, 0);
                     const totalQty = cleanDocItems.reduce((sum, it) => sum + it.Qty, 0);
@@ -4666,39 +4741,39 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     const grandTotal = Math.max(0, subtotal - discount);
 
                     return (
-                      <div className="pt-2 text-xs">
-                        <div className="flex justify-between items-start">
-                          <div className="font-bold uppercase tracking-wider text-slate-900">
+                      <div style={{ marginTop: '4.5mm', fontSize: '8pt', color: '#000000' }}>
+                        {/* Upper row: JUMLAH TAGIHAN (left) & TOTAL/POTONGAN (right) */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ fontWeight: 800, fontSize: '9pt', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                             JUMLAH TAGIHAN
                           </div>
 
-                          <div className="w-72 space-y-1.5 font-mono">
-                            <div className="flex justify-between items-center">
-                              <span className="font-bold font-sans">TOTAL</span>
-                              <div className="flex justify-between w-40">
+                          <div style={{ width: '70mm', display: 'flex', flexDirection: 'column', gap: '1.2mm' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '8.5pt' }}>
+                              <span>TOTAL</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', width: '38mm', fontFamily: 'monospace' }}>
                                 <span>Rp</span>
-                                <span className="font-bold">{formatRupiahSen(subtotal)}</span>
+                                <span>{formatRupiahSen(subtotal)}</span>
                               </div>
                             </div>
 
                             {discount > 0 && (
                               <div>
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold font-sans">POTONGAN EKSPEDISI</span>
-                                  <div className="flex justify-between w-40">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: '8.5pt' }}>
+                                  <span>POTONGAN EKSPEDISI</span>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '38mm', fontFamily: 'monospace' }}>
                                     <span>Rp</span>
                                     <span>{formatRupiahSen(discount)}</span>
                                   </div>
                                 </div>
-                                <div className="text-[10px] text-slate-500 font-sans">
+                                <div style={{ fontSize: '7.5pt', color: '#475569', marginTop: '0.5mm' }}>
                                   ({totalQty} Dus x Rp 1.000)
                                 </div>
                               </div>
                             )}
 
-                            <div className="border-t border-black pt-1.5 flex justify-between items-center text-sm font-bold text-slate-900">
-                              <span></span>
-                              <div className="flex justify-between w-40">
+                            <div style={{ borderTop: '0.2mm solid #000000', marginTop: '1mm', paddingTop: '1.2mm', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', fontWeight: 800, fontSize: '9pt' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', width: '38mm', fontFamily: 'monospace' }}>
                                 <span>Rp</span>
                                 <span>{formatRupiahSen(grandTotal)}</span>
                               </div>
@@ -4706,49 +4781,66 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           </div>
                         </div>
 
-                        {/* Terbilang */}
-                        <div className="pt-2 text-xs">
-                          <p className="font-semibold text-slate-800">Terbilang :</p>
-                          <p className="italic text-slate-800 text-[11px] mt-0.5">
-                            {angkaKeTerbilang(grandTotal).toLowerCase()} rupiah
-                          </p>
-                        </div>
+                        {/* Lower row: Terbilang & Pembayaran (left) vs Hormat Kami & Signature (right) */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '3mm' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1mm', maxWidth: '100mm' }}>
+                            <p style={{ margin: 0, fontWeight: 500 }}>Terbilang :</p>
+                            <p style={{ margin: 0, fontStyle: 'italic', fontSize: '8pt', color: '#1e293b' }}>
+                              {angkaKeTerbilang(grandTotal).toLowerCase()} rupiah
+                            </p>
 
-                        {/* Bottom Left: Payment & Bottom Right: Signature (Rapat ke atas pas di bawah text terbilang) */}
-                        <div className="pt-2.5 flex justify-between items-end border-t border-slate-100 mt-1">
-                          <div className="text-[11px] text-slate-700 space-y-1 max-w-[280px]">
-                            <p>{docSettings.infoPembayaranTeks || 'pembayaran dapat memalui Transfer/Cash By Driver'}</p>
-                            <p className="font-bold text-slate-900">{docSettings.bankRekening || 'BSI 1607134444 (BMT Syech Hasyim Asyari)'}</p>
+                            <div style={{ marginTop: '5mm', fontSize: '7.5pt', color: '#334155', lineHeight: 1.3 }}>
+                              <p style={{ margin: 0 }}>{docSettings.infoPembayaranTeks || 'pembayaran dapat memalui Transfer/Cash By Driver'}</p>
+                              <p style={{ margin: '1mm 0 0 0', fontWeight: 700, fontSize: '8.5pt', color: '#000000' }}>
+                                {docSettings.bankRekening || 'BSI 1607134444 (BMT Syech Hasyim Asyari)'}
+                              </p>
+                            </div>
                           </div>
 
-                          <div className="text-center w-56 relative">
-                            <p className="text-xs text-slate-800 mb-1">Hormat Kami,</p>
+                          <div style={{ width: '56mm', textAlign: 'center', position: 'relative' }}>
+                            <p style={{ margin: 0, fontSize: '8.5pt', fontWeight: 500 }}>Hormat Kami,</p>
 
-                            {/* Stamp & Signature Overlay: HANYA TAMPIL JIKA USER UPLOAD SENDIRI */}
-                            <div className="flex items-center justify-center my-0.5 select-none pointer-events-none relative h-20">
-                              {/* Cap / Stempel: Hanya tampil jika diaktifkan dan ada gambar custom */}
-                              {docSettings.showCap && docSettings.useCustomCapImage && docSettings.customCapImage && (
-                                <img 
-                                  src={docSettings.customCapImage} 
-                                  alt="Cap Stempel" 
-                                  className="absolute left-4 top-0 w-20 h-20 object-contain z-0" 
-                                />
+                            {/* Stamp & Signature Overlay: Exact authentic AIR stamp & Marko signature */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', height: '24mm', margin: '1mm 0' }}>
+                              {/* Stempel: custom image atau CAP_STAMP_SVG default */}
+                              {docSettings.showCap && (
+                                docSettings.useCustomCapImage && docSettings.customCapImage ? (
+                                  <img 
+                                    src={docSettings.customCapImage} 
+                                    alt="Cap Stempel" 
+                                    style={{ position: 'absolute', left: '2mm', top: 0, width: '22mm', height: '22mm', objectFit: 'contain', zIndex: 0 }}
+                                  />
+                                ) : (
+                                  <img
+                                    src={`data:image/svg+xml;utf8,${encodeURIComponent(CAP_STAMP_SVG.trim())}`}
+                                    alt="Cap Stempel Resmi"
+                                    style={{ position: 'absolute', left: '2mm', top: 0, width: '22mm', height: '22mm', objectFit: 'contain', zIndex: 0 }}
+                                  />
+                                )
                               )}
 
-                              {/* TTD Custom: Hanya tampil jika diaktifkan dan ada gambar custom */}
-                              {docSettings.showTtd && docSettings.useCustomTtdImage && docSettings.customTtdImage && (
-                                <img 
-                                  src={docSettings.customTtdImage} 
-                                  alt="Tanda Tangan" 
-                                  className="absolute left-10 -top-1 w-28 h-20 object-contain z-10" 
-                                />
+                              {/* TTD: custom image atau TTD_MARKO_SVG default */}
+                              {docSettings.showTtd && (
+                                docSettings.useCustomTtdImage && docSettings.customTtdImage ? (
+                                  <img 
+                                    src={docSettings.customTtdImage} 
+                                    alt="Tanda Tangan" 
+                                    style={{ position: 'absolute', left: '8mm', top: '-1mm', width: '32mm', height: '24mm', objectFit: 'contain', zIndex: 10 }}
+                                  />
+                                ) : (
+                                  <img
+                                    src={`data:image/svg+xml;utf8,${encodeURIComponent(TTD_MARKO_SVG.trim())}`}
+                                    alt="Tanda Tangan Marko"
+                                    style={{ position: 'absolute', left: '8mm', top: '-1mm', width: '32mm', height: '24mm', objectFit: 'contain', zIndex: 10 }}
+                                  />
+                                )
                               )}
                             </div>
 
-                            <p className="font-bold text-slate-900 text-xs mt-0.5">
+                            <p style={{ margin: 0, fontWeight: 700, fontSize: '8.5pt', color: '#000000' }}>
                               {docSettings.namaPenandatangan || 'Marko Dwi Nugroho'}
                             </p>
-                            <p className="text-[10px] text-slate-700 uppercase font-medium">
+                            <p style={{ margin: '0.8mm 0 0 0', fontSize: '7.5pt', textTransform: 'uppercase', color: '#334155' }}>
                               {docSettings.jabatanPenandatangan || docSettings.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI'}
                             </p>
                           </div>

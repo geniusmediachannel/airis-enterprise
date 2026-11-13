@@ -214,7 +214,7 @@ export function drawInvoiceOfficialStampAndSig(doc: jsPDF, x: number, y: number)
  * Downloads an official formatted invoice PDF
  * EXACT REPLICA of the uploaded As-Shofaa AIR invoice template
  */
-export async function generateInvoicePDF(params: {
+export interface InvoicePDFParams {
   noInvoice: string;
   namaPelanggan: string;
   alamatPelanggan: string;
@@ -250,7 +250,13 @@ export async function generateInvoicePDF(params: {
     infoPembayaranTeks?: string;
     bankRekening?: string;
   };
-}) {
+}
+
+/**
+ * Builds the official A4 Portrait Invoice jsPDF document
+ * EXACT 1:1 REPLICA of the uploaded official As-Shofaa AIR invoice template
+ */
+export async function buildInvoicePDFDoc(params: InvoicePDFParams): Promise<jsPDF> {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -260,72 +266,57 @@ export async function generateInvoicePDF(params: {
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 15;
-  const contentWidth = pageWidth - (marginX * 2);
+  const contentWidth = pageWidth - (marginX * 2); // 180mm
 
-  // Branding images (HANYA MENGGUNAKAN GAMBAR KUSTOM YANG DIUNGGAH USER)
+  // Branding images (Authentic Kop Surat, Cap, & TTD Marko)
   const cs = params.customSettings;
-  const kopPng = (cs?.useCustomKopImage && cs?.customKopImage) ? cs.customKopImage : '';
-  const capPng = (cs?.showCap && cs?.useCustomCapImage && cs?.customCapImage) ? cs.customCapImage : '';
-  const ttdPng = (cs?.showTtd && cs?.useCustomTtdImage && cs?.customTtdImage) ? cs.customTtdImage : '';
+  const kopPng = (cs?.useCustomKopImage && cs?.customKopImage) ? cs.customKopImage : await getKopSuratPng();
+  const capPng = (cs?.useCustomCapImage && cs?.customCapImage) ? cs.customCapImage : await getCapStampPng();
+  const ttdPng = (cs?.useCustomTtdImage && cs?.customTtdImage) ? cs.customTtdImage : await getTtdMarkoPng();
 
   // ==============================================================
-  // 1. KOP SURAT / HEADER RESMI
+  // 1. KOP SURAT / HEADER RESMI (180mm x 27.9mm)
   // ==============================================================
   const kopHeight = contentWidth * (155 / 1000); // 27.9 mm
-  if (kopPng) {
-    doc.addImage(kopPng, 'PNG', marginX, 8, contentWidth, kopHeight, undefined, 'FAST');
-  } else {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(15, 23, 42);
-    doc.text(cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI', pageWidth / 2, 13, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
-    if (cs?.subNamaPerusahaan) {
-      doc.text(cs.subNamaPerusahaan, pageWidth / 2, 17.5, { align: 'center' });
+  try {
+    if (kopPng) {
+      doc.addImage(kopPng, 'PNG', marginX, 10, contentWidth, kopHeight, undefined, 'FAST');
     }
-    doc.text(
-      `${cs?.alamatPerusahaan || 'Dk. Gading Baru, RT.03, RW.08, Belangwetan, Klaten Utara'} | Telp: ${cs?.kontakPerusahaan || '0856 4000 1926'}`,
-      pageWidth / 2,
-      cs?.subNamaPerusahaan ? 21.5 : 18,
-      { align: 'center' }
-    );
-    // Garis pembatas resmi
-    const lineY = cs?.subNamaPerusahaan ? 25 : 22;
-    doc.setDrawColor(15, 23, 42);
-    doc.setLineWidth(0.6);
-    doc.line(marginX, lineY, marginX + contentWidth, lineY);
-    doc.setLineWidth(0.2);
-    doc.line(marginX, lineY + 0.8, marginX + contentWidth, lineY + 0.8);
+  } catch (err) {
+    console.warn('Failed to draw Kop Surat on Invoice PDF', err);
   }
 
   // ==============================================================
-  // 2. DOCUMENT TITLE: INVOICE (Clean centered, no blue underline)
+  // 2. DOCUMENT TITLE: INVOICE (BLUE WITH BLUE UNDERLINE ACROSS PAGE)
   // ==============================================================
-  const titleY = 39;
+  const titleY = 44.5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(16);
+  doc.setTextColor(37, 99, 235); // #2563eb Blue
   doc.text('INVOICE', pageWidth / 2, titleY, { align: 'center' });
+
+  // Blue horizontal underline across entire content width
+  doc.setDrawColor(37, 99, 235);
+  doc.setLineWidth(0.7);
+  doc.line(marginX, titleY + 3.2, marginX + contentWidth, titleY + 3.2);
 
   // ==============================================================
   // 3. METADATA SECTION (2 COLUMNS DENGAN TITIK DUA RATA)
   // ==============================================================
-  const metaY = 46;
+  let metaY = 53.5;
   const colLeftLabel = marginX;
-  const colLeftColon = marginX + 22;
-  const colLeftValue = marginX + 25;
+  const colLeftColon = marginX + 24;
+  const colLeftValue = marginX + 27;
 
-  const colRightLabel = 115;
-  const colRightColon = 144;
-  const colRightValue = 147;
-  const lineSpacing = 4.2;
+  const colRightLabel = 120;
+  const colRightColon = 145;
+  const colRightValue = 148;
+  const lineSpacing = 4.6;
 
   doc.setFontSize(8.5);
   doc.setTextColor(0, 0, 0);
 
-  // Left column: Kepada & Alamat
+  // Row 1
   doc.setFont('helvetica', 'normal');
   doc.text('Kepada', colLeftLabel, metaY);
   doc.text(':', colLeftColon, metaY);
@@ -333,26 +324,45 @@ export async function generateInvoicePDF(params: {
   doc.text(params.namaPelanggan.toUpperCase(), colLeftValue, metaY);
 
   doc.setFont('helvetica', 'normal');
-  doc.text('Alamat', colLeftLabel, metaY + lineSpacing);
-  doc.text(':', colLeftColon, metaY + lineSpacing);
-  doc.text((params.alamatPelanggan || '-').toUpperCase(), colLeftValue, metaY + lineSpacing);
-
-  // Right column: Tanggal Invoice & No. Invoice
   doc.text('Tanggal Invoice', colRightLabel, metaY);
   doc.text(':', colRightColon, metaY);
-  doc.text(formatIndonesianFullDate(params.tanggal), colRightValue, metaY);
+  doc.text(formatPdfDisplayDate(params.tanggal), colRightValue, metaY);
 
-  doc.text('No. Invoice', colRightLabel, metaY + lineSpacing);
-  doc.text(':', colRightColon, metaY + lineSpacing);
+  // Row 2
+  metaY += lineSpacing;
   doc.setFont('helvetica', 'normal');
-  doc.text(params.noInvoice, colRightValue, metaY + lineSpacing);
+  doc.text('Alamat', colLeftLabel, metaY);
+  doc.text(':', colLeftColon, metaY);
+  doc.text((params.alamatPelanggan || '-').toUpperCase(), colLeftValue, metaY);
+
+  doc.text('No. Invoice', colRightLabel, metaY);
+  doc.text(':', colRightColon, metaY);
+  doc.setFont('helvetica', 'bold');
+  doc.text(params.noInvoice, colRightValue, metaY);
+
+  // Row 3
+  metaY += lineSpacing;
+  doc.setFont('helvetica', 'normal');
+  doc.text('Jenis Konsumen', colLeftLabel, metaY);
+  doc.text(':', colLeftColon, metaY);
+  doc.text(params.levelPelanggan || 'Distributor', colLeftValue, metaY);
+
+  doc.text('Tanggal Kirim', colRightLabel, metaY);
+  doc.text(':', colRightColon, metaY);
+  doc.text(formatPdfDisplayDate(params.tanggal), colRightValue, metaY);
+
+  // Row 4
+  metaY += lineSpacing;
+  doc.setFont('helvetica', 'normal');
+  doc.text('No Surat Jalan', colLeftLabel, metaY);
+  doc.text(':', colLeftColon, metaY);
+  doc.text(params.noSuratJalan || '-', colLeftValue, metaY);
 
   // ==============================================================
-  // 4. ITEMS TABLES (PER PENGIRIMAN DENGAN 'KIRIM KE', 'NO SURAT JALAN', 'TANGGAL KIRIM')
-  // Columns: No (10) | Nama Produk (64) | Qty (14) | Satuan (18) | Harga/satuan (37) | Total (37)
+  // 4. ITEMS TABLE (Columns: 10, 68, 14, 18, 35, 35 = 180mm)
   // ==============================================================
-  let tableY = 57;
-  const colWidths = [10, 64, 14, 18, 37, 37];
+  let tableY = metaY + 6.5; // ~78mm
+  const colWidths = [10, 68, 14, 18, 35, 35];
   const colX = [
     marginX,
     marginX + colWidths[0],
@@ -362,42 +372,14 @@ export async function generateInvoicePDF(params: {
     marginX + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4]
   ];
 
-  const groupsToRender = params.shipmentGroups && params.shipmentGroups.length > 0
-    ? params.shipmentGroups
-    : [{
-        kirimKe: params.penerima || params.namaPelanggan,
-        noSuratJalan: params.noSuratJalan || '-',
-        tanggalKirim: params.tanggal,
-        items: params.items
-      }];
+  const isMultiShipment = params.shipmentGroups && params.shipmentGroups.length > 1;
 
-  const isMultiShipment = groupsToRender.length > 1;
+  let subtotal = 0;
+  let totalQty = 0;
 
-  groupsToRender.forEach((group) => {
-    // Check page overflow
-    if (tableY > 250) {
-      doc.addPage();
-      tableY = 15;
-    }
-
-    // Centered: Kirim Ke : [Tujuan]
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(0, 0, 0);
-    const destinationText = `Kirim Ke : ${group.kirimKe || params.penerima || params.namaPelanggan}`;
-    doc.text(destinationText, pageWidth / 2, tableY, { align: 'center' });
-    tableY += 3.5;
-
-    // Subheader: No Surat Jalan (Left) & Tanggal Kirim (Right)
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`No Surat Jalan  : ${group.noSuratJalan || '-'}`, marginX, tableY);
-    const tglKirimStr = formatIndonesianFullDate(group.tanggalKirim);
-    doc.text(`Tanggal Kirim       : ${tglKirimStr}`, 115, tableY);
-    tableY += 1.8;
-
-    // Table Header
-    const headerH = 5.5;
+  if (!isMultiShipment) {
+    // Single Shipment (Standard Invoice Reference)
+    const headerH = 6;
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.2);
     doc.rect(marginX, tableY, contentWidth, headerH, 'S');
@@ -406,253 +388,267 @@ export async function generateInvoicePDF(params: {
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('No', colX[0] + (colWidths[0] / 2), tableY + 3.8, { align: 'center' });
-    doc.text('Nama Produk', colX[1] + (colWidths[1] / 2), tableY + 3.8, { align: 'center' });
-    doc.text('Qty', colX[2] + (colWidths[2] / 2), tableY + 3.8, { align: 'center' });
-    doc.text('Satuan', colX[3] + (colWidths[3] / 2), tableY + 3.8, { align: 'center' });
-    doc.text('Harga/satuan', colX[4] + (colWidths[4] / 2), tableY + 3.8, { align: 'center' });
-    doc.text('Total', colX[5] + (colWidths[5] / 2), tableY + 3.8, { align: 'center' });
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text('No', colX[0] + (colWidths[0] / 2), tableY + 4.2, { align: 'center' });
+    doc.text('Nama Produk', colX[1] + (colWidths[1] / 2), tableY + 4.2, { align: 'center' });
+    doc.text('Qty', colX[2] + (colWidths[2] / 2), tableY + 4.2, { align: 'center' });
+    doc.text('Satuan', colX[3] + (colWidths[3] / 2), tableY + 4.2, { align: 'center' });
+    doc.text('Harga/satuan', colX[4] + (colWidths[4] / 2), tableY + 4.2, { align: 'center' });
+    doc.text('Total', colX[5] + (colWidths[5] / 2), tableY + 4.2, { align: 'center' });
 
     tableY += headerH;
+
+    const rowH = 5.6;
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
 
-    let groupSubtotal = 0;
-    const rowH = 4.8;
+    params.items.forEach((item, idx) => {
+      subtotal += item.subtotal;
+      totalQty += item.qty;
 
-    group.items.forEach((item, idx) => {
-      groupSubtotal += item.subtotal;
-
-      // Draw row box
       doc.rect(marginX, tableY, contentWidth, rowH, 'S');
       for (let i = 1; i < colX.length; i++) {
         doc.line(colX[i], tableY, colX[i], tableY + rowH);
       }
 
       // Col 1: No
-      doc.text(String(idx + 1), colX[0] + (colWidths[0] / 2), tableY + 3.4, { align: 'center' });
-
+      doc.text(String(idx + 1), colX[0] + (colWidths[0] / 2), tableY + 3.8, { align: 'center' });
       // Col 2: Nama Produk
-      doc.text(item.nama, colX[1] + 2, tableY + 3.4);
-
+      doc.text(item.nama, colX[1] + 2.5, tableY + 3.8);
       // Col 3: Qty
-      doc.text(String(item.qty), colX[2] + (colWidths[2] / 2), tableY + 3.4, { align: 'center' });
-
+      doc.text(String(item.qty), colX[2] + (colWidths[2] / 2), tableY + 3.8, { align: 'center' });
       // Col 4: Satuan
       const satuanStr = item.satuan || 'Karton';
-      doc.text(satuanStr, colX[3] + (colWidths[3] / 2), tableY + 3.4, { align: 'center' });
-
-      // Col 5: Harga/satuan (Rp left, price right)
-      doc.text('Rp', colX[4] + 2, tableY + 3.4);
-      const hargaStr = item.harga ? formatRupiahSen(item.harga) : '-';
-      doc.text(hargaStr, colX[4] + colWidths[4] - 2, tableY + 3.4, { align: 'right' });
-
-      // Col 6: Total (Rp left, amount right, or '-' if 0)
-      doc.text('Rp', colX[5] + 2, tableY + 3.4);
-      const subtotalStr = item.subtotal ? formatRupiahSen(item.subtotal) : '-';
-      doc.text(subtotalStr, colX[5] + colWidths[5] - 2, tableY + 3.4, { align: 'right' });
+      doc.text(satuanStr, colX[3] + (colWidths[3] / 2), tableY + 3.8, { align: 'center' });
+      // Col 5: Harga/satuan
+      doc.text('Rp', colX[4] + 2, tableY + 3.8);
+      doc.text(formatRupiahSen(item.harga), colX[4] + colWidths[4] - 2, tableY + 3.8, { align: 'right' });
+      // Col 6: Total
+      doc.text('Rp', colX[5] + 2, tableY + 3.8);
+      doc.text(formatRupiahSen(item.subtotal), colX[5] + colWidths[5] - 2, tableY + 3.8, { align: 'right' });
 
       tableY += rowH;
     });
-
-    // Subtotal Row: Bordered box under Total column
-    const subtotalRowH = 5;
-    doc.rect(colX[5], tableY, colWidths[5], subtotalRowH, 'S');
-    doc.setFont('helvetica', 'bold');
-    doc.text('Rp', colX[5] + 2, tableY + 3.6);
-    doc.text(formatRupiahSen(groupSubtotal), colX[5] + colWidths[5] - 2, tableY + 3.6, { align: 'right' });
-    tableY += subtotalRowH;
-
-    // Terbilang Section per Pengiriman
-    tableY += 3.5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('Terbilang :', marginX, tableY);
-    tableY += 3.5;
-    doc.setFont('helvetica', 'italic');
-    doc.text(angkaKeTerbilang(groupSubtotal).toLowerCase(), marginX, tableY);
-    tableY += 5;
-  });
-
-  // ==============================================================
-  // 5. REKAPITULASI / TOTAL TABLE (When multi-shipment)
-  // ==============================================================
-  if (isMultiShipment) {
-    if (tableY > 235) {
-      doc.addPage();
-      tableY = 15;
-    }
-
-    // Aggregate items across all shipment groups
-    const aggregatedMap = new Map<string, { nama: string; qty: number; satuan: string; harga: number; subtotal: number }>();
-    groupsToRender.forEach(g => {
-      g.items.forEach(it => {
-        const k = it.nama.trim().toLowerCase();
-        if (aggregatedMap.has(k)) {
-          const prev = aggregatedMap.get(k)!;
-          prev.qty += it.qty;
-          prev.subtotal += it.subtotal;
-        } else {
-          aggregatedMap.set(k, {
-            nama: it.nama,
-            qty: it.qty,
-            satuan: it.satuan || 'Karton',
-            harga: it.harga,
-            subtotal: it.subtotal
-          });
-        }
-      });
-    });
-    const aggItems = Array.from(aggregatedMap.values());
-
-    // 2-Row Header for TOTAL Table
-    // Row 1: No (h: 9), Nama Produk (h: 9), Qty (h: 9), TOTAL (h: 4.5, spans col 3-5)
-    // Row 2: Satuan (h: 4.5), Harga/satuan (h: 4.5), Total (h: 4.5)
-    const topH = 4.5;
-    const botH = 4.5;
-    const totalHeaderH = topH + botH;
-
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.2);
-
-    // Outer box
-    doc.rect(marginX, tableY, contentWidth, totalHeaderH, 'S');
-
-    // Divider for No
-    doc.line(colX[1], tableY, colX[1], tableY + totalHeaderH);
-    // Divider for Nama Produk
-    doc.line(colX[2], tableY, colX[2], tableY + totalHeaderH);
-    // Divider for Qty
-    doc.line(colX[3], tableY, colX[3], tableY + totalHeaderH);
-
-    // Horizontal line for TOTAL span (between colX[3] and marginX + contentWidth)
-    doc.line(colX[3], tableY + topH, marginX + contentWidth, tableY + topH);
-
-    // Vertical dividers in bottom half
-    doc.line(colX[4], tableY + topH, colX[4], tableY + totalHeaderH);
-    doc.line(colX[5], tableY + topH, colX[5], tableY + totalHeaderH);
-
-    // Header Text
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('No', colX[0] + (colWidths[0] / 2), tableY + 5.8, { align: 'center' });
-    doc.text('Nama Produk', colX[1] + (colWidths[1] / 2), tableY + 5.8, { align: 'center' });
-    doc.text('Qty', colX[2] + (colWidths[2] / 2), tableY + 5.8, { align: 'center' });
-
-    // "TOTAL" in top right header
-    const spanWidth = colWidths[3] + colWidths[4] + colWidths[5];
-    doc.text('TOTAL', colX[3] + (spanWidth / 2), tableY + 3.2, { align: 'center' });
-
-    // Sub-headers in bottom half
-    doc.text('Satuan', colX[3] + (colWidths[3] / 2), tableY + topH + 3.2, { align: 'center' });
-    doc.text('Harga/satuan', colX[4] + (colWidths[4] / 2), tableY + topH + 3.2, { align: 'center' });
-    doc.text('Total', colX[5] + (colWidths[5] / 2), tableY + topH + 3.2, { align: 'center' });
-
-    tableY += totalHeaderH;
-    doc.setFont('helvetica', 'normal');
-
-    const aggRowH = 4.8;
-    aggItems.forEach((item, idx) => {
-      doc.rect(marginX, tableY, contentWidth, aggRowH, 'S');
-      for (let i = 1; i < colX.length; i++) {
-        doc.line(colX[i], tableY, colX[i], tableY + aggRowH);
+  } else {
+    // Multi-shipment support
+    const groups = params.shipmentGroups!;
+    groups.forEach((group) => {
+      if (tableY > 250) {
+        doc.addPage();
+        tableY = 15;
       }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text(`Kirim Ke : ${group.kirimKe || params.penerima || params.namaPelanggan}`, pageWidth / 2, tableY, { align: 'center' });
+      tableY += 3.5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`No Surat Jalan  : ${group.noSuratJalan || '-'}`, marginX, tableY);
+      doc.text(`Tanggal Kirim       : ${formatPdfDisplayDate(group.tanggalKirim)}`, 120, tableY);
+      tableY += 2;
 
-      doc.text(String(idx + 1), colX[0] + (colWidths[0] / 2), tableY + 3.4, { align: 'center' });
-      doc.text(item.nama, colX[1] + 2, tableY + 3.4);
-      doc.text(String(item.qty), colX[2] + (colWidths[2] / 2), tableY + 3.4, { align: 'center' });
-      doc.text(item.satuan, colX[3] + (colWidths[3] / 2), tableY + 3.4, { align: 'center' });
+      const headerH = 5.5;
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.2);
+      doc.rect(marginX, tableY, contentWidth, headerH, 'S');
+      for (let i = 1; i < colX.length; i++) {
+        doc.line(colX[i], tableY, colX[i], tableY + headerH);
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('No', colX[0] + (colWidths[0] / 2), tableY + 3.8, { align: 'center' });
+      doc.text('Nama Produk', colX[1] + (colWidths[1] / 2), tableY + 3.8, { align: 'center' });
+      doc.text('Qty', colX[2] + (colWidths[2] / 2), tableY + 3.8, { align: 'center' });
+      doc.text('Satuan', colX[3] + (colWidths[3] / 2), tableY + 3.8, { align: 'center' });
+      doc.text('Harga/satuan', colX[4] + (colWidths[4] / 2), tableY + 3.8, { align: 'center' });
+      doc.text('Total', colX[5] + (colWidths[5] / 2), tableY + 3.8, { align: 'center' });
 
-      doc.text('Rp', colX[4] + 2, tableY + 3.4);
-      const hargaStr = item.harga ? formatRupiahSen(item.harga) : '-';
-      doc.text(hargaStr, colX[4] + colWidths[4] - 2, tableY + 3.4, { align: 'right' });
+      tableY += headerH;
+      const rowH = 4.8;
+      doc.setFont('helvetica', 'normal');
 
-      doc.text('Rp', colX[5] + 2, tableY + 3.4);
-      const subStr = item.subtotal ? formatRupiahSen(item.subtotal) : '-';
-      doc.text(subStr, colX[5] + colWidths[5] - 2, tableY + 3.4, { align: 'right' });
-
-      tableY += aggRowH;
+      group.items.forEach((item, idx) => {
+        subtotal += item.subtotal;
+        totalQty += item.qty;
+        doc.rect(marginX, tableY, contentWidth, rowH, 'S');
+        for (let i = 1; i < colX.length; i++) {
+          doc.line(colX[i], tableY, colX[i], tableY + rowH);
+        }
+        doc.text(String(idx + 1), colX[0] + (colWidths[0] / 2), tableY + 3.4, { align: 'center' });
+        doc.text(item.nama, colX[1] + 2, tableY + 3.4);
+        doc.text(String(item.qty), colX[2] + (colWidths[2] / 2), tableY + 3.4, { align: 'center' });
+        doc.text(item.satuan || 'Karton', colX[3] + (colWidths[3] / 2), tableY + 3.4, { align: 'center' });
+        doc.text('Rp', colX[4] + 2, tableY + 3.4);
+        doc.text(formatRupiahSen(item.harga), colX[4] + colWidths[4] - 2, tableY + 3.4, { align: 'right' });
+        doc.text('Rp', colX[5] + 2, tableY + 3.4);
+        doc.text(formatRupiahSen(item.subtotal), colX[5] + colWidths[5] - 2, tableY + 3.4, { align: 'right' });
+        tableY += rowH;
+      });
+      tableY += 3;
     });
-
-    // Grand Total Box
-    const grandRowH = 5;
-    doc.rect(colX[5], tableY, colWidths[5], grandRowH, 'S');
-    doc.setFont('helvetica', 'bold');
-    doc.text('Rp', colX[5] + 2, tableY + 3.6);
-    doc.text(formatRupiahSen(params.grandTotal), colX[5] + colWidths[5] - 2, tableY + 3.6, { align: 'right' });
-    tableY += grandRowH;
-
-    // Terbilang for Grand Total
-    tableY += 3.5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('Terbilang :', marginX, tableY);
-    tableY += 3.5;
-    doc.setFont('helvetica', 'italic');
-    doc.text(angkaKeTerbilang(params.grandTotal).toLowerCase(), marginX, tableY);
-    tableY += 5;
   }
 
   // ==============================================================
-  // 6. FOOTER: PAYMENT INFO (LEFT) & SIGNATURE / STAMP (RIGHT)
+  // 5. SUMMARY SECTION (JUMLAH TAGIHAN, TOTAL, POTONGAN EKSPEDISI, GRAND TOTAL)
   // ==============================================================
-  if (tableY > 255) {
+  if (tableY > 230) {
     doc.addPage();
     tableY = 20;
   }
 
-  tableY += 2;
-  const footerY = tableY;
+  const summaryY = tableY + 4.5;
+  const discount = params.potonganEkspedisi || 0;
+  const finalGrandTotal = params.grandTotal !== undefined && params.grandTotal > 0
+    ? params.grandTotal
+    : Math.max(0, subtotal - discount);
 
-  // Left: Payment Terms
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(20, 20, 20);
-  doc.text(cs?.infoPembayaranTeks || 'Pembayaran dapat dilakukan transfer atau Cash / By Driver', marginX, footerY);
-
+  // Left: JUMLAH TAGIHAN
   doc.setFont('helvetica', 'bold');
-  doc.text(cs?.bankRekening || 'BSI 1607134444 (KSPPS BMT SYECH HASYIM ASYARI)', marginX, footerY + 4);
+  doc.setFontSize(9);
+  doc.setTextColor(0, 0, 0);
+  doc.text('JUMLAH TAGIHAN', marginX, summaryY);
 
-  // Right: Signature & Stamp
-  const sigX = 145;
+  // Right summary block
+  let curRightY = summaryY;
+  const sumLabelX = 110;
+  const sumRpX = 152;
+  const sumValX = marginX + contentWidth - 2;
+
+  // Row: TOTAL
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('TOTAL', sumLabelX, curRightY);
+  doc.text('Rp', sumRpX, curRightY);
+  doc.text(formatRupiahSen(subtotal), sumValX, curRightY, { align: 'right' });
+
+  if (discount > 0) {
+    curRightY += 5;
+    doc.text('POTONGAN EKSPEDISI', sumLabelX, curRightY);
+    doc.text('Rp', sumRpX, curRightY);
+    doc.text(formatRupiahSen(discount), sumValX, curRightY, { align: 'right' });
+
+    curRightY += 3.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`(${totalQty} Dus x Rp 1.000)`, sumLabelX, curRightY);
+    doc.setTextColor(0, 0, 0);
+
+    // Divider line under Potongan Ekspedisi
+    curRightY += 2;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+    doc.line(sumLabelX, curRightY, marginX + contentWidth, curRightY);
+    curRightY += 4.5;
+  } else {
+    // Divider line under TOTAL if no discount
+    curRightY += 2;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+    doc.line(sumLabelX, curRightY, marginX + contentWidth, curRightY);
+    curRightY += 4.5;
+  }
+
+  // Row: Grand Total
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Rp', sumRpX, curRightY);
+  doc.text(formatRupiahSen(finalGrandTotal), sumValX, curRightY, { align: 'right' });
+
+  // Left side under JUMLAH TAGIHAN:
+  let curLeftY = summaryY + 12;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text('Hormat Kami,', sigX, footerY);
+  doc.text('Terbilang :', marginX, curLeftY);
+  curLeftY += 4;
+  doc.setFont('helvetica', 'italic');
+  doc.text(`${angkaKeTerbilang(finalGrandTotal).toLowerCase()} rupiah`, marginX, curLeftY);
+
+  curLeftY += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text(cs?.infoPembayaranTeks || 'pembayaran dapat memalui Transfer/Cash By Driver', marginX, curLeftY);
+  curLeftY += 4;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text(cs?.bankRekening || 'BSI 1607134444 (BMT Syech Hasyim Asyari)', marginX, curLeftY);
+
+  // Right side: Signature & Stamp
+  const sigX = 145;
+  const sigY = curRightY + 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text('Hormat Kami,', sigX, sigY);
 
   const shouldShowCap = cs?.showCap !== false;
   const shouldShowTtd = cs?.showTtd !== false;
 
-  // Draw stamp & signature: HANYA GAMBAR CUSTOM USER
-  if (capPng && ttdPng && shouldShowCap && shouldShowTtd) {
-    doc.addImage(capPng, 'PNG', sigX - 10, footerY + 1, 26, 26, undefined, 'FAST');
-    doc.addImage(ttdPng, 'PNG', sigX + 1, footerY, 36, 26, undefined, 'FAST');
-  } else if (capPng && shouldShowCap) {
-    doc.addImage(capPng, 'PNG', sigX - 4, footerY + 1, 26, 26, undefined, 'FAST');
-  } else if (ttdPng && shouldShowTtd) {
-    doc.addImage(ttdPng, 'PNG', sigX + 1, footerY, 36, 26, undefined, 'FAST');
+  // Stamp and signature position
+  const stampTtdY = sigY + 1;
+  try {
+    if (capPng && shouldShowCap) {
+      doc.addImage(capPng, 'PNG', sigX - 10, stampTtdY, 26, 26, undefined, 'FAST');
+    }
+    if (ttdPng && shouldShowTtd) {
+      doc.addImage(ttdPng, 'PNG', sigX + 1, stampTtdY - 1, 36, 26, undefined, 'FAST');
+    }
+  } catch (err) {
+    console.warn('Failed to draw Stamp / TTD on Invoice PDF', err);
   }
 
-  // Signer Name Underlined
-  const nameY = footerY + 26;
+  const nameY = sigY + 27;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(0, 0, 0);
   const signerName = cs?.namaPenandatangan || 'Marko Dwi Nugroho';
   doc.text(signerName, sigX, nameY);
-  const nameWidth = doc.getTextWidth(signerName);
-  doc.setLineWidth(0.25);
-  doc.line(sigX, nameY + 0.6, sigX + nameWidth, nameY + 0.6);
 
-  // Signer Title
+  const titleText = cs?.jabatanPenandatangan || cs?.namaPerusahaan || 'PT. ANUGERAH ILLAHI RABBI';
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  const jabatanRaw = cs?.jabatanPenandatangan || 'Admin';
-  const jabatanFormatted = jabatanRaw.startsWith('(') ? jabatanRaw : `(${jabatanRaw})`;
-  doc.text(jabatanFormatted, sigX, nameY + 4.5);
+  doc.text(titleText.toUpperCase(), sigX, nameY + 4);
 
-  // Save PDF file
+  return doc;
+}
+
+/**
+ * Downloads an official formatted invoice PDF
+ */
+export async function generateInvoicePDF(params: InvoicePDFParams): Promise<void> {
+  const doc = await buildInvoicePDFDoc(params);
   const filename = `${sanitizeFilename(params.noInvoice)} (${sanitizeFilename(params.namaPelanggan)}).pdf`;
   doc.save(filename);
+}
+
+/**
+ * Directly prints the official vector Invoice PDF via a hidden print iframe
+ */
+export async function printInvoicePDF(params: InvoicePDFParams): Promise<void> {
+  const doc = await buildInvoicePDFDoc(params);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.src = blobUrl;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      window.print();
+    }
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(blobUrl);
+    }, 60000);
+  };
 }
 
 /**
