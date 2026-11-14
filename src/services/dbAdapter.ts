@@ -573,12 +573,12 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status'],
   MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
   MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Minimum_Stock'],
-  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
+  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan', 'Varian'],
   MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
   MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
   MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
-  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
-  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
+  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status', 'Tipe_Tutup'],
+  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan', 'Tipe_Tutup'],
   Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
   Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
@@ -887,14 +887,16 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
       const rawJml = getRowVal(row, ['Jumlah_Dibutuhkan', 'Jumlah Dibutuhkan', 'Jumlah', 'Qty', 'Volume']);
       const rawSat = getRowVal(row, ['Satuan', 'Unit']);
       const rawKet = getRowVal(row, ['Keterangan', 'Catatan', 'Note']);
+      const rawVar = getRowVal(row, ['Varian', 'varian', 'Varian_BOM', 'Tipe_Varian']);
 
       return {
         ID_BOM: String(rawId || `BOM-${String(idx + 1).padStart(4, '0')}`).trim(),
         ID_Produk: String(rawProd || '').trim(),
         ID_Bahan: String(rawBhn || '').trim(),
         Jumlah_Dibutuhkan: parseNumeric(rawJml, 1),
-        Satuan: String(rawSat || 'Pcs').trim() || 'Pcs',
-        Keterangan: String(rawKet || '').trim()
+        Satuan: (String(rawSat || 'Pcs').trim() || 'Pcs') as any,
+        Keterangan: String(rawKet || '').trim(),
+        Varian: (rawVar && String(rawVar).trim()) ? (String(rawVar).trim() as any) : 'Standar'
       };
     }
 
@@ -961,6 +963,7 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
       const rawTarget = getRowVal(row, ['Target_Produksi', 'Target Produksi', 'Target', 'Jumlah', 'Qty']);
       const rawKet = getRowVal(row, ['Keterangan', 'Catatan']);
       const rawStat = getRowVal(row, ['Status', 'Status SPK']);
+      const rawTutup = getRowVal(row, ['Tipe_Tutup', 'Tipe Tutup', 'Tutup', 'Varian']);
 
       // Supabase constraint: CHECK ("Status" IN ('Aktif', 'Diproses', 'Selesai', 'Dibatalkan'))
       let status = 'Aktif';
@@ -976,7 +979,8 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         ID_Produk: String(rawProd || 'ASH-CUP220').trim(),
         Target_Produksi: parseNumeric(rawTarget, 0),
         Keterangan: String(rawKet || '').trim(),
-        Status: status
+        Status: status as any,
+        Tipe_Tutup: (rawTutup && String(rawTutup).trim()) ? (String(rawTutup).trim() as any) : 'Standar'
       };
     }
 
@@ -988,6 +992,7 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
       const rawJml = getRowVal(row, ['Jumlah', 'Qty', 'Hasil', 'Realisasi']);
       const rawPic = getRowVal(row, ['PIC_Produksi', 'PIC Produksi', 'PIC', 'Operator']);
       const rawKet = getRowVal(row, ['Keterangan', 'Catatan']);
+      const rawTutup = getRowVal(row, ['Tipe_Tutup', 'Tipe Tutup', 'Tutup', 'Varian']);
 
       return {
         ID_Produksi: String(rawId || `PRD-${Date.now().toString().slice(-6)}-${idx + 1}`).trim(),
@@ -996,7 +1001,8 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         ID_Produk: String(rawProd || 'ASH-CUP220').trim(),
         Jumlah: parseNumeric(rawJml, 0),
         PIC_Produksi: String(rawPic || '-').trim(),
-        Keterangan: String(rawKet || '').trim()
+        Keterangan: String(rawKet || '').trim(),
+        Tipe_Tutup: (rawTutup && String(rawTutup).trim()) ? (String(rawTutup).trim() as any) : 'Standar'
       };
     }
 

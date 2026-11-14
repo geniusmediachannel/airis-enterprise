@@ -216,13 +216,13 @@ export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
   MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status'],
   MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
   MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Tgl_Update_Harga', 'Minimum_Stock'],
-  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan'],
+  MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan', 'Varian'],
   MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
   MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
   MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
   Histori_Perubahan_Harga: ['ID_Histori', 'Tanggal_Berlaku', 'Tipe_Item', 'ID_Item', 'Nama_Item', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input', 'Detail_Harga'],
-  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status'],
-  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan'],
+  SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status', 'Tipe_Tutup'],
+  Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan', 'Tipe_Tutup'],
   Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
   Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
@@ -509,6 +509,15 @@ export async function pushAllTablesToTurso(options?: {
       const columns = getSanitizedColumns(table, rows);
       if (columns.length === 0) continue;
 
+      // Pastikan kolom baru otomatis ditambahkan ke skema Turso jika belum ada (ALTER TABLE ADD COLUMN)
+      if (table === 'MD_BOM') {
+        await executeTursoQuery(`ALTER TABLE "MD_BOM" ADD COLUMN "Varian" TEXT`, [], cfg).catch(() => {});
+      } else if (table === 'SPK') {
+        await executeTursoQuery(`ALTER TABLE "SPK" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});
+      } else if (table === 'Produksi') {
+        await executeTursoQuery(`ALTER TABLE "Produksi" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});
+      }
+
       const quotedCols = columns.map(c => `"${c}"`).join(', ');
       const placeholders = columns.map(() => '?').join(', ');
       const sql = `INSERT OR REPLACE INTO "${table}" (${quotedCols}) VALUES (${placeholders})`;
@@ -733,6 +742,24 @@ export function cleanPulledTableRows(
       ShipmentGroups: parseJsonSafe(r.ShipmentGroups, []),
       No_Surat_Jalan_List: parseJsonSafe(r.No_Surat_Jalan_List, []),
       ID_Distribusi_List: parseJsonSafe(r.ID_Distribusi_List, [])
+    }));
+  } else if (table === 'MD_BOM') {
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      Jumlah_Dibutuhkan: Number(r.Jumlah_Dibutuhkan || 1),
+      Varian: (r.Varian && String(r.Varian).trim()) ? String(r.Varian).trim() : 'Standar'
+    }));
+  } else if (table === 'SPK') {
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      Target_Produksi: Number(r.Target_Produksi || 0),
+      Tipe_Tutup: (r.Tipe_Tutup && String(r.Tipe_Tutup).trim()) ? String(r.Tipe_Tutup).trim() : 'Standar'
+    }));
+  } else if (table === 'Produksi') {
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      Jumlah: Number(r.Jumlah || 0),
+      Tipe_Tutup: (r.Tipe_Tutup && String(r.Tipe_Tutup).trim()) ? String(r.Tipe_Tutup).trim() : 'Standar'
     }));
   }
 
@@ -996,6 +1023,15 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
     // Pastikan tabel ada di Turso SQLite jika belum dibuat (terutama tabel baru seperti Pencairan_Biaya_Distribusi)
     const colDefs = columns.map(c => c === pk ? `"${c}" TEXT PRIMARY KEY` : `"${c}" TEXT`).join(', ');
     await executeTursoQuery(`CREATE TABLE IF NOT EXISTS "${tableName}" (${colDefs})`, [], cfg).catch(() => {});
+
+    // Pastikan kolom baru yang mungkin belum ada di tabel SQLite lama langsung ditambahkan
+    if (tableName === 'MD_BOM') {
+      await executeTursoQuery(`ALTER TABLE "MD_BOM" ADD COLUMN "Varian" TEXT`, [], cfg).catch(() => {});
+    } else if (tableName === 'SPK') {
+      await executeTursoQuery(`ALTER TABLE "SPK" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});
+    } else if (tableName === 'Produksi') {
+      await executeTursoQuery(`ALTER TABLE "Produksi" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});
+    }
 
     const BATCH_SIZE = 100;
     for (let i = 0; i < rowsToUpsert.length; i += BATCH_SIZE) {
