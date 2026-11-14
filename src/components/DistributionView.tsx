@@ -309,18 +309,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     }
   };
 
-  // Auto-pull instan saat modul Distribusi dibuka di HP maupun PC
-  useEffect(() => {
-    import('../services/tursoAdapter').then(({ pullTablesFromTurso }) => {
-      pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi'])
-        .then(synced => {
-          if (synced) onRefresh();
-        })
-        .catch(() => {});
-    });
-  }, []);
-
-  // Restore filter month from last imported batch & Auto-reconcile data Galon
+  // Restore filter month from last imported batch
   useEffect(() => {
     try {
       const lastImported = localStorage.getItem('airis_last_imported_dist_month');
@@ -333,100 +322,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         }
         localStorage.removeItem('airis_last_imported_dist_month');
       }
-
-      // Pembersihan otomatis: Hapus data Galon palsu yang sempat dibuat oleh tebakan formula tagihan lama
-      const allDists = getTableData<DistributionItem>('Distribusi', []);
-      const allItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
-
-      const itemsByDistId = new Map<string, DistributionProductDetail[]>();
-      allItems.forEach(it => {
-        if (!it || !it.ID_Distribusi) return;
-        const pid = String(it.ID_Distribusi).trim();
-        let arr = itemsByDistId.get(pid);
-        if (!arr) { arr = []; itemsByDistId.set(pid, arr); }
-        arr.push(it);
-      });
-
-      let distModified = false;
-      const cleanedDists = allDists.map(d => {
-        const anyD = d as any;
-        const distId = String(d.ID_Distribusi || '').trim();
-        const relItems = itemsByDistId.get(distId) || [];
-        const dusCountFromItems = relItems.filter(it => {
-          const pId = String(it.ID_Produk || '').toUpperCase();
-          const pName = String(it.Nama_Produk || '').toLowerCase();
-          return !pId.includes('GLN') && !pId.includes('G19') && !pName.includes('galon') && Number(it.Qty) > 0;
-        }).length;
-        const totalDus = (Number(anyD.C120) || 0) + (Number(anyD.C220) || 0) + (Number(anyD.B330) || 0) + (Number(anyD.B600) || 0);
-        const currentGalon = Number(anyD.G19 || anyD.g19 || anyD.Galon || anyD.galon || anyD.GLN19 || anyD['ASH-GLN19L'] || 0);
-        const tagihan = Number(d.Total_Tagihan || anyD.Tagihan || 0);
-
-        if (currentGalon > 0 && (totalDus > 0 || dusCountFromItems > 0)) {
-          if (
-            currentGalon === Math.round(tagihan / 12000) ||
-            currentGalon === Math.round(tagihan / 10000) ||
-            currentGalon === Math.round(tagihan / 9000) ||
-            currentGalon === Math.round(tagihan / 15000) ||
-            currentGalon === Math.floor(tagihan / 12000) ||
-            currentGalon === Math.ceil(tagihan / 12000)
-          ) {
-            anyD.G19 = 0;
-            anyD.g19 = 0;
-            anyD.Galon = 0;
-            anyD.galon = 0;
-            anyD.GLN19 = 0;
-            anyD['ASH-GLN19L'] = 0;
-            distModified = true;
-          }
-        }
-        return d;
-      });
-
-      const cleanedItems = allItems.filter(it => {
-        if (!it) return false;
-        const pId = String(it.ID_Produk || '').toUpperCase();
-        const pName = String(it.Nama_Produk || '').toLowerCase();
-        const isGalon = pId === 'ASH-GLN19L' || pId.includes('G19') || pId.includes('GLN') || pName.includes('galon');
-        if (!isGalon) return true;
-
-        const parent = cleanedDists.find(d => String(d.ID_Distribusi).trim() === String(it.ID_Distribusi).trim());
-        if (parent) {
-          const anyP = parent as any;
-          const totalDus = (Number(anyP.C120) || 0) + (Number(anyP.C220) || 0) + (Number(anyP.B330) || 0) + (Number(anyP.B600) || 0);
-          const g = Number(anyP.G19 || anyP.Galon || 0);
-          const tagihan = Number(parent.Total_Tagihan || anyP.Tagihan || 0);
-          const itQty = Number(it.Qty || 0);
-          if (totalDus > 0 && g === 0) return false;
-          if (totalDus > 0 && (
-            itQty === Math.round(tagihan / 12000) ||
-            itQty === Math.round(tagihan / 10000) ||
-            itQty === Math.round(tagihan / 9000) ||
-            itQty === Math.round(tagihan / 15000)
-          )) return false;
-        }
-        return true;
-      });
-
-      if (distModified) {
-        setTableData('Distribusi', cleanedDists, { skipCloudSync: true });
-      }
-      if (cleanedItems.length !== allItems.length) {
-        setTableData('Distribusi_Item', cleanedItems, { skipCloudSync: true });
-      }
     } catch {
       // ignore
     }
-  }, [distributions]);
+  }, []);
 
-  // Delivery Plans (Rencana Distribusi / List Pesanan) - Bersihkan data dummy lama (ORD-261016) agar selalu sinkron dengan database
+  // Delivery Plans (Rencana Distribusi / List Pesanan)
   const deliveryPlans = useMemo(() => {
-    const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
-    const cleanPlans = plans.filter(p => p.ID_Rencana !== 'ORD-261016-01' && p.ID_Rencana !== 'ORD-261016-02');
-    if (cleanPlans.length !== plans.length) {
-      setTableData('Rencana_Distribusi', cleanPlans, { skipCloudSync: true });
-    }
-    return cleanPlans;
-  }, [distributions]);
+    return getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+  }, []);
 
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
@@ -1829,18 +1733,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
   // State for Image 1 "Buka" Detail Drawer/Modal
   const [openDetailDist, setOpenDetailDist] = useState<DistributionItem | null>(null);
-
-  // Auto-sinkronisasi satu kali saat awal dimuat (anti-loop & anti-lag)
-  const hasAutoRepairedRef = React.useRef(false);
-  useEffect(() => {
-    if (hasAutoRepairedRef.current) return;
-    hasAutoRepairedRef.current = true;
-    try {
-      sanitizeAndRepairDistributionDatabase();
-    } catch {
-      // ignore
-    }
-  }, []);
 
   // Shortcut keyboard ESC untuk menutup modal preview dokumen atau detail rincian
   useEffect(() => {
