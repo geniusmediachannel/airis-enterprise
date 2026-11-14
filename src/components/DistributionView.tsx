@@ -418,6 +418,50 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     }
   }, [distributions]);
 
+  // Auto-sinkronisasi nomor urut invoice kronologis (misal: 001-INV-XI-26 untuk baris transaksi pertama di bulan itu)
+  useEffect(() => {
+    if (!distributions || distributions.length === 0) return;
+
+    let hasMismatch = false;
+    for (const d of distributions) {
+      if (!d.No_Invoice || d.No_Invoice === '-') {
+        hasMismatch = true;
+        break;
+      }
+      if (/^\d{3}-INV-[A-Z]+-\d{2}$/i.test(d.No_Invoice.trim())) {
+        const expected = formatInvoiceNumber(d.ID_Distribusi, d.Tanggal, distributions);
+        if (d.No_Invoice.trim() !== expected) {
+          hasMismatch = true;
+          break;
+        }
+      }
+    }
+
+    if (hasMismatch) {
+      const res = sanitizeAndRepairDistributionDatabase();
+      if (res.fixedRecordsCount > 0 || res.fixedInvoiceCount > 0) {
+        onRefresh();
+      }
+    }
+  }, [distributions]);
+
+  // Shortcut keyboard ESC untuk menutup modal preview dokumen atau detail rincian
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showDocSettingsModal) {
+          setShowDocSettingsModal(false);
+        } else if (viewDocModal) {
+          setViewDocModal(null);
+        } else if (openDetailDist) {
+          setOpenDetailDist(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewDocModal, openDetailDist, showDocSettingsModal]);
+
   // Delivery Plans (Rencana Distribusi / List Pesanan) - Bersihkan data dummy lama (ORD-261016) agar selalu sinkron dengan database
   const deliveryPlans = useMemo(() => {
     const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
@@ -577,134 +621,104 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const [distReportMonth, setDistReportMonth] = useState<string>(currentMonth);
   const [distReportYear, setDistReportYear] = useState<string>(currentYear);
 
-  // Helper to format Invoice Number as requested: (046-INV-X-26)
-  // 046 = urutan input data dalam bulan itu (reset setiap pergantian bulan)
-  // X = Bulan dalam Romawi
+  // Helper to format Invoice Number as requested: (001-INV-XI-26)
+  // 001 = urutan input transaksi kronologis dalam bulan itu (reset setiap pergantian bulan)
+  // XI = Bulan dalam Romawi
   // 26 = 2 digit tahun
   const formatInvoiceNumber = (distId?: string, tanggalStr?: string, customDistList?: DistributionItem[], directNoInvoice?: string): string => {
-    // 0. Cek apakah ada No_Invoice valid yang diberikan secara langsung
-    const isValidInv = (val?: string): boolean => {
+    // 0. Cek format invoice standar: NNN-INV-ROMAN-YY
+    const isStandardInvoice = (val?: string): boolean => {
       if (!val) return false;
-      const s = String(val).trim();
-      return s !== '' && s !== '-' && s !== '--' && s.toLowerCase() !== 'null' && s.toLowerCase() !== 'undefined';
+      return /^\d{3}-INV-[A-Z]+-\d{2}$/i.test(String(val).trim());
     };
 
-    if (isValidInv(directNoInvoice)) {
+    // Jika ada nomor invoice manual kustom khusus (bukan format NNN-INV-...), kita hormati input user
+    if (directNoInvoice && !isStandardInvoice(directNoInvoice) && String(directNoInvoice).trim() !== '-' && String(directNoInvoice).trim() !== '') {
       return String(directNoInvoice).trim();
     }
 
-    // 1. Cek apakah record sudah memiliki No_Invoice valid tersimpan di database
-    if (distId) {
-      const existing = (distributions || []).find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
-      if (existing && isValidInv(existing.No_Invoice)) {
-        return existing.No_Invoice!.trim();
-      }
-    }
-
-    // Helper parser tanggal fleksibel (ISO, DD-MM-YYYY, DD/MM/YYYY, DD-Mmm-YYYY)
-    const parseSafe = (raw: any): Date => {
-      if (!raw) return new Date();
-      if (raw instanceof Date) return isNaN(raw.getTime()) ? new Date() : raw;
-      const s = String(raw).trim();
-      if (!s || s === '-') return new Date();
-      // YYYY-MM-DD
-      const mIso = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-      if (mIso) {
-        const d = new Date(Number(mIso[1]), Number(mIso[2]) - 1, Number(mIso[3]));
-        if (!isNaN(d.getTime())) return d;
-      }
-      // DD-MM-YYYY
-      const mDmy = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
-      if (mDmy) {
-        let yr = Number(mDmy[3]);
-        if (yr < 100) yr += 2000;
-        const d = new Date(yr, Number(mDmy[2]) - 1, Number(mDmy[1]));
-        if (!isNaN(d.getTime())) return d;
-      }
-      // DD-Mmm-YYYY
-      const mInd = s.match(/^(\d{1,2})[-\s]([A-Za-z]+)[-\s](\d{2,4})/);
-      if (mInd) {
-        const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
-        const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-        const day = Number(mInd[1]);
-        const mStr = mInd[2].toLowerCase().slice(0, 3);
-        let mIdx = months.indexOf(mStr);
-        if (mIdx === -1) mIdx = monthsEn.indexOf(mStr);
-        let yr = Number(mInd[3]);
-        if (yr < 100) yr += 2000;
-        if (mIdx !== -1) return new Date(yr, mIdx, day);
-      }
-      const d = new Date(s);
-      return isNaN(d.getTime()) ? new Date() : d;
-    };
-
-    // Cari tanggal yang akurat jika distId ada tetapi tanggalStr kosong/tidak ada
-    let effectiveTanggal = tanggalStr;
-    if ((!effectiveTanggal || effectiveTanggal === '-') && distId) {
-      const matchDist = (distributions || []).find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
-      if (matchDist && matchDist.Tanggal && matchDist.Tanggal !== '-') {
-        effectiveTanggal = matchDist.Tanggal;
-      }
-    }
-
-    const validD = parseSafe(effectiveTanggal);
-    const targetYear = validD.getFullYear();
-    const targetMonth = validD.getMonth(); // 0 = Jan, 9 = Oct
-    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-    const romanMonth = romanMonths[targetMonth] || 'X';
-    const year2Digits = String(targetYear).slice(-2);
-
-    // Source list of distributions (preserves original input order)
     const distSource = (customDistList && customDistList.length > 0)
       ? customDistList
       : (distributions && distributions.length > 0)
         ? distributions
         : getTableData<DistributionItem>('Distribusi', []);
 
-    // Filter distributions for this specific month & year
+    // Helper parser tanggal fleksibel
+    const parseSafe = (raw: any): Date => {
+      if (!raw) return new Date();
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? new Date() : raw;
+      const t = toComparableDate(raw);
+      return t > 0 ? new Date(t) : new Date();
+    };
+
+    // Cari record & tanggal transaksi yang akurat
+    let effectiveTanggal = tanggalStr;
+    let targetDist: DistributionItem | undefined;
+    if (distId) {
+      targetDist = distSource.find(d => 
+        String(d.ID_Distribusi).trim() === String(distId).trim() ||
+        (d.No_Surat_Jalan && String(d.No_Surat_Jalan).trim() === String(distId).trim())
+      );
+      if (targetDist && targetDist.Tanggal && targetDist.Tanggal !== '-') {
+        effectiveTanggal = targetDist.Tanggal;
+      }
+      // Jika record memiliki invoice kustom manual khusus, pertahankan
+      if (targetDist && targetDist.No_Invoice && !isStandardInvoice(targetDist.No_Invoice) && String(targetDist.No_Invoice).trim() !== '-') {
+        return targetDist.No_Invoice.trim();
+      }
+    }
+
+    const validD = parseSafe(effectiveTanggal);
+    const targetYear = validD.getFullYear();
+    const targetMonth = validD.getMonth(); // 0 = Jan, 10 = Nov
+    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+    const romanMonth = romanMonths[targetMonth] || 'X';
+    const year2Digits = String(targetYear).slice(-2);
+
+    // Filter seluruh data distribusi di bulan & tahun yang sama
+    const monthItems = distSource.filter(item => {
+      if (!item || !item.Tanggal) return false;
+      const d = parseSafe(item.Tanggal);
+      return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+    });
+
+    // Urutkan kronologis deterministik sama persis seperti urutan di tabel data:
+    // 1. Tanggal transaksi (Terlama -> Terbaru)
+    // 2. Nomor Surat Jalan (715, 716, 717, ...)
+    // 3. ID_Distribusi
+    monthItems.sort((a, b) => {
+      const timeA = toComparableDate(a.Tanggal);
+      const timeB = toComparableDate(b.Tanggal);
+      if (timeA !== timeB) return timeA - timeB;
+
+      const sjA = extractSjNumber(a.No_Surat_Jalan);
+      const sjB = extractSjNumber(b.No_Surat_Jalan);
+      if (sjA !== sjB && sjA > 0 && sjB > 0) return sjA - sjB;
+
+      const sjStrA = String(a.No_Surat_Jalan || '');
+      const sjStrB = String(b.No_Surat_Jalan || '');
+      const sjComp = sjStrA.localeCompare(sjStrB, undefined, { numeric: true, sensitivity: 'base' });
+      if (sjComp !== 0) return sjComp;
+
+      return String(a.ID_Distribusi || '').localeCompare(String(b.ID_Distribusi || ''));
+    });
+
     let seqNumber = 0;
-    let countInMonth = 0;
-    for (let i = 0; i < distSource.length; i++) {
-      const item = distSource[i];
-      if (!item || !item.Tanggal) continue;
-      const itemD = parseSafe(item.Tanggal);
-      if (itemD.getFullYear() === targetYear && itemD.getMonth() === targetMonth) {
-        countInMonth++;
-        if (distId && (String(item.ID_Distribusi).trim() === String(distId).trim() || String(item.No_Surat_Jalan).trim() === String(distId).trim())) {
-          seqNumber = countInMonth;
-          break;
-        }
+    if (distId) {
+      const foundIdx = monthItems.findIndex(d => 
+        String(d.ID_Distribusi).trim() === String(distId).trim() ||
+        (d.No_Surat_Jalan && String(d.No_Surat_Jalan).trim() === String(distId).trim())
+      );
+      if (foundIdx !== -1) {
+        seqNumber = foundIdx + 1;
       }
     }
 
-    // Jika distId tidak ditemukan di perulangan bulan, coba ekstraksi angka dari No_Surat_Jalan atau ID_Distribusi
-    if (distId && seqNumber === 0) {
-      const matchDist = distSource.find(d => String(d.ID_Distribusi).trim() === String(distId).trim());
-      if (matchDist && matchDist.No_Surat_Jalan) {
-        const numMatch = matchDist.No_Surat_Jalan.match(/\b(\d+)\b/);
-        if (numMatch) {
-          const rawNum = parseInt(numMatch[1], 10);
-          if (rawNum > 645) {
-            seqNumber = Math.max(1, rawNum - 645);
-          } else {
-            seqNumber = rawNum;
-          }
-        }
-      }
-      if (seqNumber === 0) {
-        const idNumMatch = String(distId).match(/\b(\d+)\b/);
-        if (idNumMatch) {
-          seqNumber = parseInt(idNumMatch[1], 10);
-        }
-      }
+    if (seqNumber === 0) {
+      seqNumber = monthItems.length + 1;
     }
 
-    if (!distId && seqNumber === 0) {
-      seqNumber = countInMonth + 1;
-    }
-
-    const finalSeq = seqNumber > 0 ? seqNumber : (countInMonth > 0 ? countInMonth : 1);
-    const numStr = String(finalSeq).padStart(3, '0');
+    const numStr = String(seqNumber).padStart(3, '0');
     return `${numStr}-INV-${romanMonth}-${year2Digits}`;
   };
 
@@ -2895,8 +2909,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         const totalQty = c120 + c220 + b330 + b600 + g19;
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95">
+          <div 
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setOpenDetailDist(null);
+            }}
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 flex items-start justify-center"
+          >
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-4 sm:my-6 animate-in zoom-in-95">
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 bg-teal-700 text-white">
                 <div className="flex items-center gap-2.5">
@@ -3121,7 +3140,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* MODAL LAPORAN DISTRIBUSI (PER KONSUMEN & TAHUNAN)               */}
       {/* ============================================================== */}
       {showDistReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto printable-modal-overlay">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDistReportModal(false);
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 flex items-start justify-center printable-modal-overlay"
+        >
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 printable-modal-card">
             <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white no-print">
               <div className="flex items-center gap-2">
@@ -4492,9 +4516,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
       {/* Modal: View Printable A4 Document (Surat Jalan / Invoice) */}
       {viewDocModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto printable-modal-overlay">
-          <div className="bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-4 printable-modal-card max-w-[230mm]">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 bg-slate-900 text-white no-print border-b border-slate-800">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setViewDocModal(null);
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-xs p-2 sm:p-4 flex justify-center items-start printable-modal-overlay"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-2 sm:my-4 printable-modal-card max-w-[230mm] max-h-[94vh] flex flex-col relative animate-in zoom-in-95">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-slate-900 text-white no-print border-b border-slate-800 shrink-0 sticky top-0 z-30">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
                   <FileCheck size={16} className="text-emerald-400" />
@@ -4530,7 +4559,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   title="Atur Kop Surat, Cap/Stempel, TTD & Info Penandatangan"
                 >
                   <Settings size={14} className="text-amber-400" />
-                  <span>Pengaturan Dokumen</span>
+                  <span>Pengaturan</span>
                 </button>
                 <button
                   onClick={async () => {
@@ -4627,18 +4656,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 </button>
                 <button 
                   onClick={() => setViewDocModal(null)} 
-                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
-                  title="Tutup Preview"
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Tutup Preview Dokumen (Esc)"
                 >
-                  <X size={16} />
+                  <X size={15} />
+                  <span>Tutup</span>
                 </button>
               </div>
             </div>
 
             {/* Document Canvas */}
             <div 
-              className={`font-sans text-slate-900 bg-white overflow-x-auto print:p-0 printable-content ${viewDocModal.docType === 'sj' ? 'p-3 sm:p-5 bg-slate-100/70 flex justify-center' : 'p-3 sm:p-6 bg-slate-100/70 flex justify-center'}`} 
-              style={{ minHeight: 'auto' }}
+              className="font-sans text-slate-900 bg-slate-200/70 flex-1 overflow-y-auto overflow-x-auto print:overflow-visible p-3 sm:p-6 flex justify-center printable-content"
             >
               {viewDocModal.docType === 'inv' ? (() => {
                 const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
@@ -5341,8 +5370,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* MODAL PENGATURAN DOKUMEN (KOP, CAP, TTD, & PENANDATANGAN)      */}
       {/* ============================================================== */}
       {showDocSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDocSettingsModal(false);
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 flex items-start justify-center"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-4 sm:my-6 animate-in zoom-in-95">
             <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white">
               <div className="flex items-center gap-2">
                 <Settings className="text-amber-400" size={18} />

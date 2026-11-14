@@ -268,11 +268,28 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
     const repairedDist: DistributionItem[] = [];
     const repairedItemsList: DistributionProductDetail[] = [...currentItems];
 
-    // Urutkan data berdasarkan tanggal transaksi agar nomor urut konsisten
+    const extractSjNum = (sjStr?: string): number => {
+      if (!sjStr) return 0;
+      const m = String(sjStr).match(/^(\d+)/);
+      return m ? parseInt(m[1], 10) : 0;
+    };
+
+    // Urutkan data berdasarkan tanggal transaksi dan nomor surat jalan agar nomor urut konsisten
     const sortedDist = [...currentDist].sort((a, b) => {
       const da = parseDate(a?.Tanggal).getTime();
       const db = parseDate(b?.Tanggal).getTime();
-      return da - db;
+      if (da !== db) return da - db;
+
+      const sjA = extractSjNum(a?.No_Surat_Jalan);
+      const sjB = extractSjNum(b?.No_Surat_Jalan);
+      if (sjA !== sjB && sjA > 0 && sjB > 0) return sjA - sjB;
+
+      const sjStrA = String(a?.No_Surat_Jalan || '');
+      const sjStrB = String(b?.No_Surat_Jalan || '');
+      const sjComp = sjStrA.localeCompare(sjStrB, undefined, { numeric: true, sensitivity: 'base' });
+      if (sjComp !== 0) return sjComp;
+
+      return String(a?.ID_Distribusi || '').localeCompare(String(b?.ID_Distribusi || ''));
     });
 
     sortedDist.forEach((dist, idx) => {
@@ -326,9 +343,14 @@ export function sanitizeAndRepairDistributionDatabase(): DistributionRepairResul
       if (!anyDist.No_Surat_Jalan || String(anyDist.No_Surat_Jalan).trim() === '') {
         anyDist.No_Surat_Jalan = '-';
       }
-      if (!anyDist.No_Invoice || String(anyDist.No_Invoice).trim() === '' || String(anyDist.No_Invoice).trim() === '-') {
-        anyDist.No_Invoice = `${seqPadded}-INV-${romanM}-${yy}`;
-        isModified = true;
+      const expectedInvoice = `${seqPadded}-INV-${romanM}-${yy}`;
+      const isStandardInv = anyDist.No_Invoice && /^\d{3}-INV-[A-Z]+-\d{2}$/.test(String(anyDist.No_Invoice).trim());
+      if (!anyDist.No_Invoice || String(anyDist.No_Invoice).trim() === '' || String(anyDist.No_Invoice).trim() === '-' || isStandardInv) {
+        if (anyDist.No_Invoice !== expectedInvoice) {
+          anyDist.No_Invoice = expectedInvoice;
+          isModified = true;
+          fixedInvoiceCount++;
+        }
       }
       if (!anyDist.Keterangan || String(anyDist.Keterangan).trim() === '') {
         anyDist.Keterangan = '-';
