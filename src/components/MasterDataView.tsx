@@ -9,7 +9,7 @@ import {
   ProductItem, CustomerItem, SupplierItem, RawMaterialItem, 
   BOMItem, EmployeeItem, UserAccount, SpecialPriceItem, UserRole, PriceHistoryItem 
 } from '../types';
-import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, isBottleProduct } from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { 
@@ -387,10 +387,12 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         return;
       }
 
-      // Cek apakah formula untuk pasangan Produk & Bahan ini sudah pernah ada
+      // Cek apakah formula untuk pasangan Produk, Bahan, dan Varian ini sudah pernah ada
+      const targetVariant = sanitized.Varian || 'Standar';
       const duplicateFormula = boms.find(b => 
         b.ID_Produk.trim().toLowerCase() === prodId.toLowerCase() &&
         b.ID_Bahan.trim().toLowerCase() === matId.toLowerCase() &&
+        (b.Varian || 'Standar') === targetVariant &&
         (!editingItem || editingItem.ID_BOM.trim().toLowerCase() !== b.ID_BOM.trim().toLowerCase())
       );
       if (duplicateFormula) {
@@ -398,7 +400,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         const matObj = rawMaterials.find(m => m.ID_Bahan === matId);
         showToast(
           'Formula Sudah Ada', 
-          `Formula untuk "${prodObj?.Nama_Produk || prodId}" dengan bahan "${matObj?.Nama_Bahan || matId}" sudah terdaftar di ${duplicateFormula.ID_BOM} (${duplicateFormula.Jumlah_Dibutuhkan} ${duplicateFormula.Satuan}). Silakan edit baris tersebut.`, 
+          `Formula untuk "${prodObj?.Nama_Produk || prodId}" dengan bahan "${matObj?.Nama_Bahan || matId}" [Varian: ${targetVariant}] sudah terdaftar di ${duplicateFormula.ID_BOM} (${duplicateFormula.Jumlah_Dibutuhkan} ${duplicateFormula.Satuan}). Silakan edit baris tersebut.`, 
           'warning'
         );
         return;
@@ -415,6 +417,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
       sanitized.ID_Produk = prodId;
       sanitized.ID_Bahan = matId;
+      sanitized.Varian = targetVariant;
       sanitized.Jumlah_Dibutuhkan = qty;
       sanitized.Satuan = (sanitized.Satuan || rawMaterials.find(m => m.ID_Bahan === matId)?.Satuan || 'Pcs').trim();
       sanitized.Keterangan = (sanitized.Keterangan || '').trim();
@@ -1346,6 +1349,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 <tr>
                   <th className="p-3">ID BOM</th>
                   <th className="p-3">Target Produk</th>
+                  <th className="p-3 text-center">Varian Resep</th>
                   <th className="p-3">Bahan Penolong Dibutuhkan</th>
                   <th className="p-3 text-center">Rasio Kebutuhan</th>
                   <th className="p-3">Keterangan</th>
@@ -1360,6 +1364,17 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                     <tr key={bom.ID_BOM} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-blue-700">{bom.ID_BOM}</td>
                       <td className="p-3 font-semibold text-slate-900">{prod?.Nama_Produk || bom.ID_Produk}</td>
+                      <td className="p-3 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          bom.Varian === 'LN'
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                            : bom.Varian === 'SN'
+                              ? 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}>
+                          {bom.Varian === 'LN' ? 'Long Neck (LN)' : bom.Varian === 'SN' ? 'Short Neck (SN)' : 'Standar / Semua'}
+                        </span>
+                      </td>
                       <td className="p-3 text-slate-700">{mat?.Nama_Bahan || bom.ID_Bahan}</td>
                       <td className="p-3 text-center font-mono font-bold text-indigo-700">
                         {bom.Jumlah_Dibutuhkan} {bom.Satuan} / unit
@@ -2251,7 +2266,14 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                     <label className="block font-semibold text-slate-700 mb-1">Target Produk <span className="text-red-500">*</span></label>
                     <select
                       value={formData.ID_Produk || ''}
-                      onChange={e => setFormData({ ...formData, ID_Produk: e.target.value })}
+                      onChange={e => {
+                        const newPId = e.target.value;
+                        setFormData({ 
+                          ...formData, 
+                          ID_Produk: newPId,
+                          Varian: isBottleProduct(newPId) ? (formData.Varian || 'Standar') : 'Standar'
+                        });
+                      }}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold text-slate-900 bg-white"
                       required
                     >
@@ -2262,6 +2284,25 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Dropdown Varian Leher & Tutup Botol */}
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Varian Leher & Tutup Botol
+                    </label>
+                    <select
+                      value={formData.Varian || 'Standar'}
+                      onChange={e => setFormData({ ...formData, Varian: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-900 bg-white"
+                    >
+                      <option value="Standar">Standar / Semua Varian (Bahan Bersama: Kardus, Label, Lakban)</option>
+                      <option value="SN">SN - Short Neck (Khusus Botol SN & Tutup SN)</option>
+                      <option value="LN">LN - Long Neck (Khusus Botol LN & Tutup LN)</option>
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Pilih SN atau LN untuk botol & tutup kemasan khusus, atau Standar untuk bahan umum.
+                    </p>
                   </div>
                   {/* Dropdown ID Bahan */}
                   <div>

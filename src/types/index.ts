@@ -172,6 +172,7 @@ export interface BOMItem {
   Jumlah_Dibutuhkan: number;
   Satuan: 'Pcs' | 'Roll' | 'Lembar' | 'Kg' | 'Liter' | 'Box' | 'Dus' | 'Batang';
   Keterangan?: string;
+  Varian?: 'Standar' | 'LN' | 'SN';
 }
 
 export interface EmployeeItem {
@@ -193,6 +194,7 @@ export interface SPKItem {
   Target_Produksi: number;
   Keterangan: string;
   Status: 'Aktif' | 'Diproses' | 'Selesai';
+  Tipe_Tutup?: 'LN' | 'SN' | 'Standar';
 }
 
 export interface ProductionItem {
@@ -203,6 +205,7 @@ export interface ProductionItem {
   Jumlah: number;
   PIC_Produksi: string;
   Keterangan: string;
+  Tipe_Tutup?: 'LN' | 'SN' | 'Standar';
 }
 
 export interface DeliveryPlanItem {

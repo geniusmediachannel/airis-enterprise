@@ -2498,9 +2498,14 @@ const DEFAULT_RAW_MATERIALS: RawMaterialItem[] = [
   { ID_Bahan: 'BHN-LIDSEAL', Nama_Bahan: 'Lid Seal Roll As-Shofaa', Kategori: 'Segel', Satuan: 'Roll', Harga_Satuan: 145000, Minimum_Stock: 20 },
   { ID_Bahan: 'BHN-KARTON120', Nama_Bahan: 'Karton Dus 120ml (isi 48)', Kategori: 'Kemasan', Satuan: 'Lembar', Harga_Satuan: 2400, Minimum_Stock: 1000 },
   { ID_Bahan: 'BHN-KARTON220', Nama_Bahan: 'Karton Dus 220ml (isi 48)', Kategori: 'Kemasan', Satuan: 'Lembar', Harga_Satuan: 2600, Minimum_Stock: 1200 },
-  { ID_Bahan: 'BHN-BTL330', Nama_Bahan: 'Botol PET 330ml Short Neck', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 380, Minimum_Stock: 4000 },
-  { ID_Bahan: 'BHN-BTL600', Nama_Bahan: 'Botol PET 600ml', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 460, Minimum_Stock: 4000 },
-  { ID_Bahan: 'BHN-TUTUPBTL', Nama_Bahan: 'Tutup Botol Segel Biru', Kategori: 'Segel', Satuan: 'Pcs', Harga_Satuan: 95, Minimum_Stock: 6000 },
+  { ID_Bahan: 'BHN-KARTON330', Nama_Bahan: 'Karton Dus Botol 330ml (isi 24)', Kategori: 'Kemasan', Satuan: 'Lembar', Harga_Satuan: 2800, Minimum_Stock: 1000 },
+  { ID_Bahan: 'BHN-KARTON600', Nama_Bahan: 'Karton Dus Botol 600ml (isi 24)', Kategori: 'Kemasan', Satuan: 'Lembar', Harga_Satuan: 3000, Minimum_Stock: 1000 },
+  { ID_Bahan: 'BHN-BTL330-SN', Nama_Bahan: 'Botol PET 330ml Short Neck (SN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 380, Minimum_Stock: 4000 },
+  { ID_Bahan: 'BHN-BTL330-LN', Nama_Bahan: 'Botol PET 330ml Long Neck (LN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 390, Minimum_Stock: 4000 },
+  { ID_Bahan: 'BHN-BTL600-SN', Nama_Bahan: 'Botol PET 600ml Short Neck (SN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 460, Minimum_Stock: 4000 },
+  { ID_Bahan: 'BHN-BTL600-LN', Nama_Bahan: 'Botol PET 600ml Long Neck (LN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 470, Minimum_Stock: 4000 },
+  { ID_Bahan: 'BHN-TUTUP-SN', Nama_Bahan: 'Tutup Botol Short Neck (SN)', Kategori: 'Segel', Satuan: 'Pcs', Harga_Satuan: 95, Minimum_Stock: 6000 },
+  { ID_Bahan: 'BHN-TUTUP-LN', Nama_Bahan: 'Tutup Botol Long Neck (LN)', Kategori: 'Segel', Satuan: 'Pcs', Harga_Satuan: 105, Minimum_Stock: 6000 },
   { ID_Bahan: 'BHN-LABELBTL', Nama_Bahan: 'Label Shrink Botol', Kategori: 'Label', Satuan: 'Pcs', Harga_Satuan: 120, Minimum_Stock: 5000 },
   { ID_Bahan: 'BHN-LAKBAN', Nama_Bahan: 'Lakban Bening 2 Inch', Kategori: 'Lakban', Satuan: 'Roll', Harga_Satuan: 9500, Minimum_Stock: 50 },
   { ID_Bahan: 'BHN-TUTUPGLN', Nama_Bahan: 'Tutup Galon Standar', Kategori: 'Segel', Satuan: 'Pcs', Harga_Satuan: 420, Minimum_Stock: 1500 },
@@ -2508,14 +2513,38 @@ const DEFAULT_RAW_MATERIALS: RawMaterialItem[] = [
 ];
 
 const DEFAULT_BOM: BOMItem[] = [
-  { ID_BOM: 'BOM-0001', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-CUP220', Jumlah_Dibutuhkan: 48, Satuan: 'Pcs', Keterangan: '48 cup per karton' },
-  { ID_BOM: 'BOM-0002', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-KARTON220', Jumlah_Dibutuhkan: 1, Satuan: 'Lembar', Keterangan: '1 kardus box' },
-  { ID_BOM: 'BOM-0003', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-LIDSEAL', Jumlah_Dibutuhkan: 0.04, Satuan: 'Roll', Keterangan: 'Estimasi seal' },
-  { ID_BOM: 'BOM-0004', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-BTL600', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 botol per karton' },
-  { ID_BOM: 'BOM-0005', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-TUTUPBTL', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 tutup segel' },
-  { ID_BOM: 'BOM-0006', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-LABELBTL', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 label shrink' },
-  { ID_BOM: 'BOM-0007', ID_Produk: 'ASH-GLN19L', ID_Bahan: 'BHN-TUTUPGLN', Jumlah_Dibutuhkan: 1, Satuan: 'Pcs', Keterangan: '1 tutup galon' },
-  { ID_BOM: 'BOM-0008', ID_Produk: 'ASH-GLN19L', ID_Bahan: 'BHN-TISUGLN', Jumlah_Dibutuhkan: 1, Satuan: 'Pcs', Keterangan: '1 tisu antiseptik' }
+  // Cup 220ml
+  { ID_BOM: 'BOM-0001', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-CUP220', Jumlah_Dibutuhkan: 48, Satuan: 'Pcs', Keterangan: '48 cup per karton', Varian: 'Standar' },
+  { ID_BOM: 'BOM-0002', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-KARTON220', Jumlah_Dibutuhkan: 1, Satuan: 'Lembar', Keterangan: '1 kardus box', Varian: 'Standar' },
+  { ID_BOM: 'BOM-0003', ID_Produk: 'ASH-CUP220', ID_Bahan: 'BHN-LIDSEAL', Jumlah_Dibutuhkan: 0.04, Satuan: 'Roll', Keterangan: 'Estimasi seal', Varian: 'Standar' },
+  
+  // Botol 330ml - Varian Short Neck (SN)
+  { ID_BOM: 'BOM-0004', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-BTL330-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 botol short neck per karton', Varian: 'SN' },
+  { ID_BOM: 'BOM-0005', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-TUTUP-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 tutup short neck', Varian: 'SN' },
+  
+  // Botol 330ml - Varian Long Neck (LN)
+  { ID_BOM: 'BOM-0006', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-BTL330-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 botol long neck per karton', Varian: 'LN' },
+  { ID_BOM: 'BOM-0007', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-TUTUP-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 tutup long neck', Varian: 'LN' },
+  
+  // Botol 330ml - Bahan Bersama
+  { ID_BOM: 'BOM-0008', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-KARTON330', Jumlah_Dibutuhkan: 1, Satuan: 'Lembar', Keterangan: '1 kardus box 330ml', Varian: 'Standar' },
+  { ID_BOM: 'BOM-0009', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-LABELBTL', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 label shrink', Varian: 'Standar' },
+
+  // Botol 600ml - Varian Short Neck (SN)
+  { ID_BOM: 'BOM-0010', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-BTL600-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 botol short neck per karton', Varian: 'SN' },
+  { ID_BOM: 'BOM-0011', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-TUTUP-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 tutup short neck', Varian: 'SN' },
+
+  // Botol 600ml - Varian Long Neck (LN)
+  { ID_BOM: 'BOM-0012', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-BTL600-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 botol long neck per karton', Varian: 'LN' },
+  { ID_BOM: 'BOM-0013', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-TUTUP-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 tutup long neck', Varian: 'LN' },
+
+  // Botol 600ml - Bahan Bersama
+  { ID_BOM: 'BOM-0014', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-KARTON600', Jumlah_Dibutuhkan: 1, Satuan: 'Lembar', Keterangan: '1 kardus box 600ml', Varian: 'Standar' },
+  { ID_BOM: 'BOM-0015', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-LABELBTL', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: '24 label shrink', Varian: 'Standar' },
+
+  // Galon 19L
+  { ID_BOM: 'BOM-0016', ID_Produk: 'ASH-GLN19L', ID_Bahan: 'BHN-TUTUPGLN', Jumlah_Dibutuhkan: 1, Satuan: 'Pcs', Keterangan: '1 tutup galon', Varian: 'Standar' },
+  { ID_BOM: 'BOM-0017', ID_Produk: 'ASH-GLN19L', ID_Bahan: 'BHN-TISUGLN', Jumlah_Dibutuhkan: 1, Satuan: 'Pcs', Keterangan: '1 tisu antiseptik', Varian: 'Standar' }
 ];
 
 const DEFAULT_EMPLOYEES: EmployeeItem[] = [
@@ -2980,6 +3009,134 @@ export async function initializeDatabase(): Promise<void> {
       setTableData('Rencana_Distribusi', updatedPlans);
     }
   } catch (e) {}
+
+  // Auto-migration: Pastikan Bahan Baku & Resep BOM Botol SN & LN tersedia
+  try {
+    ensureBottleBOMVariantsPopulated();
+  } catch (e) {}
+}
+
+/**
+ * Deteksi apakah produk merupakan kategori botol (330ml / 600ml)
+ */
+export function isBottleProduct(productIdOrName?: string): boolean {
+  if (!productIdOrName) return false;
+  const str = String(productIdOrName).toUpperCase();
+  return str.includes('330') || str.includes('600') || str.includes('BTL') || str.includes('BOTOL');
+}
+
+/**
+ * Filter resep BOM berdasarkan varian leher botol (SN = Short Neck, LN = Long Neck, Standar = Semua)
+ */
+export function filterBOMByVariant(
+  boms: BOMItem[],
+  productId: string,
+  variant?: 'LN' | 'SN' | 'Standar' | string,
+  rawMaterials?: RawMaterialItem[]
+): BOMItem[] {
+  const prodBoms = boms.filter(b => b.ID_Produk === productId);
+  if (prodBoms.length === 0) return [];
+
+  const targetVariant = variant === 'LN' ? 'LN' : variant === 'SN' ? 'SN' : 'Standar';
+
+  return prodBoms.filter(b => {
+    const v = b.Varian || 'Standar';
+    // Jika resep secara eksplisit ditandai varian SN atau LN, cocokkan
+    if (v === 'SN' || v === 'LN') {
+      return v === targetVariant;
+    }
+    // Jika item ditandai 'Standar', cek apakah ID bahan itu sendiri spesifik varian
+    const bId = String(b.ID_Bahan || '').toUpperCase();
+    if (bId.includes('-SN') || bId.includes('_SN')) {
+      return targetVariant === 'SN';
+    }
+    if (bId.includes('-LN') || bId.includes('_LN')) {
+      return targetVariant === 'LN';
+    }
+    // Komponen bersama (kardus box, label shrink, lakban, dll) dipakai oleh kedua varian
+    return true;
+  });
+}
+
+/**
+ * Memastikan bahan baku dan resep BOM botol SN & LN selalu terpopulasi di database
+ */
+export function ensureBottleBOMVariantsPopulated(): void {
+  const existingRaw = getTableData<RawMaterialItem>('MD_BahanPenolong', []);
+  const rawMap = new Map<string, RawMaterialItem>();
+  existingRaw.forEach(r => rawMap.set(r.ID_Bahan, r));
+
+  const neededRaw = [
+    { ID_Bahan: 'BHN-BTL330-SN', Nama_Bahan: 'Botol 330ml Short Neck (SN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 280, Minimum_Stock: 5000 },
+    { ID_Bahan: 'BHN-BTL330-LN', Nama_Bahan: 'Botol 330ml Long Neck (LN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 290, Minimum_Stock: 5000 },
+    { ID_Bahan: 'BHN-BTL600-SN', Nama_Bahan: 'Botol 600ml Short Neck (SN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 350, Minimum_Stock: 5000 },
+    { ID_Bahan: 'BHN-BTL600-LN', Nama_Bahan: 'Botol 600ml Long Neck (LN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 360, Minimum_Stock: 5000 },
+    { ID_Bahan: 'BHN-TUTUP-SN', Nama_Bahan: 'Tutup Botol Short Neck (SN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 65, Minimum_Stock: 10000 },
+    { ID_Bahan: 'BHN-TUTUP-LN', Nama_Bahan: 'Tutup Botol Long Neck (LN)', Kategori: 'Kemasan', Satuan: 'Pcs', Harga_Satuan: 70, Minimum_Stock: 10000 },
+  ];
+
+  let rawUpdated = false;
+  neededRaw.forEach(item => {
+    if (!rawMap.has(item.ID_Bahan)) {
+      rawMap.set(item.ID_Bahan, item);
+      rawUpdated = true;
+    }
+  });
+
+  if (rawUpdated) {
+    setTableData('MD_BahanPenolong', Array.from(rawMap.values()), { skipCloudSync: true });
+  }
+
+  // BOM
+  const existingBOM = getTableData<BOMItem>('MD_BOM', []);
+  const bomMap = new Map<string, BOMItem>();
+  existingBOM.forEach(b => bomMap.set(b.ID_BOM, b));
+
+  const neededBOM: BOMItem[] = [
+    { ID_BOM: 'BOM-BTL330-01-SN', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-BTL330-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Botol 330ml SN (Varian Short Neck)', Varian: 'SN' },
+    { ID_BOM: 'BOM-BTL330-01-LN', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-BTL330-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Botol 330ml LN (Varian Long Neck)', Varian: 'LN' },
+    { ID_BOM: 'BOM-BTL330-02-SN', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-TUTUP-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Tutup Botol SN (Short Neck)', Varian: 'SN' },
+    { ID_BOM: 'BOM-BTL330-02-LN', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-TUTUP-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Tutup Botol LN (Long Neck)', Varian: 'LN' },
+    { ID_BOM: 'BOM-BTL600-01-SN', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-BTL600-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Botol 600ml SN (Varian Short Neck)', Varian: 'SN' },
+    { ID_BOM: 'BOM-BTL600-01-LN', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-BTL600-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Botol 600ml LN (Varian Long Neck)', Varian: 'LN' },
+    { ID_BOM: 'BOM-BTL600-02-SN', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-TUTUP-SN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Tutup Botol SN (Short Neck)', Varian: 'SN' },
+    { ID_BOM: 'BOM-BTL600-02-LN', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-TUTUP-LN', Jumlah_Dibutuhkan: 24, Satuan: 'Pcs', Keterangan: 'Tutup Botol LN (Long Neck)', Varian: 'LN' },
+  ];
+
+  let bomUpdated = false;
+  neededBOM.forEach(item => {
+    if (!bomMap.has(item.ID_BOM)) {
+      bomMap.set(item.ID_BOM, item);
+      bomUpdated = true;
+    }
+  });
+
+  // Ensure shared components for BTL330 and BTL600 exist and have Varian: 'Standar'
+  const sharedItems = [
+    { ID_BOM: 'BOM-BTL330-03', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-KARTON330', Jumlah_Dibutuhkan: 1, Satuan: 'Box', Keterangan: 'Kardus Box Botol 330ml', Varian: 'Standar' as const },
+    { ID_BOM: 'BOM-BTL330-04', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-LABEL-BTL330', Jumlah_Dibutuhkan: 24, Satuan: 'Lembar', Keterangan: 'Label Shrink 330ml', Varian: 'Standar' as const },
+    { ID_BOM: 'BOM-BTL330-05', ID_Produk: 'ASH-BTL330', ID_Bahan: 'BHN-LAKBAN', Jumlah_Dibutuhkan: 0.05, Satuan: 'Roll', Keterangan: 'Lakban Bening Pabrik', Varian: 'Standar' as const },
+    { ID_BOM: 'BOM-BTL600-03', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-KARTON600', Jumlah_Dibutuhkan: 1, Satuan: 'Box', Keterangan: 'Kardus Box Botol 600ml', Varian: 'Standar' as const },
+    { ID_BOM: 'BOM-BTL600-04', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-LABEL-BTL600', Jumlah_Dibutuhkan: 24, Satuan: 'Lembar', Keterangan: 'Label Shrink 600ml', Varian: 'Standar' as const },
+    { ID_BOM: 'BOM-BTL600-05', ID_Produk: 'ASH-BTL600', ID_Bahan: 'BHN-LAKBAN', Jumlah_Dibutuhkan: 0.05, Satuan: 'Roll', Keterangan: 'Lakban Bening Pabrik', Varian: 'Standar' as const },
+  ];
+
+  sharedItems.forEach(item => {
+    if (!bomMap.has(item.ID_BOM)) {
+      bomMap.set(item.ID_BOM, item);
+      bomUpdated = true;
+    } else {
+      const existing = bomMap.get(item.ID_BOM)!;
+      if (!existing.Varian) {
+        existing.Varian = 'Standar';
+        bomUpdated = true;
+      }
+    }
+  });
+
+  if (bomUpdated) {
+    setTableData('MD_BOM', Array.from(bomMap.values()), { skipCloudSync: true });
+  }
 }
 
 /**
@@ -3264,6 +3421,7 @@ export async function completeProductionAtomic(params: {
   actualQty: number;
   picProduksi: string;
   keterangan?: string;
+  tipeTutup?: 'LN' | 'SN' | 'Standar';
 }): Promise<{ success: boolean; message: string; data?: any }> {
   const client = getSupabaseClient();
   const cfg = getSupabaseConfig();
@@ -3306,6 +3464,9 @@ export async function completeProductionAtomic(params: {
   const count = currentProds.filter(p => p.ID_Produksi.startsWith(prefix)).length;
   const prodId = params.idProduksi || `${prefix}${String(count + 1).padStart(2, '0')}`;
 
+  const targetSpk = currentSpks.find(s => s.ID_SPK === params.idSpk);
+  const effectiveVariant = params.tipeTutup || targetSpk?.Tipe_Tutup || (isBottleProduct(params.idProduk) ? 'SN' : 'Standar');
+
   const newProd: ProductionItem = {
     ID_Produksi: prodId,
     Tanggal: params.tanggal,
@@ -3313,11 +3474,12 @@ export async function completeProductionAtomic(params: {
     ID_Produk: params.idProduk,
     Jumlah: params.actualQty,
     PIC_Produksi: params.picProduksi,
+    Tipe_Tutup: effectiveVariant,
     Keterangan: params.keterangan || (params.idSpk ? `Realisasi SPK: ${params.idSpk}` : '')
   };
 
-  // Consume BOM materials
-  const relatedBoms = boms.filter(b => b.ID_Produk === params.idProduk);
+  // Consume BOM materials filtered by variant
+  const relatedBoms = filterBOMByVariant(boms, params.idProduk, effectiveVariant, rawMaterials);
   const newMutations: RawMaterialMutation[] = [];
   relatedBoms.forEach(b => {
     const needed = params.actualQty * (Number(b.Jumlah_Dibutuhkan) || 0);

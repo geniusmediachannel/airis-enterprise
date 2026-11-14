@@ -1680,7 +1680,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     const potong = dist.Metode_Kirim === 'Ambil Sendiri' ? (totalQty * 1000) : 0;
     const grandTotal = subtotal - potong;
-    const invoiceNo = formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, undefined, dist.No_Invoice);
+    const invoiceNo = formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, filteredDistributions, dist.No_Invoice);
 
     await generateInvoicePDF({
       noInvoice: invoiceNo,
@@ -2825,7 +2825,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <div>
                       <span className="text-[10px] text-slate-500 font-semibold uppercase block">No. Invoice</span>
                       <span className="font-mono font-bold text-blue-700 text-xs">
-                        {formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, undefined, dist.No_Invoice)}
+                        {formatInvoiceNumber(dist.ID_Distribusi, dist.Tanggal, filteredDistributions, dist.No_Invoice)}
                       </span>
                     </div>
                   <div>
@@ -4392,19 +4392,30 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       )}
 
       {/* Modal: View Printable A4 Document (Surat Jalan / Invoice) */}
+      {/* Document Preview Modal (Invoice & Surat Jalan) */}
       {viewDocModal && (
         <div 
           onClick={(e) => {
             if (e.target === e.currentTarget) setViewDocModal(null);
           }}
-          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/80 backdrop-blur-xs p-2 sm:p-4 flex justify-center items-start printable-modal-overlay"
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/85 backdrop-blur-xs p-2 sm:p-4 flex justify-center items-start printable-modal-overlay"
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-2 sm:my-4 printable-modal-card max-w-[230mm] max-h-[94vh] flex flex-col relative animate-in zoom-in-95">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-slate-900 text-white no-print border-b border-slate-800 shrink-0 sticky top-0 z-30">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+          {/* FLOATING CLOSE BUTTON TO ENSURE MODAL IS ALWAYS CLOSABLE IN 1 CLICK */}
+          <button
+            onClick={() => setViewDocModal(null)}
+            className="fixed top-3 right-3 sm:top-5 sm:right-6 z-[60] p-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-full shadow-2xl transition-all cursor-pointer no-print flex items-center justify-center border-2 border-white/60 hover:scale-105"
+            title="Tutup Pratinjau Dokumen (Esc)"
+            aria-label="Tutup Pratinjau"
+          >
+            <X size={20} className="stroke-[3]" />
+          </button>
+
+          <div className="bg-white rounded-2xl shadow-2xl w-full border border-slate-200 overflow-hidden my-auto printable-modal-card max-w-[230mm] h-[94vh] max-h-[94vh] flex flex-col relative animate-in zoom-in-95">
+            <div className="flex items-center justify-between gap-2 px-3 sm:px-6 py-2.5 bg-slate-900 text-white no-print border-b border-slate-800 shrink-0 sticky top-0 z-30 overflow-x-auto">
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
                   <FileCheck size={16} className="text-emerald-400" />
-                  <span>Preview Dokumen:</span>
+                  <span className="hidden sm:inline">Preview:</span>
                 </div>
                 {/* Switch between Invoice and Surat Jalan preview */}
                 <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700">
@@ -4429,14 +4440,14 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   onClick={handleOpenDocSettings}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                  className="px-2.5 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
                   title="Atur Kop Surat, Cap/Stempel, TTD & Info Penandatangan"
                 >
                   <Settings size={14} className="text-amber-400" />
-                  <span>Pengaturan</span>
+                  <span className="hidden sm:inline">Pengaturan</span>
                 </button>
                 <button
                   onClick={async () => {
@@ -4482,7 +4493,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       });
                       const potong = viewDocModal.dist.Metode_Kirim === 'Ambil Sendiri' ? (totalQty * 1000) : 0;
                       const grandTotal = Math.max(0, subtotal - potong);
-                      const invoiceNo = formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, undefined, viewDocModal.dist.No_Invoice);
+                      const invoiceNo = formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, filteredDistributions, viewDocModal.dist.No_Invoice);
 
                       await printInvoicePDF({
                         noInvoice: invoiceNo,
@@ -4500,7 +4511,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       });
                     }
                   }}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
+                  className="px-2.5 sm:px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
                   title="Cetak Dokumen (Sesuai Format PDF Resmi)"
                 >
                   <Printer size={14} />
@@ -4514,11 +4525,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       handleDownloadSuratJalanPDF(viewDocModal.dist, viewDocModal.items);
                     }
                   }}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
+                  className="px-2.5 sm:px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-bold flex items-center gap-1.5 text-white shadow-xs cursor-pointer transition-colors"
                   title="Download File PDF"
                 >
                   <FileDown size={14} />
-                  <span>Download PDF</span>
+                  <span className="hidden sm:inline">Download PDF</span>
                 </button>
                 <button 
                   onClick={() => {
@@ -4526,7 +4537,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     setViewDocModal(null);
                     setOpenDetailDist(currentDist);
                   }} 
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer ml-1"
+                  className="px-2.5 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
                   title="Kembali ke Rincian Pengiriman"
                 >
                   Kembali
@@ -4544,7 +4555,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
             {/* Document Canvas */}
             <div 
-              className="font-sans text-slate-900 bg-slate-200/70 flex-1 overflow-y-auto overflow-x-auto print:overflow-visible p-3 sm:p-6 flex justify-center printable-content"
+              className="font-sans text-slate-900 bg-slate-200/70 flex-1 overflow-y-auto overflow-x-auto print:overflow-visible p-3 sm:p-6 flex justify-center printable-content overscroll-contain"
+              style={{ touchAction: 'pan-y' }}
             >
               {viewDocModal.docType === 'inv' ? (() => {
                 const cleanDocItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
@@ -4659,7 +4671,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         <span>No. Invoice</span>
                         <span>:</span>
                         <span style={{ fontWeight: 700 }}>
-                          {formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, undefined, viewDocModal.dist.No_Invoice)}
+                          {formatInvoiceNumber(viewDocModal.dist.ID_Distribusi, viewDocModal.dist.Tanggal, filteredDistributions, viewDocModal.dist.No_Invoice)}
                         </span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '27mm 4mm 1fr' }}>

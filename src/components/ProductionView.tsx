@@ -10,7 +10,7 @@ import {
   SPKItem, ProductionItem, ProductItem, BOMItem, 
   RawMaterialItem, RawMaterialMutation, EmployeeItem 
 } from '../types';
-import { getTableData, setTableData, deleteTableRow } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, isBottleProduct, filterBOMByVariant } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { showToast } from './ToastContainer';
 import { confirmAction } from './ConfirmDialog';
@@ -119,6 +119,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     Shift: 'Shift 1 (Pagi)',
     ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220',
     Target_Produksi: '' as any,
+    Tipe_Tutup: 'SN' as 'SN' | 'LN' | 'Standar',
     Keterangan: ''
   });
 
@@ -175,20 +176,24 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     Jumlah: '' as any,
     PIC_Produksi: '',
     ID_SPK: '',
+    Tipe_Tutup: 'SN' as 'SN' | 'LN' | 'Standar',
     Keterangan: ''
   });
 
   // Open Direct Production Modal
   const handleOpenDirectProd = (preselectedSpk?: SPKItem) => {
     const defaultPic = mostFrequentPic;
+    const defaultPId = preselectedSpk?.ID_Produk || products[0]?.ID_Produk || 'ASH-CUP220';
+    const defaultVariant = preselectedSpk?.Tipe_Tutup || (isBottleProduct(defaultPId) ? 'SN' : 'Standar');
     setIsCustomDirectPic(false);
     setDirectProdForm({
       Tanggal: preselectedSpk?.Tanggal || new Date().toISOString().slice(0, 10),
       Shift: preselectedSpk?.Shift || 'Shift 1 (Pagi)',
-      ID_Produk: preselectedSpk?.ID_Produk || products[0]?.ID_Produk || 'ASH-CUP220',
+      ID_Produk: defaultPId,
       Jumlah: preselectedSpk?.Target_Produksi ?? ('' as any),
       PIC_Produksi: defaultPic,
       ID_SPK: preselectedSpk?.ID_SPK || '',
+      Tipe_Tutup: defaultVariant,
       Keterangan: preselectedSpk ? `Realisasi SPK: ${preselectedSpk.ID_SPK}` : ''
     });
     setShowDirectProdModal(true);
@@ -207,7 +212,8 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
         ID_Produk: selectedSpk.ID_Produk || prev.ID_Produk,
         Tanggal: selectedSpk.Tanggal || prev.Tanggal,
         Shift: selectedSpk.Shift || prev.Shift,
-        Jumlah: selectedSpk.Target_Produksi || prev.Jumlah
+        Jumlah: selectedSpk.Target_Produksi || prev.Jumlah,
+        Tipe_Tutup: selectedSpk.Tipe_Tutup || (isBottleProduct(selectedSpk.ID_Produk) ? 'SN' : 'Standar')
       }));
     }
   };
@@ -227,6 +233,10 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     const count = currentProds.filter(p => p.ID_Produksi.startsWith(prefix)).length;
     const newProdId = `${prefix}${String(count + 1).padStart(2, '0')}`;
 
+    const effectiveVariant = isBottleProduct(directProdForm.ID_Produk) 
+      ? (directProdForm.Tipe_Tutup || 'SN') 
+      : 'Standar';
+
     const newProd: ProductionItem = {
       ID_Produksi: newProdId,
       Tanggal: directProdForm.Tanggal,
@@ -234,13 +244,14 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
       ID_Produk: directProdForm.ID_Produk,
       Jumlah: Number(directProdForm.Jumlah),
       PIC_Produksi: directProdForm.PIC_Produksi || mostFrequentPic,
+      Tipe_Tutup: effectiveVariant,
       Keterangan: directProdForm.ID_SPK
         ? `Realisasi SPK: ${directProdForm.ID_SPK} ${directProdForm.Keterangan && !directProdForm.Keterangan.includes('Realisasi SPK') ? '- ' + directProdForm.Keterangan : ''}`
         : (directProdForm.Keterangan || 'Input Produksi Langsung')
     };
 
-    // Consume Raw Materials based on BOM
-    const relatedBoms = boms.filter(b => b.ID_Produk === directProdForm.ID_Produk);
+    // Consume Raw Materials based on BOM with variant filter (SN / LN)
+    const relatedBoms = filterBOMByVariant(boms, directProdForm.ID_Produk, effectiveVariant, rawMaterials);
     const currentMutations = getTableData<RawMaterialMutation>('Mutasi_Bahan', []);
     const newMutations: RawMaterialMutation[] = [];
 
@@ -256,7 +267,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
         Jenis_Mutasi: 'Keluar',
         Kategori: 'Pemakaian Produksi',
         Qty: needed,
-        Keterangan: `Pemotongan Otomatis Produksi: ${newProdId}`
+        Keterangan: `Pemotongan Otomatis Produksi: ${newProdId} [${effectiveVariant}]`
       });
     });
 
@@ -283,11 +294,13 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   // Open Create SPK
   const handleOpenAddSpk = () => {
     setEditingSpk(null);
+    const defaultPId = products[0]?.ID_Produk || 'ASH-CUP220';
     setSpkForm({
       Tanggal: new Date().toISOString().slice(0, 10),
       Shift: 'Shift 1 (Pagi)',
-      ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220',
+      ID_Produk: defaultPId,
       Target_Produksi: '' as any,
+      Tipe_Tutup: isBottleProduct(defaultPId) ? 'SN' : 'Standar',
       Keterangan: ''
     });
     setShowSpkModal(true);
@@ -301,6 +314,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
       Shift: spk.Shift,
       ID_Produk: spk.ID_Produk,
       Target_Produksi: spk.Target_Produksi,
+      Tipe_Tutup: spk.Tipe_Tutup || (isBottleProduct(spk.ID_Produk) ? 'SN' : 'Standar'),
       Keterangan: spk.Keterangan
     });
     setShowSpkModal(true);
@@ -331,7 +345,8 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   // Print SPK
   const handlePrintSPK = (spk: SPKItem) => {
     const prod = products.find(p => p.ID_Produk === spk.ID_Produk);
-    const relatedBoms = boms.filter(b => b.ID_Produk === spk.ID_Produk);
+    const effVariant = spk.Tipe_Tutup || (isBottleProduct(spk.ID_Produk) ? 'SN' : 'Standar');
+    const relatedBoms = filterBOMByVariant(boms, spk.ID_Produk, effVariant, rawMaterials);
     const bomItems = relatedBoms.map(b => {
       const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
       return {
@@ -341,11 +356,15 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
       };
     });
 
+    const variantLabel = isBottleProduct(spk.ID_Produk) 
+      ? ` [${effVariant === 'LN' ? 'Long Neck (LN)' : 'Short Neck (SN)'}]` 
+      : '';
+
     generateSPKPDF({
       idSpk: spk.ID_SPK,
       tanggal: spk.Tanggal,
       shift: spk.Shift,
-      namaProduk: prod?.Nama_Produk || spk.ID_Produk,
+      namaProduk: (prod?.Nama_Produk || spk.ID_Produk) + variantLabel,
       targetProduksi: spk.Target_Produksi,
       keterangan: spk.Keterangan,
       bomItems
@@ -355,6 +374,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
   // Save SPK (Add or Edit)
   const handleSaveSPK = () => {
     const currentSpks = getTableData<SPKItem>('SPK', []);
+    const effVariant = isBottleProduct(spkForm.ID_Produk) ? (spkForm.Tipe_Tutup || 'SN') : 'Standar';
     if (editingSpk) {
       const updated = currentSpks.map(s => s.ID_SPK === editingSpk.ID_SPK ? {
         ...s,
@@ -362,6 +382,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
         Shift: spkForm.Shift,
         ID_Produk: spkForm.ID_Produk,
         Target_Produksi: Number(spkForm.Target_Produksi) || 0,
+        Tipe_Tutup: effVariant,
         Keterangan: spkForm.Keterangan
       } : s);
       setTableData('SPK', updated);
@@ -380,6 +401,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
         Shift: spkForm.Shift,
         ID_Produk: spkForm.ID_Produk,
         Target_Produksi: Number(spkForm.Target_Produksi) || 0,
+        Tipe_Tutup: effVariant,
         Keterangan: spkForm.Keterangan,
         Status: 'Aktif'
       };
@@ -402,12 +424,15 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     const count = currentProds.filter(p => p.ID_Produksi.startsWith(prefix)).length;
     const newProdId = `${prefix}${String(count + 1).padStart(2, '0')}`;
 
+    const effVariant = spk.Tipe_Tutup || (isBottleProduct(spk.ID_Produk) ? 'SN' : 'Standar');
+
     const newProd: ProductionItem = {
       ID_Produksi: newProdId,
       Tanggal: spk.Tanggal,
       Shift: spk.Shift,
       ID_Produk: spk.ID_Produk,
       Jumlah: 0,
+      Tipe_Tutup: effVariant,
       PIC_Produksi: productionEmployees[0]?.Nama_Karyawan || otherActiveEmployees[0]?.Nama_Karyawan || 'Agus Setiawan',
       Keterangan: `Realisasi SPK: ${spk.ID_SPK}`
     };
@@ -430,8 +455,13 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
     );
     setTableData('Produksi', updatedProds);
 
-    // Consume Raw Materials based on BOM
-    const relatedBoms = boms.filter(b => b.ID_Produk === activeFinishItem.ID_Produk);
+    const spkMatch = activeFinishItem.Keterangan?.match(/SPK-[\w\d]+/i);
+    const spkId = spkMatch ? spkMatch[0] : null;
+    const linkedSpk = spkId ? spks.find(s => s.ID_SPK === spkId) : null;
+    const effVariant = activeFinishItem.Tipe_Tutup || linkedSpk?.Tipe_Tutup || (isBottleProduct(activeFinishItem.ID_Produk) ? 'SN' : 'Standar');
+
+    // Consume Raw Materials based on BOM with variant filter (SN / LN)
+    const relatedBoms = filterBOMByVariant(boms, activeFinishItem.ID_Produk, effVariant, rawMaterials);
     const currentMutations = getTableData<RawMaterialMutation>('Mutasi_Bahan', []);
     const newMutations: RawMaterialMutation[] = [];
 
@@ -447,7 +477,7 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
         Jenis_Mutasi: 'Keluar',
         Kategori: 'Pemakaian Produksi',
         Qty: needed,
-        Keterangan: `Pemotongan Otomatis Produksi: ${activeFinishItem.ID_Produksi}`
+        Keterangan: `Pemotongan Otomatis Produksi: ${activeFinishItem.ID_Produksi} [${effVariant}]`
       });
     });
 
@@ -776,7 +806,16 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                       <span className="font-mono font-semibold text-slate-700">{s.ID_SPK}</span>
                       <span>{formatDateDDMMYYYY(s.Tanggal)}</span>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 mt-1 line-clamp-1">{prod?.Nama_Produk || s.ID_Produk}</h4>
+                    <h4 className="text-xs font-bold text-slate-900 mt-1 line-clamp-1 flex items-center justify-between">
+                      <span className="truncate">{prod?.Nama_Produk || s.ID_Produk}</span>
+                      {isBottleProduct(s.ID_Produk) && (
+                        <span className={`shrink-0 ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                          s.Tipe_Tutup === 'LN' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                        }`}>
+                          {s.Tipe_Tutup === 'LN' ? 'LN' : 'SN'}
+                        </span>
+                      )}
+                    </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">{s.Shift}</p>
                     <div className="mt-3 p-2 bg-amber-50 rounded-lg border border-amber-200 text-center">
                       <span className="text-[10px] text-amber-800 uppercase font-semibold block">Target Produksi</span>
@@ -1093,7 +1132,16 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                       <td className="p-3 font-mono font-bold text-blue-700">{p.ID_Produksi}</td>
                       <td className="p-3 font-mono text-slate-500">{formatDateDDMMYYYY(p.Tanggal)}</td>
                       <td className="p-3 text-slate-600">{p.Shift}</td>
-                      <td className="p-3 font-semibold text-slate-900">{prod?.Nama_Produk || p.ID_Produk}</td>
+                      <td className="p-3 font-semibold text-slate-900">
+                        {prod?.Nama_Produk || p.ID_Produk}
+                        {isBottleProduct(p.ID_Produk) && (
+                          <span className={`inline-block ml-2 px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            p.Tipe_Tutup === 'LN' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                          }`}>
+                            {p.Tipe_Tutup === 'LN' ? 'LN' : 'SN'}
+                          </span>
+                        )}
+                      </td>
                       <td className="p-3 text-right font-mono font-bold text-emerald-700 tabular-nums">
                         {(Number(p.Jumlah) || 0).toLocaleString('id-ID')}
                       </td>
@@ -1672,7 +1720,14 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                 <label className="block font-semibold text-slate-700 mb-1">Produk Target</label>
                 <select
                   value={spkForm.ID_Produk}
-                  onChange={e => setSpkForm({ ...spkForm, ID_Produk: e.target.value })}
+                  onChange={e => {
+                    const newPId = e.target.value;
+                    setSpkForm({ 
+                      ...spkForm, 
+                      ID_Produk: newPId,
+                      Tipe_Tutup: isBottleProduct(newPId) ? (spkForm.Tipe_Tutup || 'SN') : 'Standar'
+                    });
+                  }}
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-medium"
                 >
                   {products.map(p => (
@@ -1680,6 +1735,45 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   ))}
                 </select>
               </div>
+
+              {isBottleProduct(spkForm.ID_Produk) && (
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-bold text-blue-900 text-xs">Tipe Leher & Tutup Botol:</label>
+                    <span className="text-[10px] text-blue-600">Resep BOM otomatis disesuaikan</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSpkForm({ ...spkForm, Tipe_Tutup: 'SN' })}
+                      className={`px-3 py-2 rounded-lg border text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all ${
+                        spkForm.Tipe_Tutup === 'SN' 
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>Short Neck (SN)</span>
+                      <span className={`text-[10px] font-normal ${spkForm.Tipe_Tutup === 'SN' ? 'text-blue-100' : 'text-slate-500'}`}>
+                        Botol SN + Tutup SN
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSpkForm({ ...spkForm, Tipe_Tutup: 'LN' })}
+                      className={`px-3 py-2 rounded-lg border text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all ${
+                        spkForm.Tipe_Tutup === 'LN' 
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-xs' 
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>Long Neck (LN)</span>
+                      <span className={`text-[10px] font-normal ${spkForm.Tipe_Tutup === 'LN' ? 'text-purple-100' : 'text-slate-500'}`}>
+                        Botol LN + Tutup LN
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Target Jumlah Produksi (Unit)</label>
@@ -1924,7 +2018,14 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                   <label className="block font-semibold text-slate-700 mb-1">Pilih Produk</label>
                   <select
                     value={directProdForm.ID_Produk}
-                    onChange={e => setDirectProdForm({ ...directProdForm, ID_Produk: e.target.value })}
+                    onChange={e => {
+                      const newPId = e.target.value;
+                      setDirectProdForm({ 
+                        ...directProdForm, 
+                        ID_Produk: newPId,
+                        Tipe_Tutup: isBottleProduct(newPId) ? (directProdForm.Tipe_Tutup || 'SN') : 'Standar'
+                      });
+                    }}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800 bg-white"
                   >
                     {products.map(p => (
@@ -1934,6 +2035,45 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
                     ))}
                   </select>
                 </div>
+
+                {isBottleProduct(directProdForm.ID_Produk) && (
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-blue-900 text-xs">Tipe Leher & Tutup Botol:</label>
+                      <span className="text-[10px] text-blue-600">Pemotongan stok bahan mengikuti varian</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDirectProdForm({ ...directProdForm, Tipe_Tutup: 'SN' })}
+                        className={`px-3 py-2 rounded-lg border text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all ${
+                          directProdForm.Tipe_Tutup === 'SN' 
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>Short Neck (SN)</span>
+                        <span className={`text-[10px] font-normal ${directProdForm.Tipe_Tutup === 'SN' ? 'text-blue-100' : 'text-slate-500'}`}>
+                          Botol SN + Tutup SN
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDirectProdForm({ ...directProdForm, Tipe_Tutup: 'LN' })}
+                        className={`px-3 py-2 rounded-lg border text-xs font-bold flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all ${
+                          directProdForm.Tipe_Tutup === 'LN' 
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-xs' 
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>Long Neck (LN)</span>
+                        <span className={`text-[10px] font-normal ${directProdForm.Tipe_Tutup === 'LN' ? 'text-purple-100' : 'text-slate-500'}`}>
+                          Botol LN + Tutup LN
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -2214,13 +2354,30 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
               <div className="grid grid-cols-2 gap-3 text-slate-700">
                 <div><span className="text-slate-400 block text-[10px]">Tanggal:</span><span className="font-semibold">{formatDateDDMMYYYY(showDetailSpkModal.Tanggal)}</span></div>
                 <div><span className="text-slate-400 block text-[10px]">Shift:</span><span className="font-semibold">{showDetailSpkModal.Shift}</span></div>
-                <div><span className="text-slate-400 block text-[10px]">Produk:</span><span className="font-semibold">{products.find(p => p.ID_Produk === showDetailSpkModal.ID_Produk)?.Nama_Produk}</span></div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Produk:</span>
+                  <span className="font-semibold">{products.find(p => p.ID_Produk === showDetailSpkModal.ID_Produk)?.Nama_Produk}</span>
+                  {isBottleProduct(showDetailSpkModal.ID_Produk) && (
+                    <span className={`inline-block ml-1.5 px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                      showDetailSpkModal.Tipe_Tutup === 'LN' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                    }`}>
+                      {showDetailSpkModal.Tipe_Tutup === 'LN' ? 'Long Neck (LN)' : 'Short Neck (SN)'}
+                    </span>
+                  )}
+                </div>
                 <div><span className="text-slate-400 block text-[10px]">Target:</span><span className="font-bold text-blue-700 font-mono text-sm">{showDetailSpkModal.Target_Produksi} Unit</span></div>
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 mb-2 border-b border-slate-200 pb-1">Estimasi Kebutuhan Bahan (BOM)</h4>
+                <h4 className="font-bold text-slate-900 mb-2 border-b border-slate-200 pb-1 flex items-center justify-between">
+                  <span>Estimasi Kebutuhan Bahan (BOM)</span>
+                  {isBottleProduct(showDetailSpkModal.ID_Produk) && (
+                    <span className="text-[11px] font-semibold text-blue-600">
+                      Varian: {showDetailSpkModal.Tipe_Tutup === 'LN' ? 'Long Neck (LN)' : 'Short Neck (SN)'}
+                    </span>
+                  )}
+                </h4>
                 <div className="space-y-1.5">
-                  {boms.filter(b => b.ID_Produk === showDetailSpkModal.ID_Produk).map(b => {
+                  {filterBOMByVariant(boms, showDetailSpkModal.ID_Produk, showDetailSpkModal.Tipe_Tutup || 'SN', rawMaterials).map(b => {
                     const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
                     const totalNeeded = showDetailSpkModal.Target_Produksi * (Number(b.Jumlah_Dibutuhkan) || 0);
                     return (
@@ -2284,7 +2441,8 @@ export const ProductionView: React.FC<ProductionViewProps> = ({
       {/* ============================================================== */}
       {viewSpkDocModal && (() => {
         const targetProd = products.find(p => p.ID_Produk === viewSpkDocModal.ID_Produk);
-        const relatedBoms = boms.filter(b => b.ID_Produk === viewSpkDocModal.ID_Produk);
+        const effVariant = viewSpkDocModal.Tipe_Tutup || (isBottleProduct(viewSpkDocModal.ID_Produk) ? 'SN' : 'Standar');
+        const relatedBoms = filterBOMByVariant(boms, viewSpkDocModal.ID_Produk, effVariant, rawMaterials);
         const bomList = relatedBoms.map(b => {
           const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
           const totalQty = viewSpkDocModal.Target_Produksi * (Number(b.Jumlah_Dibutuhkan) || 0);
