@@ -118,6 +118,18 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
   const [showGlobalLetterSettingsModal, setShowGlobalLetterSettingsModal] = useState<boolean>(false);
   const [tempGlobalLetterSettings, setTempGlobalLetterSettings] = useState<LetterDocumentSettings>(() => globalLetterSettings);
 
+  const handleOpenGlobalLetterSettings = () => {
+    setTempGlobalLetterSettings({ ...globalLetterSettings });
+    setShowGlobalLetterSettingsModal(true);
+  };
+
+  const handleSaveGlobalLetterSettings = () => {
+    setGlobalLetterSettings(tempGlobalLetterSettings);
+    setTableData('Pengaturan_Dokumen_Surat_Resmi', [tempGlobalLetterSettings]);
+    setShowGlobalLetterSettingsModal(false);
+    showToastGlobal('Pengaturan Format Surat Resmi Berhasil Disimpan', 'success');
+  };
+
   // Rich Text Editor Ref and State
   const editorRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
@@ -2024,6 +2036,208 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Pengaturan Format Surat Resmi (Kop, Logo, Cap, TTD Default) */}
+      {showGlobalLetterSettingsModal && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setShowGlobalLetterSettingsModal(false); }}
+          className="fixed inset-0 z-[65] overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-4 flex items-start justify-center"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <Settings className="text-amber-400" size={18} />
+                <h3 className="font-bold text-sm tracking-tight">Pengaturan Format Default Surat Resmi</h3>
+              </div>
+              <button 
+                onClick={() => setShowGlobalLetterSettingsModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <h4 className="font-bold text-slate-800 text-xs">Informasi Perusahaan (Kop Teks)</h4>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Nama Perusahaan</label>
+                  <input
+                    type="text"
+                    value={tempGlobalLetterSettings.namaPerusahaan}
+                    onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, namaPerusahaan: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Sub-Nama / Deskripsi</label>
+                  <input
+                    type="text"
+                    value={tempGlobalLetterSettings.subNamaPerusahaan}
+                    onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, subNamaPerusahaan: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Alamat</label>
+                  <input
+                    type="text"
+                    value={tempGlobalLetterSettings.alamatPerusahaan}
+                    onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, alamatPerusahaan: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Kontak / Telepon / Email</label>
+                  <input
+                    type="text"
+                    value={tempGlobalLetterSettings.kontakPerusahaan}
+                    onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, kontakPerusahaan: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Upload Gambar Kop */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 text-xs">Kop Surat Gambar Custom</h4>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={tempGlobalLetterSettings.useCustomKopImage || false}
+                      onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, useCustomKopImage: e.target.checked })}
+                    />
+                    <span className="text-slate-700 font-semibold">Gunakan Kop Gambar</span>
+                  </label>
+                </div>
+                {tempGlobalLetterSettings.useCustomKopImage && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const b64 = await compressUploadedImage(file, 900, 180);
+                        setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, customKopImage: b64 });
+                      }}
+                      className="text-xs"
+                    />
+                    {tempGlobalLetterSettings.customKopImage && (
+                      <img src={tempGlobalLetterSettings.customKopImage} alt="Kop" className="h-16 w-auto object-contain border border-slate-200 rounded p-1 bg-white" />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Cap Stempel Default */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 text-xs">Cap / Stempel Resmi</h4>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tempGlobalLetterSettings.showCap ?? true}
+                        onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, showCap: e.target.checked })}
+                      />
+                      <span className="text-slate-700">Tampilkan</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tempGlobalLetterSettings.useCustomCapImage || false}
+                        onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, useCustomCapImage: e.target.checked })}
+                      />
+                      <span className="text-slate-700">Pakai Gambar</span>
+                    </label>
+                  </div>
+                </div>
+                {tempGlobalLetterSettings.useCustomCapImage && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const b64 = await compressUploadedImage(file, 200, 200);
+                        setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, customCapImage: b64 });
+                      }}
+                      className="text-xs"
+                    />
+                    {tempGlobalLetterSettings.customCapImage && (
+                      <img src={tempGlobalLetterSettings.customCapImage} alt="Cap" className="h-14 w-auto object-contain border border-slate-200 rounded p-1 bg-white" />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* TTD Default */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 text-xs">Tanda Tangan Gambar</h4>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tempGlobalLetterSettings.showTtd ?? true}
+                        onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, showTtd: e.target.checked })}
+                      />
+                      <span className="text-slate-700">Tampilkan</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tempGlobalLetterSettings.useCustomTtdImage || false}
+                        onChange={e => setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, useCustomTtdImage: e.target.checked })}
+                      />
+                      <span className="text-slate-700">Pakai Gambar</span>
+                    </label>
+                  </div>
+                </div>
+                {tempGlobalLetterSettings.useCustomTtdImage && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const b64 = await compressUploadedImage(file, 300, 150);
+                        setTempGlobalLetterSettings({ ...tempGlobalLetterSettings, customTtdImage: b64 });
+                      }}
+                      className="text-xs"
+                    />
+                    {tempGlobalLetterSettings.customTtdImage && (
+                      <img src={tempGlobalLetterSettings.customTtdImage} alt="TTD" className="h-12 w-auto object-contain border border-slate-200 rounded p-1 bg-white" />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowGlobalLetterSettingsModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveGlobalLetterSettings}
+                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Save size={14} />
+                <span>Simpan Pengaturan</span>
+              </button>
             </div>
           </div>
         </div>

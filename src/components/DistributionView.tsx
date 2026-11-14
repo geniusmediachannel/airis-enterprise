@@ -1830,32 +1830,17 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // State for Image 1 "Buka" Detail Drawer/Modal
   const [openDetailDist, setOpenDetailDist] = useState<DistributionItem | null>(null);
 
-  // Auto-sinkronisasi nomor urut invoice kronologis (misal: 001-INV-XI-26 untuk baris transaksi pertama di bulan itu)
+  // Auto-sinkronisasi satu kali saat awal dimuat (anti-loop & anti-lag)
+  const hasAutoRepairedRef = React.useRef(false);
   useEffect(() => {
-    if (!distributions || distributions.length === 0) return;
-
-    let hasMismatch = false;
-    for (const d of distributions) {
-      if (!d.No_Invoice || d.No_Invoice === '-') {
-        hasMismatch = true;
-        break;
-      }
-      if (/^\d{3}-INV-[A-Z]+-\d{2}$/i.test(d.No_Invoice.trim())) {
-        const expected = formatInvoiceNumber(d.ID_Distribusi, d.Tanggal, distributions);
-        if (d.No_Invoice.trim() !== expected) {
-          hasMismatch = true;
-          break;
-        }
-      }
+    if (hasAutoRepairedRef.current) return;
+    hasAutoRepairedRef.current = true;
+    try {
+      sanitizeAndRepairDistributionDatabase();
+    } catch {
+      // ignore
     }
-
-    if (hasMismatch) {
-      const res = sanitizeAndRepairDistributionDatabase();
-      if (res.fixedRecordsCount > 0 || res.fixedInvoiceCount > 0) {
-        onRefresh();
-      }
-    }
-  }, [distributions]);
+  }, []);
 
   // Shortcut keyboard ESC untuk menutup modal preview dokumen atau detail rincian
   useEffect(() => {
