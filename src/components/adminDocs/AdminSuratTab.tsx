@@ -102,6 +102,19 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
   const [globalLetterSettings, setGlobalLetterSettings] = useState<LetterDocumentSettings>(() => {
     return getTableData<LetterDocumentSettings>('Pengaturan_Dokumen_Surat_Resmi', [defaultGlobalLetterSettings])[0] || defaultGlobalLetterSettings;
   });
+  const docSettings = globalLetterSettings;
+
+  const defaultLetterTextStyle: TextStyleSettings = {
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize: 12,
+    textAlign: 'left',
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    textDecoration: 'none',
+    color: '#000000'
+  };
+  const [letterTextStyle, setLetterTextStyle] = useState<TextStyleSettings>(defaultLetterTextStyle);
+  const [showTemplateGalleryModal, setShowTemplateGalleryModal] = useState<boolean>(false);
   const [showGlobalLetterSettingsModal, setShowGlobalLetterSettingsModal] = useState<boolean>(false);
   const [tempGlobalLetterSettings, setTempGlobalLetterSettings] = useState<LetterDocumentSettings>(() => globalLetterSettings);
 
@@ -117,6 +130,32 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
   // Per-letter document settings accordion state
   const [showLetterDocSettingsPanel, setShowLetterDocSettingsPanel] = useState(false);
 
+  // Helper untuk menyimpan dan memulihkan seleksi kursor pada rich editor
+  const saveSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      savedRangeRef.current = sel.getRangeAt(0);
+    }
+  }, []);
+
+  const restoreSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (sel && savedRangeRef.current) {
+      sel.removeAllRanges();
+      sel.addRange(savedRangeRef.current);
+    }
+  }, []);
+
+  const execEditorCmd = useCallback((command: string, value: string | undefined = undefined) => {
+    restoreSelection();
+    document.execCommand(command, false, value);
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+  }, [restoreSelection]);
+
+  const execFormat = execEditorCmd;
+
   // Keyboard shortcut: Tekan tombol ESC untuk langsung menutup modal pratinjau surat atau modal aktif
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -128,14 +167,6 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewLetterModal, showTemplateGalleryModal]);
-
-  const execEditorCmd = useCallback((command: string, value: string | undefined = undefined) => {
-    restoreSelection();
-    document.execCommand(command, false, value);
-    if (editorRef.current) {
-      editorRef.current.focus();
-    }
-  }, [restoreSelection]);
 
   const handleInsertTable = useCallback((rows: number, cols: number, width: string = '100%') => {
     const colWidth = (100 / cols).toFixed(1);
@@ -1938,6 +1969,61 @@ export const AdminSuratTab: React.FC<AdminSuratTabProps> = ({ onRefresh }) => {
                 <X size={14} />
                 <span>Tutup & Kembali</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Galeri Contoh Template Surat Resmi */}
+      {showTemplateGalleryModal && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setShowTemplateGalleryModal(false); }}
+          className="fixed inset-0 z-[65] overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-4 flex items-start justify-center"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="text-purple-400" size={18} />
+                <h3 className="font-bold text-sm tracking-tight">Galeri Contoh Template Surat Resmi Siap Pakai</h3>
+              </div>
+              <button 
+                onClick={() => setShowTemplateGalleryModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <p className="text-xs text-slate-600">
+                Pilih format atau draft naskah surat di bawah ini untuk langsung mengisi dan mengedit konten di form editor:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {OFFICIAL_LETTER_TEMPLATES.map((tpl) => (
+                  <div 
+                    key={tpl.id}
+                    className="p-4 border border-slate-200 hover:border-purple-300 hover:shadow-md rounded-xl transition-all bg-slate-50/50 hover:bg-white flex flex-col justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
+                          {tpl.tipe}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">{tpl.id}</span>
+                      </div>
+                      <h4 className="font-bold text-xs text-slate-900 mb-1">{tpl.judul}</h4>
+                      <p className="text-[11px] text-slate-600 line-clamp-2">{tpl.perihal}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTemplate(tpl)}
+                      className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    >
+                      <Sparkles size={13} />
+                      <span>Gunakan Template Ini</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
