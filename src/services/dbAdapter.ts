@@ -2768,7 +2768,7 @@ const DEFAULT_DISTRIBUSI: DistributionItem[] = [
   { ID_Distribusi: 'DST-654', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-SUPRAPTO', Nama_Pelanggan: 'AGEN SUPRAPTO', Level_Pelanggan: 'Agen', Pengirim: 'RADITYA', Penerima: '-', Tujuan: 'KARANGANOM', Metode_Kirim: 'Kirim Armada', No_Surat_Jalan: '654/X/26', No_Invoice: 'INV-654/X/26', Keterangan: '' },
   { ID_Distribusi: 'DST-655', Tanggal: '2026-10-05', ID_Pelanggan: 'PLG-KLATENUTARA', Nama_Pelanggan: 'D. MWC NU KLATEN UTARA', Level_Pelanggan: 'Distributor', Pengirim: 'RENGGA', Penerima: 'RENGGA', Tujuan: 'KLATEN UTARA', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '655/X/26', No_Invoice: 'INV-655/X/26', Keterangan: '(Total Qty Potongan: - Rp 100.000)' },
   { ID_Distribusi: 'DST-656', Tanggal: '2026-10-06', ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', Level_Pelanggan: 'Distributor', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Hendra', Tujuan: 'Klaten', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '656/X/26', No_Invoice: 'INV-656/X/26', Keterangan: 'Pesanan Reguler Toko' },
-  { ID_Distribusi: 'DST-657', Tanggal: '2026-10-08', ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', Level_Pelanggan: 'Agen', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Ahmad', Tujuan: 'Prambanan', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '657/X/26', No_Invoice: 'INV-657/X/26', Keterangan: 'Pengiriman Galon & Botol' },
+  { ID_Distribusi: 'DST-657', Tanggal: '2026-10-08', ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', Level_Pelanggan: 'Agen', Pengirim: 'Tri Wahyudi', Penerima: 'Bpk. Ahmad', Tujuan: 'Prambanan', Metode_Kirim: 'Diantar Armada', No_Surat_Jalan: '657/X/26', No_Invoice: 'INV-657/X/26', Keterangan: 'Pengiriman Galon & Botol', G19: 50, Galon_Kosong_Kembali: 0, Tipe_Transaksi_Galon: 'Pinjam Galon', Tarif_Penyusutan_Galon: 1250, Total_Penyusutan_Galon: 62500 },
   { ID_Distribusi: 'DST-658', Tanggal: '2026-10-10', ID_Pelanggan: 'PLG-0003', Nama_Pelanggan: 'Koperasi Karyawan BMT', Level_Pelanggan: 'Reseller', Pengirim: 'Agus', Penerima: 'Ibu Rina', Tujuan: 'Klaten Utara', Metode_Kirim: 'Ambil Sendiri', No_Surat_Jalan: '658/X/26', No_Invoice: 'INV-658/X/26', Keterangan: 'Pesanan Air Cup 120ml' }
 ];
 
@@ -3037,6 +3037,7 @@ export async function initializeDatabase(): Promise<void> {
   try {
     ensureBottleBOMVariantsPopulated();
     ensureGallonProductsAndCustomerLevelsPopulated();
+    migrateAllExistingGallonsToPinjamPakai();
   } catch (e) {}
 }
 
@@ -3229,6 +3230,81 @@ export function ensureGallonProductsAndCustomerLevelsPopulated(): void {
   if (rawUpdated) {
     setTableData('MD_BahanPenolong', Array.from(rawMap.values()), { skipCloudSync: true });
   }
+}
+
+/**
+ * Migrates all existing gallon distribution records to Pinjam Pakai Galon Pabrik
+ */
+export function migrateAllExistingGallonsToPinjamPakai(): { updatedDistsCount: number; updatedPlansCount: number } {
+  let updatedDistsCount = 0;
+  let updatedPlansCount = 0;
+  try {
+    const distList = getTableData<DistributionItem>('Distribusi', []);
+    const depRate = getGallonDepreciationRate();
+    let hasDistUpdate = false;
+
+    const updatedDist = distList.map(d => {
+      const glnQty = Number(d.G19 || (d as any).Galon || (d as any)['ASH-GLN19L'] || 0);
+      if (glnQty > 0) {
+        const isAlreadyPinjam = d.Tipe_Transaksi_Galon === 'Pinjam Galon';
+        const tarif = Number(d.Tarif_Penyusutan_Galon) > 0 ? Number(d.Tarif_Penyusutan_Galon) : depRate;
+        const totalSusut = glnQty * tarif;
+        const kembali = (d.Galon_Kosong_Kembali !== undefined && d.Galon_Kosong_Kembali !== null)
+          ? Number(d.Galon_Kosong_Kembali)
+          : 0;
+
+        if (!isAlreadyPinjam || d.Total_Penyusutan_Galon !== totalSusut || d.Galon_Kosong_Kembali === undefined) {
+          hasDistUpdate = true;
+          updatedDistsCount++;
+          return {
+            ...d,
+            Tipe_Transaksi_Galon: 'Pinjam Galon',
+            Galon_Kosong_Kembali: kembali,
+            Tarif_Penyusutan_Galon: tarif,
+            Total_Penyusutan_Galon: totalSusut
+          };
+        }
+      }
+      return d;
+    });
+
+    if (hasDistUpdate) {
+      setTableData('Distribusi', updatedDist);
+    }
+
+    const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+    let hasPlanUpdate = false;
+    const updatedPlans = plans.map(p => {
+      const glnQty = (p.Items || []).filter(it => {
+        const id = (it.ID_Produk || '').toUpperCase();
+        const nm = (it.Nama_Produk || '').toLowerCase();
+        return id.includes('GLN') || id.includes('G19') || nm.includes('galon');
+      }).reduce((sum, it) => sum + (Number(it.Qty) || 0), 0);
+
+      if (glnQty > 0) {
+        if (p.Tipe_Transaksi_Galon !== 'Pinjam Galon' || !p.Total_Penyusutan_Galon) {
+          hasPlanUpdate = true;
+          updatedPlansCount++;
+          return {
+            ...p,
+            Tipe_Transaksi_Galon: 'Pinjam Galon',
+            Galon_Kosong_Kembali: p.Galon_Kosong_Kembali !== undefined ? Number(p.Galon_Kosong_Kembali) : 0,
+            Tarif_Penyusutan_Galon: depRate,
+            Total_Penyusutan_Galon: glnQty * depRate
+          };
+        }
+      }
+      return p;
+    });
+
+    if (hasPlanUpdate) {
+      setTableData('Rencana_Distribusi', updatedPlans);
+    }
+  } catch (e) {
+    console.warn('migrateAllExistingGallonsToPinjamPakai error:', e);
+  }
+
+  return { updatedDistsCount, updatedPlansCount };
 }
 
 /**

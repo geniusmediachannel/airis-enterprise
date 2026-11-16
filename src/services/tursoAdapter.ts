@@ -612,10 +612,12 @@ export function cleanPulledTableRows(
         G19: Number(r.G19) || 0,
         Galon: Number(r.G19) || 0,
         Total_Tagihan: Number(r.Total_Tagihan) || 0,
-        Galon_Kosong_Kembali: r.Galon_Kosong_Kembali !== undefined ? Number(r.Galon_Kosong_Kembali) : (Number(r.G19) || 0),
-        Tipe_Transaksi_Galon: r.Tipe_Transaksi_Galon || ((Number(r.G19) || 0) > 0 ? 'Tukar Galon' : 'Non-Galon'),
-        Tarif_Penyusutan_Galon: r.Tarif_Penyusutan_Galon !== undefined ? Number(r.Tarif_Penyusutan_Galon) : undefined,
-        Total_Penyusutan_Galon: r.Total_Penyusutan_Galon !== undefined ? Number(r.Total_Penyusutan_Galon) : undefined
+        Galon_Kosong_Kembali: r.Galon_Kosong_Kembali !== undefined && r.Galon_Kosong_Kembali !== null 
+          ? Number(r.Galon_Kosong_Kembali) 
+          : ((r.Tipe_Transaksi_Galon === 'Tukar Galon') ? (Number(r.G19) || 0) : 0),
+        Tipe_Transaksi_Galon: r.Tipe_Transaksi_Galon || ((Number(r.G19) || 0) > 0 ? 'Pinjam Galon' : 'Non-Galon'),
+        Tarif_Penyusutan_Galon: (Number(r.G19) || 0) > 0 ? (Number(r.Tarif_Penyusutan_Galon) || 1250) : undefined,
+        Total_Penyusutan_Galon: (Number(r.G19) || 0) > 0 ? (Number(r.Total_Penyusutan_Galon) || ((Number(r.G19) || 0) * (Number(r.Tarif_Penyusutan_Galon) || 1250))) : undefined
       };
     });
   } else if (table === 'Distribusi_Item') {

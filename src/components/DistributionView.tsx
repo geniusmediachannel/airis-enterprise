@@ -332,12 +332,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     return getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
   }, []);
 
+  // Navigasi Sub-Tab Menu Distribusi: 'pengiriman' (Pengiriman & Logistik) vs 'rekap_galon' (Rekapitulasi Saldo Galon Mitra)
+  const [activeSubTab, setActiveSubTab] = useState<'pengiriman' | 'rekap_galon'>('pengiriman');
+
   // Rekapitulasi Saldo Galon Sekolah Mitra (Monitoring Fisik & Beban Penyusutan)
   const [showMitraSection, setShowMitraSection] = useState<boolean>(true);
   const [mitraSearchQuery, setMitraSearchQuery] = useState<string>('');
   const [selectedMitraHistory, setSelectedMitraHistory] = useState<{
     idPelanggan: string;
     namaPelanggan: string;
+    levelPelanggan?: string;
     alamat: string;
     kontak: string;
     totalGalonKirim: number;
@@ -391,10 +395,11 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     });
 
-    // 2. Dari Data Transaksi Distribusi
+    // 2. Dari Data Transaksi Distribusi (Termasuk seluruh transaksi galon Pinjam Pakai Pabrik)
     (distributions || []).forEach(d => {
       if (!d) return;
-      const isMitra = d.Level_Pelanggan === 'Sekolah Mitra' || d.Tipe_Transaksi_Galon === 'Pinjam Galon';
+      const glnQty = Number(d.G19 || (d as any).Galon || (d as any)['ASH-GLN19L'] || 0);
+      const isMitra = d.Level_Pelanggan === 'Sekolah Mitra' || d.Tipe_Transaksi_Galon === 'Pinjam Galon' || glnQty > 0;
       const key = (d.Nama_Pelanggan || d.ID_Pelanggan || '').trim().toLowerCase();
       if (!key) return;
 
@@ -420,6 +425,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const list: {
       idPelanggan: string;
       namaPelanggan: string;
+      levelPelanggan?: string;
       alamat: string;
       kontak: string;
       totalGalonKirim: number;
@@ -468,7 +474,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           tanggal: d.Tanggal,
           noSuratJalan: d.No_Surat_Jalan || '-',
           sopir: d.Pengirim || '-',
-          tipeTransaksi: d.Tipe_Transaksi_Galon || (kirim > 0 ? 'Tukar Galon' : 'Non-Galon'),
+          tipeTransaksi: d.Tipe_Transaksi_Galon || (kirim > 0 ? 'Pinjam Galon' : 'Non-Galon'),
           galonKirim: kirim,
           galonKembali: kembali,
           selisih: kirim - kembali,
@@ -476,27 +482,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         };
       });
 
-      gKirim += custKirim;
-      gKembali += custKembali;
-      gPenyusutan += custPenyusutan;
+      // Tampilkan mitra yang memiliki riwayat kirim galon atau yang bertipe Sekolah Mitra
+      if (custKirim > 0 || (val.customer && val.customer.Level_Pelanggan === 'Sekolah Mitra')) {
+        gKirim += custKirim;
+        gKembali += custKembali;
+        gPenyusutan += custPenyusutan;
 
-      const lastDist = sortedDists[sortedDists.length - 1];
+        const lastDist = sortedDists[sortedDists.length - 1];
 
-      list.push({
-        idPelanggan: val.id,
-        namaPelanggan: val.name,
-        alamat: val.customer?.Alamat || lastDist?.Tujuan || '-',
-        kontak: val.customer?.Kontak || '-',
-        totalGalonKirim: custKirim,
-        totalGalonKembali: custKembali,
-        saldoTertahan: custKirim - custKembali,
-        totalPenyusutan: custPenyusutan,
-        totalPengiriman: sortedDists.length,
-        lastDate: lastDist?.Tanggal || '-',
-        lastSj: lastDist?.No_Surat_Jalan || '-',
-        lastDriver: lastDist?.Pengirim || '-',
-        history: historyItems.reverse()
-      });
+        list.push({
+          idPelanggan: val.id,
+          namaPelanggan: val.name,
+          levelPelanggan: val.customer?.Level_Pelanggan || lastDist?.Level_Pelanggan || 'Sekolah Mitra',
+          alamat: val.customer?.Alamat || lastDist?.Tujuan || '-',
+          kontak: val.customer?.Kontak || (val.customer as any)?.No_Telp || '-',
+          totalGalonKirim: custKirim,
+          totalGalonKembali: custKembali,
+          saldoTertahan: custKirim - custKembali,
+          totalPenyusutan: custPenyusutan,
+          totalPengiriman: sortedDists.length,
+          lastDate: lastDist?.Tanggal || '-',
+          lastSj: lastDist?.No_Surat_Jalan || '-',
+          lastDriver: lastDist?.Pengirim || '-',
+          history: historyItems.reverse()
+        });
+      }
     });
 
     list.sort((a, b) => (b.saldoTertahan - a.saldoTertahan) || a.namaPelanggan.localeCompare(b.namaPelanggan));
@@ -2556,11 +2566,60 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             Distribusi &amp; Logistik Armada
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Rencana pesanan kirim, penerbitan Surat Jalan, invoice resmi, dan laporan per konsumen/tahunan.
+            Rencana pesanan kirim, penerbitan Surat Jalan, invoice resmi, dan rekapitulasi saldo galon mitra.
           </p>
         </div>
       </div>
 
+      {/* Navigation Sub-Tabs Menu Distribusi */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('pengiriman')}
+          className={`px-4 py-2 text-xs font-semibold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+            activeSubTab === 'pengiriman'
+              ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-600/20'
+              : 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+          }`}
+        >
+          <Truck size={15} />
+          <span>Pengiriman &amp; Logistik</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeSubTab === 'pengiriman' ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {filteredDistributions.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('rekap_galon')}
+          className={`px-4 py-2 text-xs font-semibold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+            activeSubTab === 'rekap_galon'
+              ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-600/20'
+              : 'bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 border border-slate-200'
+          }`}
+        >
+          <GraduationCap size={15} />
+          <span>Rekapitulasi Saldo Galon Mitra</span>
+          {totalMitraTertahan > 0 ? (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeSubTab === 'rekap_galon' ? 'bg-amber-400 text-amber-950' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {totalMitraTertahan.toLocaleString('id-ID')} Galon Tertahan
+            </span>
+          ) : (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeSubTab === 'rekap_galon' ? 'bg-indigo-800 text-white' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {sekolahMitraList.length} Mitra
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeSubTab === 'pengiriman' && (
+        <div className="space-y-6">
       {/* ============================================================== */}
       {/* SECTION 1: RENCANA DISTRIBUSI / LIST PESANAN (BAGIAN ATAS)    */}
       {/* Persis seperti pada menu Produksi (Rencana Produksi SPK)      */}
@@ -2667,245 +2726,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
               );
             })}
-          </div>
-        )}
-      </div>
-
-      {/* ============================================================== */}
-      {/* SECTION 1.5: REKAPITULASI SALDO GALON SEKOLAH MITRA            */}
-      {/* Monitoring Saldo Fisik Galon Pabrik di Sekolah & Beban Susut   */}
-      {/* ============================================================== */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        {/* Header Section dengan Toggle */}
-        <div className="p-4 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
-              <GraduationCap size={18} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900">Rekapitulasi Saldo Galon di Sekolah Mitra</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                  {sekolahMitraList.length} Sekolah Terdaftar
-                </span>
-                {totalMitraTertahan > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                    {totalMitraTertahan.toLocaleString('id-ID')} Galon Tertahan
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Monitoring saldo fisik galon pabrik yang tertahan di sekolah mitra &amp; akumulasi beban penyusutan (HPP Refill).
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Search Box Mitra */}
-            {sekolahMitraList.length > 0 && (
-              <div className="relative">
-                <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Cari sekolah..."
-                  value={mitraSearchQuery}
-                  onChange={e => setMitraSearchQuery(e.target.value)}
-                  className="pl-7 pr-3 py-1 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-1 focus:ring-indigo-500 w-36 sm:w-48 font-medium"
-                />
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setShowMitraSection(!showMitraSection)}
-              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
-            >
-              {showMitraSection ? (
-                <>
-                  <ChevronUp size={14} className="text-slate-500" />
-                  <span>Sembunyikan</span>
-                </>
-              ) : (
-                <>
-                  <ChevronDown size={14} className="text-slate-500" />
-                  <span>Buka Rekapitulasi</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Content Body */}
-        {showMitraSection && (
-          <div className="p-4 space-y-4">
-            {/* 4 Summary Stat Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="p-3.5 bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-200 rounded-xl">
-                <div className="flex items-center justify-between text-indigo-900 text-xs font-bold mb-1">
-                  <span>Galon Tertahan di Mitra</span>
-                  <Package size={14} className="text-indigo-600" />
-                </div>
-                <div className="text-xl font-mono font-bold text-indigo-950">
-                  {totalMitraTertahan.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-indigo-700">Pcs</span>
-                </div>
-                <span className="text-[10px] text-indigo-600 font-medium block mt-0.5">
-                  Aset galon pabrik di sekolah
-                </span>
-              </div>
-
-              <div className="p-3.5 bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200 rounded-xl">
-                <div className="flex items-center justify-between text-blue-900 text-xs font-bold mb-1">
-                  <span>Total Galon Dikirim</span>
-                  <Truck size={14} className="text-blue-600" />
-                </div>
-                <div className="text-xl font-mono font-bold text-blue-950">
-                  {totalMitraKirim.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-blue-700">Pcs</span>
-                </div>
-                <span className="text-[10px] text-blue-600 font-medium block mt-0.5">
-                  Akumulasi pengiriman isi
-                </span>
-              </div>
-
-              <div className="p-3.5 bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200 rounded-xl">
-                <div className="flex items-center justify-between text-emerald-900 text-xs font-bold mb-1">
-                  <span>Total Galon Kembali</span>
-                  <RotateCcw size={14} className="text-emerald-600" />
-                </div>
-                <div className="text-xl font-mono font-bold text-emerald-950">
-                  {totalMitraKembali.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-emerald-700">Pcs</span>
-                </div>
-                <span className="text-[10px] text-emerald-600 font-medium block mt-0.5">
-                  Tingkat kembali: {totalMitraKirim > 0 ? ((totalMitraKembali / totalMitraKirim) * 100).toFixed(1) : 0}%
-                </span>
-              </div>
-
-              <div className="p-3.5 bg-gradient-to-br from-purple-50 to-purple-100/50 border border-purple-200 rounded-xl">
-                <div className="flex items-center justify-between text-purple-900 text-xs font-bold mb-1">
-                  <span>Beban Penyusutan (HPP)</span>
-                  <BarChart2 size={14} className="text-purple-600" />
-                </div>
-                <div className="text-lg font-mono font-bold text-purple-950 truncate">
-                  Rp {totalMitraPenyusutan.toLocaleString('id-ID')}
-                </div>
-                <span className="text-[10px] text-purple-600 font-medium block mt-0.5">
-                  Terjurnal otomatis (Akun 514-70)
-                </span>
-              </div>
-            </div>
-
-            {/* Tabel Rincian Per Sekolah Mitra */}
-            {filteredMitraList.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-1.5">
-                <GraduationCap size={28} className="mx-auto text-slate-400" />
-                <p className="text-xs font-bold text-slate-700">
-                  {mitraSearchQuery ? 'Tidak ada sekolah mitra yang cocok dengan pencarian.' : 'Belum Ada Transaksi Sekolah Mitra'}
-                </p>
-                <p className="text-[11px] text-slate-500 max-w-md mx-auto">
-                  {mitraSearchQuery ? 'Coba gunakan kata kunci lain.' : 'Data rekapitulasi akan otomatis muncul saat Anda mencatat pengiriman ke pelanggan bertipe "Sekolah Mitra" atau tipe transaksi "Pinjam Galon".'}
-                </p>
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-100/90 text-slate-700 font-semibold border-b border-slate-200">
-                      <tr>
-                        <th className="p-3 text-center w-12">No</th>
-                        <th className="p-3">Sekolah Mitra</th>
-                        <th className="p-3">Alamat &amp; Kontak</th>
-                        <th className="p-3 text-center">Kirim (Isi)</th>
-                        <th className="p-3 text-center">Kembali (Kosong)</th>
-                        <th className="p-3 text-center">Saldo Tertahan</th>
-                        <th className="p-3 text-right">Beban Susut</th>
-                        <th className="p-3">Kirim Terakhir</th>
-                        <th className="p-3 text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                      {filteredMitraList.map((m, idx) => {
-                        return (
-                          <tr key={`mitra-row-${m.idPelanggan || idx}`} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
-                            <td className="p-3 font-sans">
-                              <span className="font-bold text-slate-900 block text-xs">{m.namaPelanggan}</span>
-                              <span className="font-mono text-[10px] text-indigo-700 font-semibold">{m.idPelanggan}</span>
-                            </td>
-                            <td className="p-3 font-sans text-slate-600 max-w-xs">
-                              <span className="block truncate text-[11px]">{m.alamat}</span>
-                              <span className="text-[10px] text-slate-400">Kontak: {m.kontak}</span>
-                            </td>
-                            <td className="p-3 text-center font-bold text-blue-700">
-                              {m.totalGalonKirim.toLocaleString('id-ID')} Pcs
-                            </td>
-                            <td className="p-3 text-center font-bold text-emerald-700">
-                              {m.totalGalonKembali.toLocaleString('id-ID')} Pcs
-                            </td>
-                            <td className="p-3 text-center font-sans">
-                              {m.saldoTertahan > 0 ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                  <span>⚠</span>
-                                  <span>{m.saldoTertahan.toLocaleString('id-ID')} Galon Tertahan</span>
-                                </span>
-                              ) : m.saldoTertahan === 0 ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                  <span>✓</span>
-                                  <span>0 (Seimbang)</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                                  <span>+{Math.abs(m.saldoTertahan)} Lebih Tarik</span>
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-3 text-right font-bold text-purple-900 tabular-nums">
-                              Rp {m.totalPenyusutan.toLocaleString('id-ID')}
-                            </td>
-                            <td className="p-3 font-sans text-slate-600">
-                              {m.lastDate !== '-' ? (
-                                <div>
-                                  <span className="font-semibold text-slate-800 block text-[11px]">{formatDisplayDate(m.lastDate)}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">SJ: {m.lastSj} • Sopir: {m.lastDriver}</span>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 italic">Belum ada kiriman</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-center font-sans">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedMitraHistory(m)}
-                                  className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  title="Lihat riwayat mutasi galon sekolah ini"
-                                >
-                                  <History size={12} />
-                                  <span>Mutasi</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSearchQueryDist(m.namaPelanggan);
-                                    const distTable = document.getElementById('section-tabel-distribusi');
-                                    if (distTable) {
-                                      distTable.scrollIntoView({ behavior: 'smooth' });
-                                    }
-                                  }}
-                                  className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  title="Saring tabel data distribusi di bawah khusus sekolah ini"
-                                >
-                                  <Search size={12} />
-                                  <span>Filter</span>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -3323,6 +3143,259 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </div>
         )}
       </div>
+      </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* SUB-TAB 2: REKAPITULASI SALDO GALON MITRA (DEDICATED VIEW)    */}
+      {/* ============================================================== */}
+      {activeSubTab === 'rekap_galon' && (
+        <div className="space-y-6">
+          {/* Header Card Rekapitulasi */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                <GraduationCap size={26} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Rekapitulasi Saldo Galon Mitra &amp; Pinjam Pakai
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700">
+                    {sekolahMitraList.length} Mitra Terdata
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Monitoring aset fisik galon pabrik (Pinjam Pakai) yang beredar di mitra/sekolah, saldo tertahan, dan akumulasi beban penyusutan HPP (Rp 1.250 / galon).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-[240px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama sekolah / mitra..."
+                  value={mitraSearchQuery}
+                  onChange={(e) => setMitraSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-hidden bg-slate-50 focus:bg-white transition"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDistForAdd(null);
+                  setShowAddDistModal(true);
+                }}
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus size={14} />
+                <span>Kirim Galon Baru</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 4 KPI Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Galon Tertahan */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between text-slate-600 mb-1">
+                <span className="text-xs font-medium">Galon Tertahan di Mitra</span>
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <Package size={16} />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-indigo-700 tabular-nums">
+                {totalMitraTertahan.toLocaleString('id-ID')} <span className="text-sm font-normal text-slate-500">Pcs</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Aset fisik galon pabrik yang saat ini berada di mitra
+              </p>
+            </div>
+
+            {/* 2. Total Galon Dikirim */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between text-slate-600 mb-1">
+                <span className="text-xs font-medium">Total Galon Dipinjamkan</span>
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Truck size={16} />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-blue-700 tabular-nums">
+                {totalMitraKirim.toLocaleString('id-ID')} <span className="text-sm font-normal text-slate-500">Pcs</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Akumulasi seluruh pengiriman galon pinjam pakai
+              </p>
+            </div>
+
+            {/* 3. Total Galon Kembali */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between text-slate-600 mb-1">
+                <span className="text-xs font-medium">Total Galon Kembali</span>
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <RotateCcw size={16} />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-emerald-700 tabular-nums">
+                {totalMitraKembali.toLocaleString('id-ID')} <span className="text-sm font-normal text-slate-500">Pcs</span>
+              </div>
+              <p className="text-[11px] text-emerald-600 font-semibold mt-1">
+                Tingkat kembali: {totalMitraKirim > 0 ? ((totalMitraKembali / totalMitraKirim) * 100).toFixed(1) : '0'}%
+              </p>
+            </div>
+
+            {/* 4. Beban Penyusutan */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex items-center justify-between text-slate-600 mb-1">
+                <span className="text-xs font-medium">Akumulasi Penyusutan (HPP)</span>
+                <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
+                  <BarChart2 size={16} />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-purple-700 tabular-nums">
+                Rp {totalMitraPenyusutan.toLocaleString('id-ID')}
+              </div>
+              <p className="text-[11px] text-purple-700 font-medium mt-1">
+                Otomatis terjurnal di Keuangan (Akun 514-70)
+              </p>
+            </div>
+          </div>
+
+          {/* Tabel Detail Saldo Galon Mitra */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <span>Daftar Saldo &amp; Sirkulasi Galon per Mitra</span>
+                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-xs">
+                    {filteredMitraList.length} Mitra
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Klik tombol <strong>Mutasi</strong> untuk meninjau rekaman riwayat surat jalan, pengembalian, dan penyusutan tiap pengiriman.
+                </p>
+              </div>
+
+              {mitraSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMitraSearchQuery('')}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+                >
+                  Reset Pencarian
+                </button>
+              )}
+            </div>
+
+            {filteredMitraList.length === 0 ? (
+              <div className="py-16 text-center text-slate-500">
+                <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500">
+                  <GraduationCap size={32} />
+                </div>
+                <h4 className="font-bold text-slate-800 text-base mb-1">
+                  {mitraSearchQuery ? 'Tidak Ada Mitra yang Cocok' : 'Belum Ada Transaksi Galon Pinjam Pakai'}
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+                  {mitraSearchQuery 
+                    ? `Tidak ditemukan mitra dengan kata kunci "${mitraSearchQuery}".`
+                    : 'Data rekapitulasi akan terisi otomatis saat Anda mencatat pengiriman distribusi dengan tipe transaksi "Pinjam Galon" atau ke pelanggan bertipe "Sekolah Mitra".'
+                  }
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDistForAdd(null);
+                    setShowAddDistModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Catat Pengiriman Galon Sekarang</span>
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
+                    <tr>
+                      <th className="p-3 w-12 text-center">No</th>
+                      <th className="p-3">Nama Mitra &amp; Kontak</th>
+                      <th className="p-3">Alamat</th>
+                      <th className="p-3 text-right">Galon Terkirim</th>
+                      <th className="p-3 text-right">Galon Kembali</th>
+                      <th className="p-3 text-right">Saldo Tertahan</th>
+                      <th className="p-3 text-right">Akumulasi HPP</th>
+                      <th className="p-3 text-center">Pengiriman Terakhir</th>
+                      <th className="p-3 text-center w-28">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredMitraList.map((m, idx) => (
+                      <tr key={m.idPelanggan} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3 text-center text-slate-400 font-mono">
+                          {idx + 1}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                            <span>{m.namaPelanggan}</span>
+                            {m.levelPelanggan && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {m.levelPelanggan}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {m.kontak || '-'}
+                          </div>
+                        </td>
+                        <td className="p-3 max-w-[220px] truncate text-slate-600" title={m.alamat}>
+                          {m.alamat || '-'}
+                        </td>
+                        <td className="p-3 text-right font-semibold text-slate-900 tabular-nums">
+                          {m.totalGalonKirim.toLocaleString('id-ID')} Pcs
+                        </td>
+                        <td className="p-3 text-right font-semibold text-emerald-700 tabular-nums">
+                          {m.totalGalonKembali.toLocaleString('id-ID')} Pcs
+                        </td>
+                        <td className="p-3 text-right tabular-nums">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-xs ${
+                            m.saldoTertahan > 0 
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}>
+                            {m.saldoTertahan.toLocaleString('id-ID')} Pcs
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-bold text-purple-800 tabular-nums">
+                          Rp {m.totalPenyusutan.toLocaleString('id-ID')}
+                        </td>
+                        <td className="p-3 text-center text-slate-600">
+                          <div className="font-medium">{formatDateDDMMYYYY(m.lastDate)}</div>
+                          <div className="text-[10px] font-mono text-slate-400">{m.lastSj}</div>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMitraHistory(m)}
+                            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 mx-auto shadow-2xs"
+                          >
+                            <History size={13} />
+                            <span>Mutasi</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      </div>
 
       {/* ============================================================== */}
       {/* MODAL RINCIAN PENGIRIMAN (BUKA AKSI)                           */}
@@ -3649,7 +3722,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </div>
         );
       })()}
-      </div>
 
       {/* ============================================================== */}
       {/* MODAL LAPORAN DISTRIBUSI (PER KONSUMEN & TAHUNAN)               */}
@@ -4433,12 +4505,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setSearchQueryDist(selectedMitraHistory.namaPelanggan);
+                  const targetName = selectedMitraHistory.namaPelanggan;
                   setSelectedMitraHistory(null);
-                  const distTable = document.getElementById('section-tabel-distribusi');
-                  if (distTable) {
-                    distTable.scrollIntoView({ behavior: 'smooth' });
-                  }
+                  setActiveSubTab('pengiriman');
+                  setSearchQueryDist(targetName);
+                  setTimeout(() => {
+                    const distTable = document.getElementById('section-tabel-distribusi');
+                    if (distTable) {
+                      distTable.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }, 120);
                 }}
                 className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
               >
@@ -4876,12 +4952,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               {/* Pencatatan Tukar Kemasan Galon 19L (Fisik) */}
               {(() => {
                 const galonItemInForm = formItems.filter(it => {
+                  const p = products.find(prod => prod.ID_Produk === it.ID_Produk);
                   const pId = String(it.ID_Produk || '').toUpperCase();
-                  const pName = String(it.Nama_Produk || '').toUpperCase();
-                  return pId === 'G19' || pId === 'ASH-GLN19L' || pId === 'ASH-GLN-BARU' || pName.includes('GALON');
+                  const pName = String(p?.Nama_Produk || (it as any).Nama_Produk || '').toUpperCase();
+                  return pId === 'G19' || pId === 'ASH-GLN19L' || pId === 'ASH-GLN-BARU' || pName.includes('GALON') || pId.includes('GLN');
                 });
                 const totalGalonKirim = galonItemInForm.reduce((sum, it) => sum + (Number(it.Qty) || 0), 0);
-                const isHasGalon = totalGalonKirim > 0 || (formData.Tipe_Transaksi_Galon && formData.Tipe_Transaksi_Galon !== 'Non-Galon');
+                const isHasGalon = totalGalonKirim > 0;
 
                 if (!isHasGalon) return null;
 
