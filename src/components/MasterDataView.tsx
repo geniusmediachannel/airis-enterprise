@@ -179,7 +179,8 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         ID_Bahan: defaultMat, 
         Jumlah_Dibutuhkan: '', 
         Satuan: defaultSatuan, 
-        Keterangan: '' 
+        Keterangan: '',
+        Varian: 'Standar'
       };
     } else if (activeTab === 'karyawan') {
       const nextId = getNextSequenceId(employees, 'ID_Karyawan', 'KAR', 4);
@@ -229,6 +230,11 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         ...item,
         Tanggal_Mulai: item.Tanggal_Mulai || '',
         Tanggal_Selesai: item.Tanggal_Selesai || ''
+      });
+    } else if (activeTab === 'bom') {
+      setFormData({
+        ...item,
+        Varian: item.Varian || 'Standar'
       });
     } else {
       setFormData({ ...item });
@@ -1231,7 +1237,15 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       <td className="p-3 font-semibold text-slate-900">{c.Nama_Pelanggan}</td>
                       <td className="p-3 font-mono text-slate-600">{c.No_Telp || '-'}</td>
                       <td className="p-3 text-slate-600">{c.Alamat || '-'}</td>
-                      <td className="p-3 font-medium text-blue-800">{c.Level_Pelanggan}</td>
+                      <td className="p-3">
+                        {c.Level_Pelanggan === 'Sekolah Mitra' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                            🏫 Sekolah Mitra
+                          </span>
+                        ) : (
+                          <span className="font-medium text-blue-800">{c.Level_Pelanggan}</span>
+                        )}
+                      </td>
                       <td className="p-3 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           c.Status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
@@ -1977,6 +1991,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         <option value="Air Mineral Cup">Air Mineral Cup</option>
                         <option value="Air Mineral Botol">Air Mineral Botol</option>
                         <option value="Air Mineral Galon">Air Mineral Galon</option>
+                        <option value="Kemasan & Galon">Kemasan & Galon Kosong</option>
                       </select>
                     </div>
                     {/* Satuan Dropdown */}
@@ -1989,6 +2004,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       >
                         <option value="Dus">Dus</option>
                         <option value="Galon">Galon</option>
+                        <option value="Pcs">Pcs</option>
                       </select>
                     </div>
                   </div>
@@ -2095,6 +2111,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         <option value="Agen">Agen</option>
                         <option value="Reseller">Reseller</option>
                         <option value="Konsumen Biasa">Konsumen Biasa</option>
+                        <option value="Sekolah Mitra">Sekolah Mitra (Galon Investasi Pabrik)</option>
                       </select>
                     </div>
                   </div>

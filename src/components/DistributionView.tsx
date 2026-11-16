@@ -6,7 +6,7 @@ import {
   Clock, ArrowRight, BarChart2, PackageCheck, Send, FolderOpen,
   Settings, Image, RotateCcw, TrendingUp, Sparkles, Search,
   ArrowUpDown, ArrowUp, ArrowDown, FileSpreadsheet,
-  QrCode, PenTool
+  QrCode, PenTool, GraduationCap, School, ChevronDown, ChevronUp, History, Package
 } from 'lucide-react';
 import { QRCodeDisplay } from './QRCodeDisplay';
 import { QRScannerModal } from './QRScannerModal';
@@ -16,7 +16,7 @@ import {
   CustomerItem, SpecialPriceItem, DraftJournalItem, ReceivablePayableItem,
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
-import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant, getGallonDepreciationRate } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, printInvoicePDF, generateSuratJalanPDF, printSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen, formatPdfDisplayDate 
@@ -331,6 +331,194 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const deliveryPlans = useMemo(() => {
     return getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
   }, []);
+
+  // Rekapitulasi Saldo Galon Sekolah Mitra (Monitoring Fisik & Beban Penyusutan)
+  const [showMitraSection, setShowMitraSection] = useState<boolean>(true);
+  const [mitraSearchQuery, setMitraSearchQuery] = useState<string>('');
+  const [selectedMitraHistory, setSelectedMitraHistory] = useState<{
+    idPelanggan: string;
+    namaPelanggan: string;
+    alamat: string;
+    kontak: string;
+    totalGalonKirim: number;
+    totalGalonKembali: number;
+    saldoTertahan: number;
+    totalPenyusutan: number;
+    totalPengiriman: number;
+    lastDate: string;
+    lastSj: string;
+    lastDriver: string;
+    history: {
+      idDistribusi: string;
+      tanggal: string;
+      noSuratJalan: string;
+      sopir: string;
+      tipeTransaksi: string;
+      galonKirim: number;
+      galonKembali: number;
+      selisih: number;
+      penyusutan: number;
+    }[];
+  } | null>(null);
+
+  const { 
+    sekolahMitraList, 
+    filteredMitraList, 
+    totalMitraKirim, 
+    totalMitraKembali, 
+    totalMitraTertahan, 
+    totalMitraPenyusutan 
+  } = useMemo(() => {
+    const mitraMap = new Map<string, {
+      customer?: CustomerItem;
+      name: string;
+      id: string;
+      distributions: DistributionItem[];
+    }>();
+
+    // 1. Dari Master Pelanggan yang berlevel 'Sekolah Mitra'
+    (customers || []).forEach(c => {
+      if (c && c.Level_Pelanggan === 'Sekolah Mitra') {
+        const key = (c.Nama_Pelanggan || c.ID_Pelanggan || '').trim().toLowerCase();
+        if (key) {
+          mitraMap.set(key, {
+            customer: c,
+            name: c.Nama_Pelanggan,
+            id: c.ID_Pelanggan,
+            distributions: []
+          });
+        }
+      }
+    });
+
+    // 2. Dari Data Transaksi Distribusi
+    (distributions || []).forEach(d => {
+      if (!d) return;
+      const isMitra = d.Level_Pelanggan === 'Sekolah Mitra' || d.Tipe_Transaksi_Galon === 'Pinjam Galon';
+      const key = (d.Nama_Pelanggan || d.ID_Pelanggan || '').trim().toLowerCase();
+      if (!key) return;
+
+      if (isMitra) {
+        if (!mitraMap.has(key)) {
+          mitraMap.set(key, {
+            customer: customers.find(c => (c.Nama_Pelanggan || '').trim().toLowerCase() === key || c.ID_Pelanggan === d.ID_Pelanggan),
+            name: d.Nama_Pelanggan,
+            id: d.ID_Pelanggan || `PLG-${key.slice(0, 6).toUpperCase()}`,
+            distributions: []
+          });
+        }
+        mitraMap.get(key)!.distributions.push(d);
+      } else if (mitraMap.has(key)) {
+        mitraMap.get(key)!.distributions.push(d);
+      }
+    });
+
+    let gKirim = 0;
+    let gKembali = 0;
+    let gPenyusutan = 0;
+
+    const list: {
+      idPelanggan: string;
+      namaPelanggan: string;
+      alamat: string;
+      kontak: string;
+      totalGalonKirim: number;
+      totalGalonKembali: number;
+      saldoTertahan: number;
+      totalPenyusutan: number;
+      totalPengiriman: number;
+      lastDate: string;
+      lastSj: string;
+      lastDriver: string;
+      history: {
+        idDistribusi: string;
+        tanggal: string;
+        noSuratJalan: string;
+        sopir: string;
+        tipeTransaksi: string;
+        galonKirim: number;
+        galonKembali: number;
+        selisih: number;
+        penyusutan: number;
+      }[];
+    }[] = [];
+
+    mitraMap.forEach((val) => {
+      const sortedDists = [...val.distributions].sort((a, b) => (a.Tanggal || '').localeCompare(b.Tanggal || ''));
+      
+      let custKirim = 0;
+      let custKembali = 0;
+      let custPenyusutan = 0;
+
+      const historyItems = sortedDists.map(d => {
+        const kirim = Number(d.G19 || d.Galon || (d as any)['ASH-GLN19L'] || 0);
+        const kembali = d.Galon_Kosong_Kembali !== undefined && d.Galon_Kosong_Kembali !== null
+          ? Number(d.Galon_Kosong_Kembali)
+          : (d.Tipe_Transaksi_Galon === 'Tukar Galon' ? kirim : 0);
+        
+        const depRate = Number(d.Tarif_Penyusutan_Galon) > 0 ? Number(d.Tarif_Penyusutan_Galon) : getGallonDepreciationRate();
+        const depTotal = Number(d.Total_Penyusutan_Galon) > 0 ? Number(d.Total_Penyusutan_Galon) : (kirim * depRate);
+
+        custKirim += kirim;
+        custKembali += kembali;
+        custPenyusutan += depTotal;
+
+        return {
+          idDistribusi: d.ID_Distribusi,
+          tanggal: d.Tanggal,
+          noSuratJalan: d.No_Surat_Jalan || '-',
+          sopir: d.Pengirim || '-',
+          tipeTransaksi: d.Tipe_Transaksi_Galon || (kirim > 0 ? 'Tukar Galon' : 'Non-Galon'),
+          galonKirim: kirim,
+          galonKembali: kembali,
+          selisih: kirim - kembali,
+          penyusutan: depTotal
+        };
+      });
+
+      gKirim += custKirim;
+      gKembali += custKembali;
+      gPenyusutan += custPenyusutan;
+
+      const lastDist = sortedDists[sortedDists.length - 1];
+
+      list.push({
+        idPelanggan: val.id,
+        namaPelanggan: val.name,
+        alamat: val.customer?.Alamat || lastDist?.Tujuan || '-',
+        kontak: val.customer?.Kontak || '-',
+        totalGalonKirim: custKirim,
+        totalGalonKembali: custKembali,
+        saldoTertahan: custKirim - custKembali,
+        totalPenyusutan: custPenyusutan,
+        totalPengiriman: sortedDists.length,
+        lastDate: lastDist?.Tanggal || '-',
+        lastSj: lastDist?.No_Surat_Jalan || '-',
+        lastDriver: lastDist?.Pengirim || '-',
+        history: historyItems.reverse()
+      });
+    });
+
+    list.sort((a, b) => (b.saldoTertahan - a.saldoTertahan) || a.namaPelanggan.localeCompare(b.namaPelanggan));
+
+    const q = mitraSearchQuery.trim().toLowerCase();
+    const filtered = q
+      ? list.filter(m => 
+          m.namaPelanggan.toLowerCase().includes(q) || 
+          m.idPelanggan.toLowerCase().includes(q) || 
+          m.alamat.toLowerCase().includes(q)
+        )
+      : list;
+
+    return {
+      sekolahMitraList: list,
+      filteredMitraList: filtered,
+      totalMitraKirim: gKirim,
+      totalMitraKembali: gKembali,
+      totalMitraTertahan: gKirim - gKembali,
+      totalMitraPenyusutan: gPenyusutan
+    };
+  }, [customers, distributions, mitraSearchQuery]);
 
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
@@ -701,7 +889,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     Metode_Kirim: 'Kirim Armada' as 'Diantar Armada' | 'Kirim Armada' | 'Ambil Sendiri' | string,
     No_Surat_Jalan: '',
     No_Invoice: '',
-    Keterangan: ''
+    Keterangan: '',
+    Galon_Kosong_Kembali: '' as any,
+    Tipe_Transaksi_Galon: 'Tukar Galon' as 'Tukar Galon' | 'Beli Baru' | 'Pinjam Galon' | 'Non-Galon' | string,
+    Tarif_Penyusutan_Galon: '' as any
   });
 
   const [formItems, setFormItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number; Kode_Produksi?: string }[]>([
@@ -760,9 +951,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     }
 
     // 3. Fallback ke Master Data Produk sesuai tier level mitra
+    if (level === 'Sekolah Mitra') return prod.Harga_Distributor || prod.Harga_Agen || 0;
     if (level === 'Agen') return prod.Harga_Agen || prod.Harga_Distributor || 0;
     if (level === 'Reseller') return prod.Harga_Reseller || prod.Harga_Distributor || 0;
-    if (level === 'Konsumen') return prod.Harga_Konsumen || prod.Harga_Distributor || 0;
+    if (level === 'Konsumen' || level === 'Konsumen Biasa') return prod.Harga_Konsumen || prod.Harga_Distributor || 0;
     return prod.Harga_Distributor || 0;
   };
 
@@ -783,7 +975,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Metode_Kirim: 'Kirim Armada',
       No_Surat_Jalan: initialSj,
       No_Invoice: initialInv,
-      Keterangan: ''
+      Keterangan: '',
+      Galon_Kosong_Kembali: '' as any,
+      Tipe_Transaksi_Galon: 'Tukar Galon',
+      Tarif_Penyusutan_Galon: getGallonDepreciationRate()
     });
     setCustomerSearchQuery('');
     setIsCustomerDropdownOpen(false);
@@ -832,7 +1027,10 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Metode_Kirim: dist.Metode_Kirim || 'Kirim Armada',
       No_Surat_Jalan: dist.No_Surat_Jalan || '',
       No_Invoice: effectiveInvoice,
-      Keterangan: dist.Keterangan || ''
+      Keterangan: dist.Keterangan || '',
+      Galon_Kosong_Kembali: (dist as any).Galon_Kosong_Kembali !== undefined && (dist as any).Galon_Kosong_Kembali !== null ? (dist as any).Galon_Kosong_Kembali : (getProductQtyByCode(dist, 'G19') || ''),
+      Tipe_Transaksi_Galon: (dist as any).Tipe_Transaksi_Galon || (getProductQtyByCode(dist, 'G19') > 0 ? 'Tukar Galon' : 'Non-Galon'),
+      Tarif_Penyusutan_Galon: (dist as any).Tarif_Penyusutan_Galon !== undefined && (dist as any).Tarif_Penyusutan_Galon !== null ? (dist as any).Tarif_Penyusutan_Galon : getGallonDepreciationRate()
     });
     setCustomerSearchQuery(finalCustName);
     setIsCustomerDropdownOpen(false);
@@ -1126,6 +1324,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         distRecord[p.ID_Produk] = sumQty;
       });
 
+      // Data Perputaran / Tukar Kemasan Galon 19L
+      const galonKirim = Number(distRecord.G19 || distRecord['ASH-GLN19L'] || 0);
+      const rawGlnKembali = formData.Galon_Kosong_Kembali;
+      const galonKembali = (rawGlnKembali !== '' && rawGlnKembali !== null && rawGlnKembali !== undefined)
+        ? Math.max(0, Number(rawGlnKembali) || 0)
+        : (formData.Tipe_Transaksi_Galon === 'Tukar Galon' ? galonKirim : 0);
+
+      distRecord.Galon_Kosong_Kembali = galonKembali;
+      distRecord.Tipe_Transaksi_Galon = formData.Tipe_Transaksi_Galon || (galonKirim > 0 ? 'Tukar Galon' : 'Non-Galon');
+
+      // Perhitungan Penyusutan Galon Investasi Sekolah Mitra / Pinjam Galon
+      const isSekolahMitra = distRecord.Level_Pelanggan === 'Sekolah Mitra' || distRecord.Tipe_Transaksi_Galon === 'Pinjam Galon';
+      if (isSekolahMitra && galonKirim > 0) {
+        const depRate = Number(formData.Tarif_Penyusutan_Galon) > 0 ? Number(formData.Tarif_Penyusutan_Galon) : getGallonDepreciationRate();
+        const totalDep = galonKirim * depRate;
+        distRecord.Tarif_Penyusutan_Galon = depRate;
+        distRecord.Total_Penyusutan_Galon = totalDep;
+      }
+
       // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000/dus jika Ambil Sendiri).
       // Pengurangan potongan Rp 1.000/dus dicairkan melalui Buku Piutang Konsumen di Keuangan.
       const grandTotal = Math.max(0, totalTagihanAwal);
@@ -1189,7 +1406,22 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           Status: 'Menunggu Verifikasi',
           Waktu_Dibuat: new Date().toISOString()
         };
-        setTableData('Draf_Jurnal', [...existingDrafts, newDraft]);
+        const draftsToAdd: DraftJournalItem[] = [newDraft];
+        if (isSekolahMitra && distRecord.Total_Penyusutan_Galon && distRecord.Total_Penyusutan_Galon > 0) {
+          draftsToAdd.push({
+            ID_Draf: `DRF-DEP-${Date.now().toString().slice(-6)}`,
+            Sumber: 'Distribusi',
+            Tanggal: formData.Tanggal,
+            Referensi: `${distId} / ${distRecord.Nama_Pelanggan}`,
+            Keterangan: `Penyusutan Galon Mitra (${galonKirim} Galon @ Rp ${(distRecord.Tarif_Penyusutan_Galon || 1250).toLocaleString('id-ID')}) - ${distRecord.Nama_Pelanggan}`,
+            Kode_Debit: '514-70', // Beban Penyusutan Galon Pabrik & Mitra (HPP Refill)
+            Kode_Kredit: '122-70', // Akumulasi Penyusutan Galon Pabrik & Mitra
+            Nominal: distRecord.Total_Penyusutan_Galon,
+            Status: 'Menunggu Verifikasi',
+            Waktu_Dibuat: new Date().toISOString()
+          });
+        }
+        setTableData('Draf_Jurnal', [...existingDrafts, ...draftsToAdd]);
 
         // Record into Piutang Usaha (normalized fields)
         const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
@@ -1452,6 +1684,31 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000 jika ambil sendiri)
     const grandTotal = totalTagihanAwal;
+    distRecord.Total_Tagihan = grandTotal;
+
+    // Sync direct product columns on distRecord (C120, C220, B330, B600, G19)
+    products.forEach(p => {
+      const code = getProductShortCode(p);
+      const itemMatch = newDetails.filter(it => it.ID_Produk === p.ID_Produk);
+      const sumQty = itemMatch.reduce((sum, it) => sum + it.Qty, 0);
+      distRecord[code] = sumQty;
+      distRecord[p.ID_Produk] = sumQty;
+    });
+
+    const galonKirim = Number(distRecord.G19 || distRecord['ASH-GLN19L'] || 0);
+    distRecord.Galon_Kosong_Kembali = plan.Galon_Kosong_Kembali !== undefined && plan.Galon_Kosong_Kembali !== null
+      ? plan.Galon_Kosong_Kembali
+      : (plan.Tipe_Transaksi_Galon === 'Tukar Galon' ? galonKirim : 0);
+    distRecord.Tipe_Transaksi_Galon = plan.Tipe_Transaksi_Galon || (galonKirim > 0 ? 'Tukar Galon' : 'Non-Galon');
+
+    // Perhitungan Penyusutan Galon Investasi Sekolah Mitra / Pinjam Galon
+    const isSekolahMitra = distRecord.Level_Pelanggan === 'Sekolah Mitra' || distRecord.Tipe_Transaksi_Galon === 'Pinjam Galon';
+    if (isSekolahMitra && galonKirim > 0) {
+      const depRate = Number(plan.Tarif_Penyusutan_Galon) > 0 ? Number(plan.Tarif_Penyusutan_Galon) : getGallonDepreciationRate();
+      const totalDep = Number(plan.Total_Penyusutan_Galon) > 0 ? Number(plan.Total_Penyusutan_Galon) : (galonKirim * depRate);
+      distRecord.Tarif_Penyusutan_Galon = depRate;
+      distRecord.Total_Penyusutan_Galon = totalDep;
+    }
 
     // Save to Distribusi
     setTableData('Distribusi', [...currentDist, distRecord]);
@@ -1476,7 +1733,22 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       Status: 'Menunggu Verifikasi',
       Waktu_Dibuat: new Date().toISOString()
     };
-    setTableData('Draf_Jurnal', [...existingDrafts, newDraft]);
+    const draftsToAdd: DraftJournalItem[] = [newDraft];
+    if (isSekolahMitra && distRecord.Total_Penyusutan_Galon && distRecord.Total_Penyusutan_Galon > 0) {
+      draftsToAdd.push({
+        ID_Draf: `DRF-DEP-${Date.now().toString().slice(-6)}`,
+        Sumber: 'Distribusi',
+        Tanggal: plan.Tanggal_Rencana,
+        Referensi: `${distId} / ${plan.Nama_Pelanggan}`,
+        Keterangan: `Penyusutan Galon Mitra (${galonKirim} Galon @ Rp ${(distRecord.Tarif_Penyusutan_Galon || 1250).toLocaleString('id-ID')}) - ${plan.Nama_Pelanggan}`,
+        Kode_Debit: '514-70',
+        Kode_Kredit: '122-70',
+        Nominal: distRecord.Total_Penyusutan_Galon,
+        Status: 'Menunggu Verifikasi',
+        Waktu_Dibuat: new Date().toISOString()
+      });
+    }
+    setTableData('Draf_Jurnal', [...existingDrafts, ...draftsToAdd]);
 
     // Create Piutang
     const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
@@ -1709,12 +1981,27 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         deliveryDate: dist.Tanggal,
         currentDistId: dist.ID_Distribusi,
       });
+      const isGallon = String(it.ID_Produk || '').includes('GLN') || String(it.Nama_Produk || '').toUpperCase().includes('GALON');
+      let customKet = it.Keterangan || '';
+      if (isGallon) {
+        const tipe = dist.Tipe_Transaksi_Galon || 'Tukar Galon';
+        const kembali = dist.Galon_Kosong_Kembali !== undefined && dist.Galon_Kosong_Kembali !== null
+          ? dist.Galon_Kosong_Kembali
+          : it.Qty;
+        if (tipe === 'Beli Baru') {
+          customKet = 'Galon Baru (Beli Putus)';
+        } else if (tipe === 'Pinjam Galon') {
+          customKet = `Pinjam Galon (Kembali: ${kembali} Pcs)`;
+        } else {
+          customKet = `Tukar Galon (Kembali: ${kembali} Pcs)`;
+        }
+      }
       return {
         nama: it.Nama_Produk,
         qty: it.Qty,
-        satuan: prod?.Satuan || 'Dus',
+        satuan: prod?.Satuan || (isGallon ? 'Pcs' : 'Dus'),
         kodeProduksi: lotCode,
-        keterangan: it.Keterangan || ''
+        keterangan: customKet
       };
     });
 
@@ -2377,8 +2664,248 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     )}
                   </div>
                 </div>
+
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* ============================================================== */}
+      {/* SECTION 1.5: REKAPITULASI SALDO GALON SEKOLAH MITRA            */}
+      {/* Monitoring Saldo Fisik Galon Pabrik di Sekolah & Beban Susut   */}
+      {/* ============================================================== */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Header Section dengan Toggle */}
+        <div className="p-4 bg-gradient-to-r from-indigo-50/70 via-purple-50/40 to-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
+              <GraduationCap size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900">Rekapitulasi Saldo Galon di Sekolah Mitra</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                  {sekolahMitraList.length} Sekolah Terdaftar
+                </span>
+                {totalMitraTertahan > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    {totalMitraTertahan.toLocaleString('id-ID')} Galon Tertahan
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Monitoring saldo fisik galon pabrik yang tertahan di sekolah mitra &amp; akumulasi beban penyusutan (HPP Refill).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Search Box Mitra */}
+            {sekolahMitraList.length > 0 && (
+              <div className="relative">
+                <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari sekolah..."
+                  value={mitraSearchQuery}
+                  onChange={e => setMitraSearchQuery(e.target.value)}
+                  className="pl-7 pr-3 py-1 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-1 focus:ring-indigo-500 w-36 sm:w-48 font-medium"
+                />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowMitraSection(!showMitraSection)}
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+            >
+              {showMitraSection ? (
+                <>
+                  <ChevronUp size={14} className="text-slate-500" />
+                  <span>Sembunyikan</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={14} className="text-slate-500" />
+                  <span>Buka Rekapitulasi</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        {showMitraSection && (
+          <div className="p-4 space-y-4">
+            {/* 4 Summary Stat Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 bg-gradient-to-br from-indigo-50 to-indigo-100/50 border border-indigo-200 rounded-xl">
+                <div className="flex items-center justify-between text-indigo-900 text-xs font-bold mb-1">
+                  <span>Galon Tertahan di Mitra</span>
+                  <Package size={14} className="text-indigo-600" />
+                </div>
+                <div className="text-xl font-mono font-bold text-indigo-950">
+                  {totalMitraTertahan.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-indigo-700">Pcs</span>
+                </div>
+                <span className="text-[10px] text-indigo-600 font-medium block mt-0.5">
+                  Aset galon pabrik di sekolah
+                </span>
+              </div>
+
+              <div className="p-3.5 bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200 rounded-xl">
+                <div className="flex items-center justify-between text-blue-900 text-xs font-bold mb-1">
+                  <span>Total Galon Dikirim</span>
+                  <Truck size={14} className="text-blue-600" />
+                </div>
+                <div className="text-xl font-mono font-bold text-blue-950">
+                  {totalMitraKirim.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-blue-700">Pcs</span>
+                </div>
+                <span className="text-[10px] text-blue-600 font-medium block mt-0.5">
+                  Akumulasi pengiriman isi
+                </span>
+              </div>
+
+              <div className="p-3.5 bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200 rounded-xl">
+                <div className="flex items-center justify-between text-emerald-900 text-xs font-bold mb-1">
+                  <span>Total Galon Kembali</span>
+                  <RotateCcw size={14} className="text-emerald-600" />
+                </div>
+                <div className="text-xl font-mono font-bold text-emerald-950">
+                  {totalMitraKembali.toLocaleString('id-ID')} <span className="text-xs font-sans font-normal text-emerald-700">Pcs</span>
+                </div>
+                <span className="text-[10px] text-emerald-600 font-medium block mt-0.5">
+                  Tingkat kembali: {totalMitraKirim > 0 ? ((totalMitraKembali / totalMitraKirim) * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+
+              <div className="p-3.5 bg-gradient-to-br from-purple-50 to-purple-100/50 border border-purple-200 rounded-xl">
+                <div className="flex items-center justify-between text-purple-900 text-xs font-bold mb-1">
+                  <span>Beban Penyusutan (HPP)</span>
+                  <BarChart2 size={14} className="text-purple-600" />
+                </div>
+                <div className="text-lg font-mono font-bold text-purple-950 truncate">
+                  Rp {totalMitraPenyusutan.toLocaleString('id-ID')}
+                </div>
+                <span className="text-[10px] text-purple-600 font-medium block mt-0.5">
+                  Terjurnal otomatis (Akun 514-70)
+                </span>
+              </div>
+            </div>
+
+            {/* Tabel Rincian Per Sekolah Mitra */}
+            {filteredMitraList.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-1.5">
+                <GraduationCap size={28} className="mx-auto text-slate-400" />
+                <p className="text-xs font-bold text-slate-700">
+                  {mitraSearchQuery ? 'Tidak ada sekolah mitra yang cocok dengan pencarian.' : 'Belum Ada Transaksi Sekolah Mitra'}
+                </p>
+                <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                  {mitraSearchQuery ? 'Coba gunakan kata kunci lain.' : 'Data rekapitulasi akan otomatis muncul saat Anda mencatat pengiriman ke pelanggan bertipe "Sekolah Mitra" atau tipe transaksi "Pinjam Galon".'}
+                </p>
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100/90 text-slate-700 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3 text-center w-12">No</th>
+                        <th className="p-3">Sekolah Mitra</th>
+                        <th className="p-3">Alamat &amp; Kontak</th>
+                        <th className="p-3 text-center">Kirim (Isi)</th>
+                        <th className="p-3 text-center">Kembali (Kosong)</th>
+                        <th className="p-3 text-center">Saldo Tertahan</th>
+                        <th className="p-3 text-right">Beban Susut</th>
+                        <th className="p-3">Kirim Terakhir</th>
+                        <th className="p-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                      {filteredMitraList.map((m, idx) => {
+                        return (
+                          <tr key={`mitra-row-${m.idPelanggan || idx}`} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                            <td className="p-3 font-sans">
+                              <span className="font-bold text-slate-900 block text-xs">{m.namaPelanggan}</span>
+                              <span className="font-mono text-[10px] text-indigo-700 font-semibold">{m.idPelanggan}</span>
+                            </td>
+                            <td className="p-3 font-sans text-slate-600 max-w-xs">
+                              <span className="block truncate text-[11px]">{m.alamat}</span>
+                              <span className="text-[10px] text-slate-400">Kontak: {m.kontak}</span>
+                            </td>
+                            <td className="p-3 text-center font-bold text-blue-700">
+                              {m.totalGalonKirim.toLocaleString('id-ID')} Pcs
+                            </td>
+                            <td className="p-3 text-center font-bold text-emerald-700">
+                              {m.totalGalonKembali.toLocaleString('id-ID')} Pcs
+                            </td>
+                            <td className="p-3 text-center font-sans">
+                              {m.saldoTertahan > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  <span>⚠</span>
+                                  <span>{m.saldoTertahan.toLocaleString('id-ID')} Galon Tertahan</span>
+                                </span>
+                              ) : m.saldoTertahan === 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <span>✓</span>
+                                  <span>0 (Seimbang)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                  <span>+{Math.abs(m.saldoTertahan)} Lebih Tarik</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-bold text-purple-900 tabular-nums">
+                              Rp {m.totalPenyusutan.toLocaleString('id-ID')}
+                            </td>
+                            <td className="p-3 font-sans text-slate-600">
+                              {m.lastDate !== '-' ? (
+                                <div>
+                                  <span className="font-semibold text-slate-800 block text-[11px]">{formatDisplayDate(m.lastDate)}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">SJ: {m.lastSj} • Sopir: {m.lastDriver}</span>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic">Belum ada kiriman</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center font-sans">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedMitraHistory(m)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="Lihat riwayat mutasi galon sekolah ini"
+                                >
+                                  <History size={12} />
+                                  <span>Mutasi</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchQueryDist(m.namaPelanggan);
+                                    const distTable = document.getElementById('section-tabel-distribusi');
+                                    if (distTable) {
+                                      distTable.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="Saring tabel data distribusi di bawah khusus sekolah ini"
+                                >
+                                  <Search size={12} />
+                                  <span>Filter</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2387,7 +2914,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       {/* SECTION 2: DATA DISTRIBUSI TERKIRIM (TABEL UTAMA DI BAWAH)     */}
       {/* Fleksibel dinamis sesuai Master Produk                          */}
       {/* ============================================================== */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+      <div id="section-tabel-distribusi" className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
         <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -2662,7 +3189,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                           {dist.Nama_Pelanggan}
                         </div>
                         <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-                          {dist.Level_Pelanggan && dist.Level_Pelanggan !== '-' ? dist.Level_Pelanggan : '-'}
+                          {dist.Level_Pelanggan === 'Sekolah Mitra' ? (
+                            <span className="text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                              🏫 Sekolah Mitra
+                            </span>
+                          ) : (
+                            dist.Level_Pelanggan && dist.Level_Pelanggan !== '-' ? dist.Level_Pelanggan : '-'
+                          )}
                         </div>
                       </td>
                       <td className="p-3 text-center font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">
@@ -2678,10 +3211,30 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       {/* PRODUK / QTY DYNAMIC COLUMNS */}
                       {cleanProducts.map(prod => {
                         const qty = getDistProductQty(dist, prod);
+                        const isGln = prod.ID_Produk === 'ASH-GLN19L' || prod.ID_Produk === 'G19' || prod.Nama_Produk.toLowerCase().includes('galon');
+                        const glnKembali = dist.Galon_Kosong_Kembali;
+                        const hasGlnKembali = glnKembali !== undefined && glnKembali !== null && glnKembali !== '';
+
                         return (
                           <td key={prod.ID_Produk} className="p-2 text-center border-r border-slate-100">
                             {qty > 0 ? (
-                              <span className="font-extrabold text-blue-600 font-mono text-xs">{qty}</span>
+                              <div className="flex flex-col items-center justify-center">
+                                <span className="font-extrabold text-blue-600 font-mono text-xs">{qty}</span>
+                                {isGln && hasGlnKembali && (
+                                  <span 
+                                    className={`text-[9px] font-mono font-bold px-1 rounded-sm mt-0.5 ${
+                                      Number(glnKembali) === qty 
+                                        ? 'bg-emerald-50 text-emerald-700' 
+                                        : Number(glnKembali) < qty 
+                                          ? 'bg-amber-50 text-amber-700' 
+                                          : 'bg-blue-50 text-blue-700'
+                                    }`}
+                                    title={`Galon Kembali: ${glnKembali} Pcs (Kirim: ${qty} Pcs)`}
+                                  >
+                                    ↩{glnKembali}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="font-normal text-slate-400 font-mono text-xs">0</span>
                             )}
@@ -2806,6 +3359,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </p>
                   </div>
                 </div>
+
                 <button 
                   onClick={() => setOpenDetailDist(null)} 
                   className="p-1 text-teal-100 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
@@ -2917,6 +3471,89 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   </div>
                 </div>
 
+                {/* Status Perputaran & Saldo Kemasan Galon 19L */}
+                {(() => {
+                  const glnKirim = Number(dist.G19 || (dist as any)['ASH-GLN19L'] || 0);
+                  const glnKembali = dist.Galon_Kosong_Kembali !== undefined && dist.Galon_Kosong_Kembali !== null
+                    ? Number(dist.Galon_Kosong_Kembali)
+                    : (dist.Tipe_Transaksi_Galon === 'Tukar Galon' ? glnKirim : 0);
+                  const tipeGln = dist.Tipe_Transaksi_Galon || (glnKirim > 0 ? 'Tukar Galon' : 'Non-Galon');
+                  const selisih = glnKembali - glnKirim;
+
+                  if (glnKirim <= 0 && (dist.Galon_Kosong_Kembali === undefined || dist.Galon_Kosong_Kembali === null) && tipeGln === 'Non-Galon') return null;
+
+                  return (
+                    <div className="p-3.5 bg-gradient-to-r from-sky-50 to-blue-50/50 border border-sky-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 bg-sky-500 text-white rounded-md">
+                            <Package size={13} />
+                          </div>
+                          <span className="font-bold text-xs text-sky-950">Status Perputaran Kemasan Galon 19L</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-sky-300 text-sky-800">
+                          {tipeGln}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-white p-2 rounded-lg border border-sky-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-500 block font-medium">Galon Terkirim</span>
+                          <span className="font-mono font-bold text-blue-700">{glnKirim} Pcs</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-sky-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-500 block font-medium">Galon Ditarik / Kembali</span>
+                          <span className="font-mono font-bold text-emerald-700">{glnKembali} Pcs</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-sky-100 shadow-2xs">
+                          <span className="text-[10px] text-slate-500 block font-medium">Saldo Selisih Fisik</span>
+                          <span className={`font-mono font-bold ${selisih === 0 ? 'text-emerald-700' : selisih < 0 ? 'text-amber-700' : 'text-blue-700'}`}>
+                            {selisih === 0 ? '0 (Seimbang)' : selisih < 0 ? `-${Math.abs(selisih)} Galon` : `+${selisih} Galon`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-600 flex items-center justify-between pt-1 border-t border-sky-200/50">
+                        <span>Keterangan Status:</span>
+                        {tipeGln === 'Beli Baru' ? (
+                          <span className="font-semibold text-amber-700">Pembelian Galon Baru (Tanpa Tarikan Galon Kosong)</span>
+                        ) : tipeGln === 'Pinjam Galon' ? (
+                          <span className="font-semibold text-purple-700">Pinjam Pakai Galon Pabrik ({glnKirim - glnKembali} Galon Tertahan di Mitra)</span>
+                        ) : selisih === 0 ? (
+                          <span className="font-semibold text-emerald-700">✓ Jumlah Galon Kembali Pas Sesuai Kiriman</span>
+                        ) : selisih < 0 ? (
+                          <span className="font-semibold text-amber-700">⚠ Terdapat {Math.abs(selisih)} Galon Pabrik Tertahan / Belum Ditarik</span>
+                        ) : (
+                          <span className="font-semibold text-blue-700">ℹ Menarik Lebih {selisih} Galon dari Mitra</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Informasi Penyusutan Galon Sekolah Mitra */}
+                {(dist.Total_Penyusutan_Galon !== undefined || dist.Level_Pelanggan === 'Sekolah Mitra' || dist.Tipe_Transaksi_Galon === 'Pinjam Galon') && Number(dist.G19 || (dist as any)['ASH-GLN19L'] || 0) > 0 && (
+                  <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl text-indigo-950 text-xs flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <span>Penyusutan Galon Pabrik (Sekolah Mitra):</span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold border border-indigo-200">
+                          HPP Refill
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-indigo-700">
+                        Tarif: Rp {(Number(dist.Tarif_Penyusutan_Galon) || getGallonDepreciationRate()).toLocaleString('id-ID')} / galon • Terjurnal otomatis ke Akun 514-70 vs 122-70
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-500 block uppercase font-semibold">Total Penyusutan</span>
+                      <span className="font-mono font-bold text-sm text-indigo-900">
+                        Rp {(Number(dist.Total_Penyusutan_Galon) || (Number(dist.G19 || 0) * (Number(dist.Tarif_Penyusutan_Galon) || getGallonDepreciationRate()))).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {dist.Metode_Kirim === 'Ambil Sendiri' && (
                   <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-start gap-2.5">
                     <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
@@ -3006,6 +3643,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </button>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
@@ -3349,6 +3987,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </div>
                   </div>
                 </div>
+
               )}
               {/* TAB 2: LAPORAN PER KONSUMEN */}
               {distReportTab === 'konsumen' && (
@@ -3451,6 +4090,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </table>
                   </div>
                 </div>
+
               )}
 
               {/* TAB 2: LAPORAN TAHUNAN DENGAN GRAFIK GARIS & DATA LENGKAP */}
@@ -3656,6 +4296,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </table>
                   </div>
                 </div>
+
               )}
             </div>
 
@@ -3663,6 +4304,151 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               <button
                 onClick={() => setShowDistReportModal(false)}
                 className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Riwayat Mutasi Galon Sekolah Mitra */}
+      {selectedMitraHistory && (
+        <div 
+          onClick={e => {
+            if (e.target === e.currentTarget) setSelectedMitraHistory(null);
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs p-4 flex items-center justify-center no-print"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 my-6">
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-600 rounded-xl">
+                  <GraduationCap size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight">
+                    Riwayat Mutasi Galon: {selectedMitraHistory.namaPelanggan}
+                  </h3>
+                  <p className="text-[11px] text-indigo-300 mt-0.5">
+                    ID: {selectedMitraHistory.idPelanggan} • {selectedMitraHistory.alamat} • Kontak: {selectedMitraHistory.kontak}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedMitraHistory(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+              {/* 4 Quick Stat Pills */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                  <span className="text-[10px] text-indigo-700 uppercase font-semibold block">Galon Tertahan</span>
+                  <span className="text-base font-mono font-bold text-indigo-950">
+                    {selectedMitraHistory.saldoTertahan.toLocaleString('id-ID')} Pcs
+                  </span>
+                </div>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <span className="text-[10px] text-blue-700 uppercase font-semibold block">Total Kirim (Isi)</span>
+                  <span className="text-base font-mono font-bold text-blue-950">
+                    {selectedMitraHistory.totalGalonKirim.toLocaleString('id-ID')} Pcs
+                  </span>
+                </div>
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <span className="text-[10px] text-emerald-700 uppercase font-semibold block">Total Kembali (Kosong)</span>
+                  <span className="text-base font-mono font-bold text-emerald-950">
+                    {selectedMitraHistory.totalGalonKembali.toLocaleString('id-ID')} Pcs
+                  </span>
+                </div>
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl">
+                  <span className="text-[10px] text-purple-700 uppercase font-semibold block">Total Beban Susut</span>
+                  <span className="text-base font-mono font-bold text-purple-950">
+                    Rp {selectedMitraHistory.totalPenyusutan.toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tabel Mutasi Kronologis */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="p-2.5 text-center w-10">No</th>
+                      <th className="p-2.5">Tanggal</th>
+                      <th className="p-2.5">No Surat Jalan</th>
+                      <th className="p-2.5">Sopir</th>
+                      <th className="p-2.5">Tipe Transaksi</th>
+                      <th className="p-2.5 text-center">Kirim (Isi)</th>
+                      <th className="p-2.5 text-center">Kembali (Kosong)</th>
+                      <th className="p-2.5 text-center">Selisih</th>
+                      <th className="p-2.5 text-right">Beban Susut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                    {selectedMitraHistory.history.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-6 text-center text-slate-400 font-sans italic">
+                          Belum ada catatan mutasi galon untuk sekolah ini.
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedMitraHistory.history.map((h, hIdx) => (
+                        <tr key={h.idDistribusi || hIdx} className="hover:bg-slate-50">
+                          <td className="p-2.5 text-center text-slate-400 font-bold">{hIdx + 1}</td>
+                          <td className="p-2.5 font-sans font-medium text-slate-800">{formatDisplayDate(h.tanggal)}</td>
+                          <td className="p-2.5 font-bold text-blue-700">{h.noSuratJalan}</td>
+                          <td className="p-2.5 font-sans text-slate-700">{h.sopir}</td>
+                          <td className="p-2.5 font-sans">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                              {h.tipeTransaksi}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center font-bold text-blue-700">{h.galonKirim} Pcs</td>
+                          <td className="p-2.5 text-center font-bold text-emerald-700">{h.galonKembali} Pcs</td>
+                          <td className="p-2.5 text-center font-sans">
+                            {h.selisih === 0 ? (
+                              <span className="text-emerald-600 font-bold">0 (Seimbang)</span>
+                            ) : h.selisih > 0 ? (
+                              <span className="text-amber-700 font-bold">+{h.selisih} Tertahan</span>
+                            ) : (
+                              <span className="text-blue-700 font-bold">{h.selisih} Ditarik</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-right font-bold text-purple-900 tabular-nums">
+                            Rp {h.penyusutan.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 bg-slate-50 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQueryDist(selectedMitraHistory.namaPelanggan);
+                  setSelectedMitraHistory(null);
+                  const distTable = document.getElementById('section-tabel-distribusi');
+                  if (distTable) {
+                    distTable.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }}
+                className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <Search size={14} />
+                <span>Buka di Tabel Distribusi Utama</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMitraHistory(null)}
+                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition cursor-pointer"
               >
                 Tutup
               </button>
@@ -3923,6 +4709,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     ))}
                   </div>
                 </div>
+
               </div>
 
               <div>
@@ -3977,6 +4764,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </button>
                   </div>
                 </div>
+
                 <div className="space-y-2">
                   {formItems.map((item, idx) => {
                     const cust = customers.find(c => c.ID_Pelanggan === formData.ID_Pelanggan || c.Nama_Pelanggan === formData.ID_Pelanggan);
@@ -4084,6 +4872,159 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   })}
                 </div>
               </div>
+
+              {/* Pencatatan Tukar Kemasan Galon 19L (Fisik) */}
+              {(() => {
+                const galonItemInForm = formItems.filter(it => {
+                  const pId = String(it.ID_Produk || '').toUpperCase();
+                  const pName = String(it.Nama_Produk || '').toUpperCase();
+                  return pId === 'G19' || pId === 'ASH-GLN19L' || pId === 'ASH-GLN-BARU' || pName.includes('GALON');
+                });
+                const totalGalonKirim = galonItemInForm.reduce((sum, it) => sum + (Number(it.Qty) || 0), 0);
+                const isHasGalon = totalGalonKirim > 0 || (formData.Tipe_Transaksi_Galon && formData.Tipe_Transaksi_Galon !== 'Non-Galon');
+
+                if (!isHasGalon) return null;
+
+                const rawKembali = formData.Galon_Kosong_Kembali;
+                const kembaliCount = (rawKembali !== '' && rawKembali !== null && rawKembali !== undefined)
+                  ? Number(rawKembali)
+                  : (formData.Tipe_Transaksi_Galon === 'Tukar Galon' ? totalGalonKirim : 0);
+                const selisih = kembaliCount - totalGalonKirim;
+
+                return (
+                  <div className="bg-sky-50/70 border border-sky-200 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between border-b border-sky-200/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-sky-500 text-white rounded-lg shadow-2xs">
+                          <Package size={14} />
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs text-sky-950 block">Pencatatan Tukar Kemasan Galon (Fisik)</span>
+                          <span className="text-[10px] text-sky-700">Pantau keseimbangan galon isi yang dikirim vs galon kosong yang ditarik</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-300">
+                        Galon 19L
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Tipe Transaksi Galon
+                        </label>
+                        <select
+                          value={formData.Tipe_Transaksi_Galon || 'Tukar Galon'}
+                          onChange={e => {
+                            const newTipe = e.target.value;
+                            setFormData({
+                              ...formData,
+                              Tipe_Transaksi_Galon: newTipe,
+                              Galon_Kosong_Kembali: newTipe === 'Tukar Galon' ? totalGalonKirim : (newTipe === 'Beli Baru' ? 0 : formData.Galon_Kosong_Kembali)
+                            });
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs border border-sky-300 rounded-lg bg-white font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        >
+                          <option value="Tukar Galon">Tukar Galon (Kirim Isi, Tarik Kosong)</option>
+                          <option value="Beli Baru">Beli Baru (Beli Putus Galon Baru + Isi)</option>
+                          <option value="Pinjam Galon">Pinjam Galon (Investasi/Pinjam Pabrik)</option>
+                          <option value="Non-Galon">Non-Galon (Hanya Cup/Botol)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Galon Isi Dikirim
+                        </label>
+                        <div className="px-2.5 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg font-mono font-bold text-blue-800">
+                          {totalGalonKirim} Pcs
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                          Galon Kosong Ditarik / Kembali
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder={String(formData.Tipe_Transaksi_Galon === 'Tukar Galon' ? totalGalonKirim : 0)}
+                          value={formData.Galon_Kosong_Kembali !== undefined && formData.Galon_Kosong_Kembali !== null ? formData.Galon_Kosong_Kembali : ''}
+                          onChange={e => setFormData({ ...formData, Galon_Kosong_Kembali: e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0) })}
+                          className="w-full px-2.5 py-1.5 text-xs border border-sky-300 rounded-lg bg-white font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-sky-200/50">
+                      <span className="text-[11px] text-slate-600 font-medium">Status Saldo Kemasan:</span>
+                      {formData.Tipe_Transaksi_Galon === 'Beli Baru' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                          ℹ Pembelian Galon Baru (Tanpa Tarikan Galon Kosong)
+                        </span>
+                      ) : formData.Tipe_Transaksi_Galon === 'Pinjam Galon' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300">
+                          🏫 Pinjam Pakai Galon Pabrik ({totalGalonKirim - kembaliCount} Galon Tertahan di Mitra)
+                        </span>
+                      ) : selisih === 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 size={12} className="text-emerald-600" />
+                          ✓ Seimbang (Kirim {totalGalonKirim} = Kembali {kembaliCount})
+                        </span>
+                      ) : selisih < 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                          ⚠ Kurang {Math.abs(selisih)} Galon (Galon Pabrik Tertahan di Mitra)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+                          ℹ Lebih {selisih} Galon (Ditarik Lebih Banyak)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Perhitungan Penyusutan Galon Sekolah Mitra (HPP Refill) */}
+                    {(formData.Level_Pelanggan === 'Sekolah Mitra' || formData.Tipe_Transaksi_Galon === 'Pinjam Galon') && totalGalonKirim > 0 && (
+                      <div className="pt-2 border-t border-sky-200/80 bg-white/80 rounded-lg p-2.5 space-y-2 mt-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-indigo-950">Perhitungan Penyusutan Galon Mitra (HPP Refill)</span>
+                            <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold border border-indigo-200">
+                              Otomatis Jurnal
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium">Beban 514-70 vs Akum. 122-70</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-600 mb-0.5">
+                              Tarif Penyusutan / Galon (Standar Rp 1.250):
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1.5 text-[11px] text-slate-400 font-medium">Rp</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={formData.Tarif_Penyusutan_Galon !== undefined && formData.Tarif_Penyusutan_Galon !== null && formData.Tarif_Penyusutan_Galon !== '' ? formData.Tarif_Penyusutan_Galon : getGallonDepreciationRate()}
+                                onChange={e => setFormData({ ...formData, Tarif_Penyusutan_Galon: e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0) })}
+                                className="w-full pl-8 pr-2.5 py-1 text-xs border border-indigo-300 rounded-md bg-white font-mono font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-600 mb-0.5">
+                              Total Beban Penyusutan ({totalGalonKirim} Galon):
+                            </label>
+                            <div className="px-2.5 py-1 text-xs bg-indigo-50 border border-indigo-200 rounded-md font-mono font-bold text-indigo-800 flex items-center justify-between">
+                              <span>Rp {((totalGalonKirim) * (Number(formData.Tarif_Penyusutan_Galon !== undefined && formData.Tarif_Penyusutan_Galon !== '' ? formData.Tarif_Penyusutan_Galon : getGallonDepreciationRate()))).toLocaleString('id-ID')}</span>
+                              <span className="text-[10px] text-indigo-600 font-normal">HPP Refill</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Rincian Total Tagihan & Keterangan Pengurangan Ambil Sendiri */}
               {(() => {
@@ -4455,12 +5396,27 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       const cleanItems = getCleanDocItems(viewDocModal.dist, viewDocModal.items);
                       const pdfItems = cleanItems.map(it => {
                         const prod = products.find(p => p.ID_Produk === it.ID_Produk);
+                        const isGallon = String(it.ID_Produk || '').includes('GLN') || String(it.Nama_Produk || '').toUpperCase().includes('GALON');
+                        let customKet = it.Keterangan || '';
+                        if (isGallon) {
+                          const tipe = viewDocModal.dist.Tipe_Transaksi_Galon || 'Tukar Galon';
+                          const kembali = viewDocModal.dist.Galon_Kosong_Kembali !== undefined && viewDocModal.dist.Galon_Kosong_Kembali !== null
+                            ? viewDocModal.dist.Galon_Kosong_Kembali
+                            : it.Qty;
+                          if (tipe === 'Beli Baru') {
+                            customKet = 'Galon Baru (Beli Putus)';
+                          } else if (tipe === 'Pinjam Galon') {
+                            customKet = `Pinjam Galon (Kembali: ${kembali} Pcs)`;
+                          } else {
+                            customKet = `Tukar Galon (Kembali: ${kembali} Pcs)`;
+                          }
+                        }
                         return {
                           nama: it.Nama_Produk,
                           qty: it.Qty,
-                          satuan: prod?.Satuan || 'Dus',
+                          satuan: prod?.Satuan || (isGallon ? 'Pcs' : 'Dus'),
                           kodeProduksi: it.Kode_Produksi || '',
-                          keterangan: it.Keterangan || ''
+                          keterangan: customKet
                         };
                       });
                       await printSuratJalanPDF({
@@ -5124,7 +6080,23 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                                   />
                                 </td>
                                 <td style={{ border: '0.35mm solid #1e293b', padding: '0 2mm', color: '#334155', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                  {item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || ''}
+                                  {(() => {
+                                    const isGallon = String(item.ID_Produk || '').includes('GLN') || String(item.Nama_Produk || '').toUpperCase().includes('GALON');
+                                    if (isGallon) {
+                                      const tipe = viewDocModal.dist.Tipe_Transaksi_Galon || 'Tukar Galon';
+                                      const kembali = viewDocModal.dist.Galon_Kosong_Kembali !== undefined && viewDocModal.dist.Galon_Kosong_Kembali !== null
+                                        ? viewDocModal.dist.Galon_Kosong_Kembali
+                                        : item.Qty;
+                                      if (tipe === 'Beli Baru') {
+                                        return 'Galon Baru (Beli Putus)';
+                                      } else if (tipe === 'Pinjam Galon') {
+                                        return `Pinjam Galon (Kembali: ${kembali} Pcs)`;
+                                      } else {
+                                        return `Tukar Galon (Kembali: ${kembali} Pcs)`;
+                                      }
+                                    }
+                                    return item.Keterangan || (idx === 0 ? viewDocModal.dist.Keterangan : '') || '';
+                                  })()}
                                 </td>
                               </tr>
                             );
@@ -5249,6 +6221,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     <div>0/1</div>
                   </div>
                 </div>
+
                 );
               })()}
             </div>
@@ -5312,6 +6285,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                   </div>
                 </div>
 
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Alamat Perusahaan</label>
@@ -5334,6 +6308,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     />
                   </div>
                 </div>
+
 
                 {/* Upload Gambar Kop Surat Custom */}
                 <div className="pt-2 border-t border-slate-200">
@@ -5417,6 +6392,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     />
                   </div>
                 </div>
+
 
                 {/* TTD Settings */}
                 <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-2">
@@ -5574,6 +6550,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     />
                   </div>
                 </div>
+
               </div>
             </div>
 

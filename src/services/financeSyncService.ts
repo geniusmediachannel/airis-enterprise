@@ -8,7 +8,8 @@
 import { 
   getTableData, 
   setTableData, 
-  notifyDbChange 
+  notifyDbChange,
+  getGallonDepreciationRate
 } from './dbAdapter';
 import { 
   DistributionItem, 
@@ -362,6 +363,75 @@ export function syncAllModulesToFinance(options?: {
       });
       existingPiutangDocIds.add(invoiceNo);
       existingPiutangDocIds.add(distId);
+    }
+
+    // D. SINKRONISASI PENYUSUTAN GALON INVESTASI PABRIK (Sekolah Mitra / Pinjam Galon)
+    const galonQty = Number(d.G19) || Number(d.Galon) || items.filter(it => (it.ID_Produk || '').includes('GLN') || (it.Nama_Produk || '').toLowerCase().includes('galon')).reduce((s, it) => s + (Number(it.Qty) || 0), 0);
+    const isSekolahMitra = d.Level_Pelanggan === 'Sekolah Mitra' || d.Tipe_Transaksi_Galon === 'Pinjam Galon';
+    
+    if (isSekolahMitra && galonQty > 0) {
+      const depRate = Number(d.Tarif_Penyusutan_Galon) > 0 ? Number(d.Tarif_Penyusutan_Galon) : getGallonDepreciationRate();
+      const totalDep = Number(d.Total_Penyusutan_Galon) > 0 ? Number(d.Total_Penyusutan_Galon) : (galonQty * depRate);
+      
+      if (totalDep > 0) {
+        const depRefKey = `DEP-GLN-${distId}`;
+        const alreadyDepInJournal = existingJournalRefs.has(depRefKey) ||
+          journals.some(j => j.REFERENSI === depRefKey);
+          
+        if (!alreadyDepInJournal && autoPost) {
+          const jId = getNextJournalId(cleanDate);
+          const depDesc = `Penyusutan Galon Investasi Pabrik (${galonQty} Galon @ Rp ${depRate.toLocaleString('id-ID')}) - ${d.Nama_Pelanggan}`;
+          
+          // 1. Debit: 514-70 (Beban Penyusutan Galon Pabrik & Mitra (HPP Refill))
+          journals.push({
+            ID_JURNAL: jId,
+            TANGGAL: cleanDate,
+            PERIODE: periode,
+            REFERENSI: depRefKey,
+            KETERANGAN: depDesc,
+            KODE_AKUN: '514-70',
+            DEBIT: totalDep,
+            KREDIT: 0,
+            PEMBUAT: 'Auto Sync Distribusi'
+          });
+          countJournalsAdded++;
+          
+          // 2. Kredit: 122-70 (Akumulasi Penyusutan Galon Pabrik & Mitra)
+          journals.push({
+            ID_JURNAL: jId,
+            TANGGAL: cleanDate,
+            PERIODE: periode,
+            REFERENSI: depRefKey,
+            KETERANGAN: depDesc,
+            KODE_AKUN: '122-70',
+            DEBIT: 0,
+            KREDIT: totalDep,
+            PEMBUAT: 'Auto Sync Distribusi'
+          });
+          countJournalsAdded++;
+          existingJournalRefs.add(depRefKey);
+        }
+        
+        // Draft Journal untuk Penyusutan Galon
+        const alreadyDepInDrafts = existingDraftRefs.has(depRefKey) ||
+          drafts.some(dr => dr?.Referensi === depRefKey);
+          
+        if (!alreadyDepInDrafts) {
+          drafts.push({
+            ID_Draf: `DRF-DEP-${distId}`,
+            Sumber: 'Distribusi',
+            Tanggal: cleanDate,
+            Referensi: depRefKey,
+            Keterangan: `Penyusutan Galon Mitra: ${d.Nama_Pelanggan} (${galonQty} Galon @ Rp ${depRate.toLocaleString('id-ID')})`,
+            Kode_Debit: '514-70',
+            Kode_Kredit: '122-70',
+            Nominal: totalDep,
+            Status: 'Disetujui',
+            Waktu_Dibuat: new Date().toISOString()
+          });
+          existingDraftRefs.add(depRefKey);
+        }
+      }
     }
   });
 

@@ -579,8 +579,8 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status', 'Tipe_Tutup'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan', 'Tipe_Tutup'],
-  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan'],
-  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19'],
+  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan', 'Galon_Kosong_Kembali', 'Tipe_Transaksi_Galon', 'Tarif_Penyusutan_Galon', 'Total_Penyusutan_Galon'],
+  Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19', 'Galon_Kosong_Kembali', 'Tipe_Transaksi_Galon', 'Tarif_Penyusutan_Galon', 'Total_Penyusutan_Galon'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
   Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
   Mutasi_Bahan: ['ID_Mutasi', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Jenis_Mutasi', 'Kategori', 'Qty', 'Keterangan'],
@@ -739,10 +739,12 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         id = `ASH-${cleanName.slice(0, 8) || `PRD${String(idx + 1).padStart(3, '0')}`}`;
       }
 
-      // Supabase constraint: CHECK ("Kategori" IN ('Air Mineral Cup', 'Air Mineral Botol', 'Air Mineral Galon'))
+      // Supabase constraint: CHECK ("Kategori" IN ('Air Mineral Cup', 'Air Mineral Botol', 'Air Mineral Galon', 'Kemasan & Galon'))
       let kategori = 'Air Mineral Botol';
       const katStr = (String(rawKat || '') + ' ' + name).toLowerCase();
-      if (katStr.includes('cup') || katStr.includes('120') || katStr.includes('220')) {
+      if (katStr.includes('kemasan') || katStr.includes('kosong') || katStr.includes('baru')) {
+        kategori = 'Kemasan & Galon';
+      } else if (katStr.includes('cup') || katStr.includes('120') || katStr.includes('220')) {
         kategori = 'Air Mineral Cup';
       } else if (katStr.includes('galon') || katStr.includes('gln') || katStr.includes('19')) {
         kategori = 'Air Mineral Galon';
@@ -750,10 +752,12 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         kategori = 'Air Mineral Botol';
       }
 
-      // Supabase constraint: CHECK ("Satuan" IN ('Dus', 'Galon'))
+      // Supabase constraint: CHECK ("Satuan" IN ('Dus', 'Galon', 'Pcs'))
       let satuan = 'Dus';
       const satStr = (String(rawSat || '') + ' ' + name).toLowerCase();
-      if (satStr.includes('galon') || satStr.includes('gln') || kategori === 'Air Mineral Galon') {
+      if (satStr.includes('pcs') || satStr.includes('unit') || katStr.includes('kosong') || katStr.includes('kemasan')) {
+        satuan = 'Pcs';
+      } else if (satStr.includes('galon') || satStr.includes('gln') || kategori === 'Air Mineral Galon') {
         satuan = 'Galon';
       } else {
         satuan = 'Dus';
@@ -828,10 +832,12 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         id = `PLG-${String(idx + 1).padStart(4, '0')}`;
       }
 
-      // Supabase constraint: CHECK ("Level_Pelanggan" IN ('Distributor', 'Agen', 'Reseller', 'Konsumen Biasa'))
+      // Supabase constraint: CHECK ("Level_Pelanggan" IN ('Distributor', 'Agen', 'Reseller', 'Konsumen Biasa', 'Sekolah Mitra'))
       let level = 'Distributor';
       const lvlStr = (String(rawLevel || '') + ' ' + name).toLowerCase();
-      if (lvlStr.includes('konsumen') || lvlStr.includes('biasa') || lvlStr.includes('retail') || lvlStr.includes('eceran')) {
+      if (lvlStr.includes('sekolah') || lvlStr.includes('mitra') || lvlStr.includes('investasi') || lvlStr.includes('instansi') || lvlStr.includes('lembaga')) {
+        level = 'Sekolah Mitra';
+      } else if (lvlStr.includes('konsumen') || lvlStr.includes('biasa') || lvlStr.includes('retail') || lvlStr.includes('eceran')) {
         level = 'Konsumen Biasa';
       } else if (lvlStr.includes('reseller') || lvlStr.includes('warung')) {
         level = 'Reseller';
@@ -1091,6 +1097,9 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         } catch {}
       }
 
+      const rawGlnKembali = getRowVal(row, ['Galon_Kosong_Kembali', 'Galon Kosong Kembali', 'Galon_Kembali', 'Galon Kembali', 'Retur_Galon']);
+      const rawTipeGln = getRowVal(row, ['Tipe_Transaksi_Galon', 'Tipe Transaksi Galon', 'Tipe_Galon', 'Tipe Galon']);
+
       return {
         ID_Distribusi: distId,
         Tanggal: parseDateISO(rawTgl),
@@ -1109,7 +1118,11 @@ export function normalizeRecordForTable(tableName: string, row: any, idx: number
         C220: c220,
         B330: b330,
         B600: b600,
-        G19: g19
+        G19: g19,
+        Galon_Kosong_Kembali: rawGlnKembali !== undefined && rawGlnKembali !== null && rawGlnKembali !== '' ? parseNumeric(rawGlnKembali, 0) : g19,
+        Tipe_Transaksi_Galon: String(rawTipeGln || (g19 > 0 ? 'Tukar Galon' : 'Non-Galon')).trim(),
+        Tarif_Penyusutan_Galon: row.Tarif_Penyusutan_Galon !== undefined && row.Tarif_Penyusutan_Galon !== null ? parseNumeric(row.Tarif_Penyusutan_Galon, 0) : undefined,
+        Total_Penyusutan_Galon: row.Total_Penyusutan_Galon !== undefined && row.Total_Penyusutan_Galon !== null ? parseNumeric(row.Total_Penyusutan_Galon, 0) : undefined
       };
     }
 
@@ -2325,7 +2338,8 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
   { ID_Produk: 'ASH-CUP220', Nama_Produk: 'As-Shofaa Cup 220ml', Kategori: 'Air Mineral Cup', Satuan: 'Dus', Harga_Distributor: 14500, Harga_Agen: 15500, Harga_Reseller: 16500, Harga_Konsumen: 18500, Status: 'Aktif' },
   { ID_Produk: 'ASH-BTL330', Nama_Produk: 'As-Shofaa Botol 330ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 24000, Harga_Agen: 26000, Harga_Reseller: 28000, Harga_Konsumen: 32000, Status: 'Aktif' },
   { ID_Produk: 'ASH-BTL600', Nama_Produk: 'As-Shofaa Botol 600ml', Kategori: 'Air Mineral Botol', Satuan: 'Dus', Harga_Distributor: 28000, Harga_Agen: 30000, Harga_Reseller: 32000, Harga_Konsumen: 36000, Status: 'Aktif' },
-  { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' }
+  { ID_Produk: 'ASH-GLN19L', Nama_Produk: 'As-Shofaa Galon 19L (Refill)', Kategori: 'Air Mineral Galon', Satuan: 'Galon', Harga_Distributor: 9000, Harga_Agen: 10000, Harga_Reseller: 11000, Harga_Konsumen: 13000, Status: 'Aktif' },
+  { ID_Produk: 'ASH-GLN-BARU', Nama_Produk: 'Galon Kosong 19L Baru', Kategori: 'Kemasan & Galon' as any, Satuan: 'Pcs' as any, Harga_Distributor: 45000, Harga_Agen: 47000, Harga_Reseller: 48000, Harga_Konsumen: 50000, Status: 'Aktif' }
 ];
 
 /**
@@ -2607,6 +2621,7 @@ export const FACTORY_STANDARD_COA: COAItem[] = [
   { KODE_AKUN: '121-40', NAMA_AKUN: 'Peralatan Laboratorium & Instrumen Uji SNI/QC', KATEGORI: 'Aset Tetap', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
   { KODE_AKUN: '121-50', NAMA_AKUN: 'Instalasi Kelistrikan Pabrik, Trafo & Genset Cadangan', KATEGORI: 'Aset Tetap', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
   { KODE_AKUN: '121-60', NAMA_AKUN: 'Inventaris Peralatan Kantor, Komputer & Jaringan IT', KATEGORI: 'Aset Tetap', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
+  { KODE_AKUN: '121-70', NAMA_AKUN: 'Aset Galon Pabrik (Investasi Sekolah Mitra)', KATEGORI: 'Aset Tetap', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
 
   // Akumulasi Penyusutan (Kontra Aset)
   { KODE_AKUN: '122-10', NAMA_AKUN: 'Akumulasi Penyusutan Bangunan Gedung Pabrik', KATEGORI: 'Kontra Aset', SALDO_NORMAL: 'Kredit', STATUS: 'Aktif' },
@@ -2615,6 +2630,7 @@ export const FACTORY_STANDARD_COA: COAItem[] = [
   { KODE_AKUN: '122-40', NAMA_AKUN: 'Akumulasi Penyusutan Peralatan Lab & QC', KATEGORI: 'Kontra Aset', SALDO_NORMAL: 'Kredit', STATUS: 'Aktif' },
   { KODE_AKUN: '122-50', NAMA_AKUN: 'Akumulasi Penyusutan Genset & Instalasi Listrik', KATEGORI: 'Kontra Aset', SALDO_NORMAL: 'Kredit', STATUS: 'Aktif' },
   { KODE_AKUN: '122-60', NAMA_AKUN: 'Akumulasi Penyusutan Inventaris Kantor & IT', KATEGORI: 'Kontra Aset', SALDO_NORMAL: 'Kredit', STATUS: 'Aktif' },
+  { KODE_AKUN: '122-70', NAMA_AKUN: 'Akumulasi Penyusutan Galon Pabrik & Mitra', KATEGORI: 'Kontra Aset', SALDO_NORMAL: 'Kredit', STATUS: 'Aktif' },
 
   // ==========================================
   // 3. LIABILITAS JANGKA PENDEK (CURRENT LIABILITIES)
@@ -2674,6 +2690,7 @@ export const FACTORY_STANDARD_COA: COAItem[] = [
   { KODE_AKUN: '514-40', NAMA_AKUN: 'Beban Bahan Bakar Solar Genset & Kompresor Pabrik', KATEGORI: 'Harga Pokok', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
   { KODE_AKUN: '514-50', NAMA_AKUN: 'Beban Perlengkapan Pabrik, Seragam & K3 Operator', KATEGORI: 'Harga Pokok', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
   { KODE_AKUN: '514-60', NAMA_AKUN: 'Beban Uji Laboratorium Rutin & Sertifikasi Mutu SNI/BPOM', KATEGORI: 'Harga Pokok', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
+  { KODE_AKUN: '514-70', NAMA_AKUN: 'Beban Penyusutan Galon Pabrik & Mitra (HPP Refill)', KATEGORI: 'Harga Pokok', SALDO_NORMAL: 'Debit', STATUS: 'Aktif' },
 
   // ==========================================
   // 8. BEBAN OPERASIONAL, ADMINISTRASI & UMUM (OPEX)
@@ -2965,7 +2982,7 @@ export async function initializeDatabase(): Promise<void> {
 
   // Always ensure COA has full factory standard accounts
   const currentCOA = getTableData<COAItem>('Master_COA', []);
-  if (currentCOA.length < FACTORY_STANDARD_COA.length) {
+  if (currentCOA.length < FACTORY_STANDARD_COA.length || !currentCOA.some(c => c.KODE_AKUN === '121-70')) {
     upgradeCOAToFactoryStandard(false);
   }
 
@@ -3019,6 +3036,7 @@ export async function initializeDatabase(): Promise<void> {
   // Auto-migration: Pastikan Bahan Baku & Resep BOM Botol SN & LN tersedia
   try {
     ensureBottleBOMVariantsPopulated();
+    ensureGallonProductsAndCustomerLevelsPopulated();
   } catch (e) {}
 }
 
@@ -3146,6 +3164,74 @@ export function ensureBottleBOMVariantsPopulated(): void {
 }
 
 /**
+ * Memastikan produk Galon Kosong Baru dan bahan pendukung galon terdaftar di database
+ */
+export function ensureGallonProductsAndCustomerLevelsPopulated(): void {
+  // 1. Pastikan produk ASH-GLN-BARU dan pembaruan nama ASH-GLN19L (Refill) ada di MD_Produk
+  const existingProds = getTableData<ProductItem>('MD_Produk', []);
+  const prodMap = new Map<string, ProductItem>();
+  existingProds.forEach(p => {
+    if (p && p.ID_Produk) prodMap.set(p.ID_Produk, p);
+  });
+
+  let prodUpdated = false;
+
+  // Update nama ASH-GLN19L jika masih polos tanpa keterangan Refill
+  if (prodMap.has('ASH-GLN19L')) {
+    const gln19 = prodMap.get('ASH-GLN19L')!;
+    if (gln19.Nama_Produk === 'As-Shofaa Galon 19L') {
+      gln19.Nama_Produk = 'As-Shofaa Galon 19L (Refill)';
+      prodUpdated = true;
+    }
+  }
+
+  const newGallonProduct: ProductItem = {
+    ID_Produk: 'ASH-GLN-BARU',
+    Nama_Produk: 'Galon Kosong 19L Baru',
+    Kategori: 'Kemasan & Galon' as any,
+    Satuan: 'Pcs' as any,
+    Harga_Distributor: 45000,
+    Harga_Agen: 47000,
+    Harga_Reseller: 48000,
+    Harga_Konsumen: 50000,
+    Status: 'Aktif'
+  };
+
+  if (!prodMap.has(newGallonProduct.ID_Produk)) {
+    prodMap.set(newGallonProduct.ID_Produk, newGallonProduct);
+    prodUpdated = true;
+  }
+
+  if (prodUpdated) {
+    setTableData('MD_Produk', Array.from(prodMap.values()), { skipCloudSync: true });
+  }
+
+  // 2. Pastikan bahan baku penolong Galon Kosong & Segel tersedia di MD_BahanPenolong
+  const existingRaw = getTableData<RawMaterialItem>('MD_BahanPenolong', []);
+  const rawMap = new Map<string, RawMaterialItem>();
+  existingRaw.forEach(r => {
+    if (r && r.ID_Bahan) rawMap.set(r.ID_Bahan, r);
+  });
+
+  const neededRaw: RawMaterialItem[] = [
+    { ID_Bahan: 'BHN-GLN19-KOSONG', Nama_Bahan: 'Galon 19L Kosong Baru (Bahan/Aset)', Kategori: 'Kemasan' as any, Satuan: 'Pcs' as any, Harga_Satuan: 40000, Minimum_Stock: 50 },
+    { ID_Bahan: 'BHN-SEGELGLN', Nama_Bahan: 'Segel Plastik Galon', Kategori: 'Segel' as any, Satuan: 'Pcs' as any, Harga_Satuan: 80, Minimum_Stock: 1500 },
+  ];
+
+  let rawUpdated = false;
+  neededRaw.forEach(item => {
+    if (!rawMap.has(item.ID_Bahan)) {
+      rawMap.set(item.ID_Bahan, item);
+      rawUpdated = true;
+    }
+  });
+
+  if (rawUpdated) {
+    setTableData('MD_BahanPenolong', Array.from(rawMap.values()), { skipCloudSync: true });
+  }
+}
+
+/**
  * Upgrades or resets Master COA to full factory manufacturing standards
  */
 export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { totalAccounts: number; addedCount: number } {
@@ -3186,6 +3272,33 @@ export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { tota
   setTableData('Data_COA', merged);
   notifyDbChange();
   return { totalAccounts: merged.length, addedCount };
+}
+
+/**
+ * Standard default depreciation rate per gallon for partner schools (Rp 1.250 / gallon based on 40x refill cycle of Rp 50.000 gallon)
+ */
+export const DEFAULT_GALLON_DEPRECIATION_RATE = 1250;
+
+/**
+ * Get the currently configured gallon depreciation rate (custom or default 1250)
+ */
+export function getGallonDepreciationRate(): number {
+  if (typeof window === 'undefined') return DEFAULT_GALLON_DEPRECIATION_RATE;
+  const val = localStorage.getItem(STORAGE_KEY_PREFIX + 'GALLON_DEPRECIATION_RATE');
+  if (val) {
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed >= 0) return parsed;
+  }
+  return DEFAULT_GALLON_DEPRECIATION_RATE;
+}
+
+/**
+ * Save custom gallon depreciation rate per unit
+ */
+export function setGallonDepreciationRate(rate: number): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEY_PREFIX + 'GALLON_DEPRECIATION_RATE', String(Math.max(0, rate)));
+  notifyDbChange();
 }
 
 /**

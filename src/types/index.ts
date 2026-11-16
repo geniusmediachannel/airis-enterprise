@@ -74,8 +74,8 @@ export interface AccessLogItem {
 export interface ProductItem {
   ID_Produk: string;
   Nama_Produk: string;
-  Kategori: 'Air Mineral Cup' | 'Air Mineral Botol' | 'Air Mineral Galon';
-  Satuan: 'Dus' | 'Galon';
+  Kategori: 'Air Mineral Cup' | 'Air Mineral Botol' | 'Air Mineral Galon' | 'Kemasan & Galon' | string;
+  Satuan: 'Dus' | 'Galon' | 'Pcs' | string;
   Harga_Distributor: number;
   Harga_Agen: number;
   Harga_Reseller: number;
@@ -132,7 +132,7 @@ export interface CustomerItem {
   Nama_Pelanggan: string;
   No_Telp: string;
   Alamat: string;
-  Level_Pelanggan: 'Distributor' | 'Agen' | 'Reseller' | 'Konsumen Biasa';
+  Level_Pelanggan: 'Distributor' | 'Agen' | 'Reseller' | 'Konsumen Biasa' | 'Sekolah Mitra' | string;
   Status: 'Aktif' | 'Non-Aktif';
 }
 
@@ -226,6 +226,10 @@ export interface DeliveryPlanItem {
     Harga_Satuan: number;
     Subtotal: number;
   }[];
+  Galon_Kosong_Kembali?: number;
+  Tipe_Transaksi_Galon?: string;
+  Tarif_Penyusutan_Galon?: number;
+  Total_Penyusutan_Galon?: number;
 }
 
 export interface DistributionItem {
@@ -245,6 +249,10 @@ export interface DistributionItem {
   Tanda_Tangan_Penerima?: string;
   Tanda_Tangan_Sopir?: string;
   Waktu_Diterima?: string;
+  Galon_Kosong_Kembali?: number;
+  Tipe_Transaksi_Galon?: 'Tukar Galon' | 'Beli Baru' | 'Pinjam Galon' | 'Non-Galon' | string;
+  Tarif_Penyusutan_Galon?: number;
+  Total_Penyusutan_Galon?: number;
 }
 
 export interface DistributionProductDetail {

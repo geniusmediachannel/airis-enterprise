@@ -12,7 +12,8 @@ import {
 import { SupabaseConfig, UserAccount } from '../types';
 import { 
   getTableData, resetAllDatabase,
-  OPERATIONAL_PURGE_MODULES, previewOperationalPurge, executeOperationalPurge
+  OPERATIONAL_PURGE_MODULES, previewOperationalPurge, executeOperationalPurge,
+  getGallonDepreciationRate, setGallonDepreciationRate, DEFAULT_GALLON_DEPRECIATION_RATE
 } from '../services/dbAdapter';
 import { getTursoConfig, pullAllTablesFromTurso } from '../services/tursoAdapter';
 import { isSuperAdmin } from '../services/permissionService';
@@ -70,6 +71,10 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
   const [compactMode, setCompactMode] = useState<boolean>(() => {
     return localStorage.getItem('airis_compact') === 'true';
   });
+
+  // Gallon depreciation rate state
+  const [globalGallonRate, setGlobalGallonRate] = useState<number>(() => getGallonDepreciationRate());
+  const [rateSuccess, setRateSuccess] = useState<boolean>(false);
 
   // Sound effects state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
@@ -1482,6 +1487,62 @@ export const AppSettingsModal: React.FC<AppSettingsModalProps> = ({
                       <span className="text-slate-400 block text-[10px] font-bold uppercase">Standar Mutu &amp; Izin</span>
                       <span className="text-emerald-700 font-semibold">SNI 3553:2023 • BPOM RI MD • Halal Indonesia</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Pengaturan Standar Penyusutan Galon Sekolah Mitra */}
+                <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-xs text-indigo-950 block">Tarif Standar Penyusutan Galon (Sekolah Mitra)</span>
+                      <span className="text-[11px] text-indigo-700">Digunakan sebagai default HPP per pengiriman galon ke mitra sekolah (40x putaran isi ulang).</span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      Modul Keuangan & Distribusi
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-indigo-200/60">
+                    <span className="text-xs text-slate-700 font-semibold">Tarif / Galon:</span>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-medium">Rp</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50"
+                        value={globalGallonRate}
+                        onChange={e => setGlobalGallonRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-32 pl-8 pr-2.5 py-1 text-xs border border-indigo-300 rounded-lg bg-white font-mono font-bold text-indigo-950 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        setGallonDepreciationRate(globalGallonRate);
+                        setRateSuccess(true);
+                        setTimeout(() => setRateSuccess(false), 3000);
+                        showToast('Tarif Disimpan', `Tarif penyusutan galon diperbarui ke Rp ${globalGallonRate.toLocaleString('id-ID')} / galon.`);
+                      }}
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+                    >
+                      Simpan Tarif
+                    </button>
+                    <button
+                      onClick={() => {
+                        setGlobalGallonRate(DEFAULT_GALLON_DEPRECIATION_RATE);
+                        setGallonDepreciationRate(DEFAULT_GALLON_DEPRECIATION_RATE);
+                        setRateSuccess(true);
+                        setTimeout(() => setRateSuccess(false), 3000);
+                        showToast('Reset Default', `Tarif penyusutan dikembalikan ke standar pabrik (Rp 1.250 / galon).`);
+                      }}
+                      className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
+                      Reset Default (1.250)
+                    </button>
+                    {rateSuccess && (
+                      <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle2 size={13} /> Tersimpan
+                      </span>
+                    )}
                   </div>
                 </div>
 
