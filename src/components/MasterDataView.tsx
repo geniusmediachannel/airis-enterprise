@@ -9,7 +9,10 @@ import {
   ProductItem, CustomerItem, SupplierItem, RawMaterialItem, 
   BOMItem, EmployeeItem, UserAccount, SpecialPriceItem, UserRole, PriceHistoryItem 
 } from '../types';
-import { getTableData, setTableData, deleteTableRow, isBottleProduct } from '../services/dbAdapter';
+import { 
+  getTableData, setTableData, deleteTableRow, isBottleProduct,
+  getGallonDepreciationRate, setGallonDepreciationRate, DEFAULT_GALLON_DEPRECIATION_RATE 
+} from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { 
@@ -80,6 +83,11 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
   // State untuk Histori & Pengaturan Perubahan Harga Berdasarkan Tanggal
   const [priceHistories, setPriceHistories] = useState<PriceHistoryItem[]>(() => getAllPriceHistories());
+
+  // State untuk Standar Tarif Penyusutan Galon Mitra (HPP Refill)
+  const [gallonDepRate, setGallonDepRate] = useState<number>(() => getGallonDepreciationRate());
+  const [isSavingGallonRate, setIsSavingGallonRate] = useState(false);
+  const [rateSuccess, setRateSuccess] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState<boolean>(false);
   const [priceFilterType, setPriceFilterType] = useState<'all' | 'Bahan Penolong' | 'Produk'>('all');
   const [priceFilterMonth, setPriceFilterMonth] = useState<string>('all');
@@ -872,31 +880,10 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         s.Tanggal_Selesai || 'Seterusnya',
         s.Keterangan || '-'
       ]);
-    } else if (activeTab === 'user') {
-      headers = ['ID User', 'Username', 'Role Akses', 'ID Karyawan', 'Status Akun'];
-      rows = users.map(u => [u.ID_User, u.Username, u.Role, u.ID_Karyawan, u.Status_Akun]);
-    } else if (activeTab === 'histori_harga') {
-      headers = ['Tgl Berlaku', 'Tipe', 'Nama Item', 'Acuan Tgl Sblm', 'Harga Lama', 'Harga Baru', 'Selisih', 'Status', 'Alasan'];
-      rows = filteredPriceHistories.map(h => {
-        const oldPrice = Number(h.Harga_Lama_Distributor ?? h.Harga_Distributor_Lama ?? h.Harga_Lama) || 0;
-        const newPrice = Number(h.Harga_Baru_Distributor ?? h.Harga_Distributor_Baru ?? h.Harga_Baru) || 0;
-        const diff = newPrice - oldPrice;
-        return [
-          h.Tanggal_Berlaku,
-          h.Tipe_Item,
-          `${h.Nama_Item} (${h.ID_Item})`,
-          h.Tanggal_Acuan_Sebelumnya || '-',
-          `Rp ${oldPrice.toLocaleString('id-ID')}`,
-          `Rp ${newPrice.toLocaleString('id-ID')}`,
-          `${diff >= 0 ? '+' : ''}Rp ${diff.toLocaleString('id-ID')} (${h.Persentase_Perubahan ?? 0}%)`,
-          h.Status_Penerapan || 'Aktif',
-          h.Keterangan || '-'
-        ];
-      });
     }
 
     generateTableReportPDF({
-      title,
+      title: `Laporan Data Master - ${activeTab.toUpperCase()}`,
       subtitle: 'PT. Anugerah Illahi Rabbi - AMDK As-Shofaa',
       headers,
       rows,
@@ -978,16 +965,19 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         ].map(t => (
           <button
             key={t.id}
-            onClick={() => { setActiveTab(t.id as any); setSearchQuery(''); }}
-            className={`px-3.5 py-2 border-b-2 font-semibold transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+            onClick={() => {
+              setActiveTab(t.id as any);
+              setSearchQuery('');
+            }}
+            className={`px-3 py-2 border-b-2 font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === t.id
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
             }`}
           >
             <span>{t.label}</span>
             {t.badge && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+              <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[10px] font-bold animate-pulse">
                 {t.badge}
               </span>
             )}
@@ -995,163 +985,21 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         ))}
       </div>
 
-      {/* Search Input for standard master tabs */}
-      {activeTab !== 'histori_harga' && (
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative w-full sm:w-72">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-              <Search size={14} />
-            </span>
+      {/* Search Bar & Table Header */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+        <div className="p-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="relative min-w-[240px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder={`Cari dalam ${activeTab}...`}
+              placeholder={`Cari di ${activeTab.replace('_', ' ')}...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
           </div>
         </div>
-      )}
 
-      {/* Histori Harga Top Cards and Filter Toolbar */}
-      {activeTab === 'histori_harga' && (
-        <div className="space-y-4">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total Catatan</p>
-                <p className="text-xl font-bold text-slate-900 mt-0.5">{priceHistories.length}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Histori perubahan harga</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <History size={20} />
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Bahan Penolong</p>
-                <p className="text-xl font-bold text-amber-700 mt-0.5">
-                  {priceHistories.filter(h => h.Tipe_Item === 'Bahan Penolong').length}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Penyesuaian bahan</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Tag size={20} />
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Produk Jadi</p>
-                <p className="text-xl font-bold text-emerald-700 mt-0.5">
-                  {priceHistories.filter(h => h.Tipe_Item === 'Produk').length}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Perubahan tier produk</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <TrendingUp size={20} />
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Terjadwal</p>
-                <p className="text-xl font-bold text-indigo-700 mt-0.5">
-                  {priceHistories.filter(h => h.Status_Penerapan === 'Terjadwal').length}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Menunggu tanggal berlaku</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <CalendarClock size={20} />
-              </div>
-            </div>
-          </div>
-
-          {/* Filter Bar & Action Button */}
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Filter Tipe Item Pills */}
-              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs font-medium">
-                {(['all', 'Bahan Penolong', 'Produk'] as const).map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setPriceFilterType(t)}
-                    className={`px-3 py-1 rounded-md transition-colors ${
-                      priceFilterType === t 
-                        ? 'bg-white text-blue-700 font-bold shadow-xs' 
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {t === 'all' ? 'Semua Tipe' : t}
-                  </button>
-                ))}
-              </div>
-
-              {/* Filter Bulan Dropdown */}
-              <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                <Calendar size={14} className="text-slate-400" />
-                <select
-                  value={priceFilterMonth}
-                  onChange={e => setPriceFilterMonth(e.target.value)}
-                  className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                >
-                  <option value="all">Semua Periode</option>
-                  {Array.from(new Set(priceHistories.map(h => (h.Tanggal_Berlaku || '').slice(0, 7)).filter(Boolean)))
-                    .sort()
-                    .reverse()
-                    .map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Search Box */}
-              <div className="relative flex-1 md:w-60">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-400">
-                  <Search size={13} />
-                </span>
-                <input
-                  type="text"
-                  placeholder="Cari item, ID, keterangan..."
-                  value={priceSearchQuery}
-                  onChange={e => setPriceSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1 text-xs border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Add Price Change Buttons */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPriceModal('Bahan Penolong')}
-                  className="px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-1 transition-colors shadow-xs cursor-pointer"
-                  title="Atur perubahan harga bahan penolong"
-                >
-                  <Tag size={13} />
-                  <span>+ Harga Bahan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenPriceModal('Produk')}
-                  className="px-2.5 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-1 transition-colors shadow-xs cursor-pointer"
-                  title="Atur perubahan harga produk jadi"
-                >
-                  <TrendingUp size={13} />
-                  <span>+ Harga Produk</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tables based on active tab */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           {activeTab === 'produk' && (
             <table className="w-full text-left text-xs border-collapse">
@@ -1162,10 +1010,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   <th className="p-3">Kategori</th>
                   <th className="p-3">Satuan</th>
                   <th className="p-3 text-right">Harga Distributor</th>
-                  <th className="p-3 text-right">Harga Agen</th>
-                  <th className="p-3 text-right">Harga Reseller</th>
                   <th className="p-3 text-right">Harga Konsumen</th>
-                  <th className="p-3 text-center">Tgl Berlaku</th>
                   <th className="p-3 text-center">Status</th>
                   <th className="p-3 text-center">Aksi</th>
                 </tr>
@@ -1178,16 +1023,9 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       <td className="p-3 font-mono font-bold text-blue-700">{p.ID_Produk}</td>
                       <td className="p-3 font-semibold text-slate-900">{p.Nama_Produk}</td>
                       <td className="p-3 text-slate-600">{p.Kategori}</td>
-                      <td className="p-3 font-mono">{p.Satuan}</td>
-                      <td className="p-3 text-right font-mono tabular-nums font-semibold text-blue-900">Rp {p.Harga_Distributor?.toLocaleString('id-ID')}</td>
-                      <td className="p-3 text-right font-mono tabular-nums">Rp {p.Harga_Agen?.toLocaleString('id-ID')}</td>
-                      <td className="p-3 text-right font-mono tabular-nums">Rp {p.Harga_Reseller?.toLocaleString('id-ID')}</td>
-                      <td className="p-3 text-right font-mono tabular-nums text-slate-600">Rp {p.Harga_Konsumen?.toLocaleString('id-ID')}</td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 rounded-md font-mono text-[10px] bg-slate-100 text-slate-700 border border-slate-200" title="Tanggal update atau mulai berlakunya harga">
-                          {p.Tgl_Update_Harga || '-'}
-                        </span>
-                      </td>
+                      <td className="p-3 text-slate-600">{p.Satuan}</td>
+                      <td className="p-3 text-right font-mono text-slate-800">Rp {p.Harga_Distributor?.toLocaleString('id-ID')}</td>
+                      <td className="p-3 text-right font-mono font-semibold text-slate-900">Rp {p.Harga_Konsumen?.toLocaleString('id-ID')}</td>
                       <td className="p-3 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           p.Status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
@@ -1196,15 +1034,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         </span>
                       </td>
                       <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button 
-                            type="button"
-                            onClick={() => handleOpenPriceModal('Produk', p)} 
-                            className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded transition-colors" 
-                            title="Atur Perubahan Harga Berdasarkan Tanggal"
-                          >
-                            <TrendingUp size={14} />
-                          </button>
+                        <div className="flex items-center justify-center gap-2">
                           <button onClick={() => handleOpenEdit(p)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Data"><Edit2 size={14} /></button>
                           <button onClick={() => handleDelete(p.ID_Produk)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Hapus Data"><Trash2 size={14} /></button>
                         </div>
@@ -1358,7 +1188,64 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
           )}
 
           {activeTab === 'bom' && (
-            <table className="w-full text-left text-xs border-collapse">
+            <div className="space-y-4">
+              {/* Card Standar HPP Refill & Penyusutan Galon Pinjam Pakai */}
+              <div className="p-4 bg-gradient-to-r from-indigo-50/90 via-white to-purple-50/60 border border-indigo-200 rounded-xl shadow-2xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0 mt-0.5">
+                      HPP
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs text-indigo-950">
+                          Standar Tarif Penyusutan Galon Mitra (HPP Refill)
+                        </h4>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-800 font-semibold px-2 py-0.5 rounded-full border border-indigo-200">
+                          Akun 514-70 (Beban HPP) vs 122-70
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 max-w-2xl">
+                        Standar perhitungan HPP penyusutan aset galon pinjam pakai (estimasi 40x isi ulang = Rp 1.250 / galon). Tarif ini otomatis diterapkan di Modul Keuangan &amp; Akuntansi pada setiap pengiriman galon pinjam pakai tanpa perlu diinput manual di surat jalan.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 border border-indigo-300 rounded-lg shadow-2xs">
+                      <span className="text-xs text-slate-500 font-semibold">Tarif / Galon:</span>
+                      <span className="text-xs font-bold text-indigo-700">Rp</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={gallonDepRate}
+                        onChange={(e) => setGallonDepRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-20 text-xs font-mono font-bold text-indigo-900 bg-transparent outline-none focus:ring-0"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSavingGallonRate}
+                      onClick={() => {
+                        setIsSavingGallonRate(true);
+                        setGallonDepreciationRate(gallonDepRate);
+                        setRateSuccess(true);
+                        showToast('success', 'Tarif HPP Disimpan', `Tarif penyusutan galon pinjam pakai diperbarui menjadi Rp ${gallonDepRate.toLocaleString('id-ID')} / galon.`);
+                        setTimeout(() => {
+                          setIsSavingGallonRate(false);
+                          setRateSuccess(false);
+                        }, 1500);
+                      }}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Save size={13} />
+                      <span>{rateSuccess ? 'Tersimpan!' : 'Simpan Tarif'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="p-3">ID BOM</th>
@@ -1405,6 +1292,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 })}
               </tbody>
             </table>
+            </div>
           )}
 
           {activeTab === 'karyawan' && (

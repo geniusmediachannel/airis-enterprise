@@ -335,6 +335,9 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Navigasi Sub-Tab Menu Distribusi: 'pengiriman' (Pengiriman & Logistik) vs 'rekap_galon' (Rekapitulasi Saldo Galon Mitra)
   const [activeSubTab, setActiveSubTab] = useState<'pengiriman' | 'rekap_galon'>('pengiriman');
 
+  // Sub-View di dalam Tab Rekapitulasi: 'saldo_mitra' vs 'data_penarikan'
+  const [rekapSubView, setRekapSubView] = useState<'saldo_mitra' | 'data_penarikan'>('saldo_mitra');
+
   // Rekapitulasi Saldo Galon Sekolah Mitra (Monitoring Fisik & Beban Penyusutan)
   const [showMitraSection, setShowMitraSection] = useState<boolean>(true);
   const [mitraSearchQuery, setMitraSearchQuery] = useState<string>('');
@@ -529,6 +532,42 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       totalMitraPenyusutan: gPenyusutan
     };
   }, [customers, distributions, mitraSearchQuery]);
+
+  // Data Penarikan Galon Kosong (Seluruh record transaksi penarikan galon fisik dari mitra)
+  const riwayatPenarikanGalon = useMemo(() => {
+    return (distributions || [])
+      .filter(d => {
+        const kembali = Number(d.Galon_Kosong_Kembali) || 0;
+        const kirim = Number(d.G19 || (d as any).Galon || (d as any)['ASH-GLN19L'] || 0);
+        return d.Tipe_Transaksi_Galon === 'Tarik Galon' || (kembali > 0 && kirim === 0) || (d.Tipe_Transaksi_Galon === 'Pinjam Galon' && kembali > 0);
+      })
+      .sort((a, b) => (b.Tanggal || '').localeCompare(a.Tanggal || ''));
+  }, [distributions]);
+
+  // Modal Input Data Penarikan Galon Kosong
+  const [showTarikGalonModal, setShowTarikGalonModal] = useState<boolean>(false);
+  const [tarikGalonForm, setTarikGalonForm] = useState<{
+    Tanggal: string;
+    No_Dokumen: string;
+    ID_Pelanggan: string;
+    Nama_Pelanggan: string;
+    Level_Pelanggan: string;
+    Alamat: string;
+    Sopir: string;
+    Jumlah_Tarik: number | '';
+    Keterangan: string;
+  }>({
+    Tanggal: new Date().toISOString().slice(0, 10),
+    No_Dokumen: '',
+    ID_Pelanggan: '',
+    Nama_Pelanggan: '',
+    Level_Pelanggan: '',
+    Alamat: '',
+    Sopir: '',
+    Jumlah_Tarik: '' as any,
+    Keterangan: ''
+  });
+  const [isSavingTarikGalon, setIsSavingTarikGalon] = useState<boolean>(false);
 
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
@@ -1160,6 +1199,120 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     onRefresh();
     showToast('Pengiriman Dihapus', `Data pengiriman ${id} telah dihapus permanen.`, 'info');
+  };
+
+  // Handler Buka Modal Input Penarikan Galon Kosong
+  const handleOpenTarikGalonModal = (preselectedMitra?: any) => {
+    const today = new Date();
+    const y = String(today.getFullYear()).slice(-2);
+    const mRoman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][today.getMonth()];
+    
+    // Hitung nomor urut penarikan bulan ini
+    const existingTarikCount = distributions.filter(dist => 
+      dist.Tipe_Transaksi_Galon === 'Tarik Galon' || (Number(dist.Galon_Kosong_Kembali) > 0 && Number(dist.G19 || 0) === 0)
+    ).length + 1;
+    const noDok = `TRK-${String(existingTarikCount).padStart(3, '0')}/${mRoman}/${y}`;
+
+    // Cari mitra default yang memiliki saldo galon tertahan paling banyak jika tidak ada preselected
+    const defaultMitra = preselectedMitra || sekolahMitraList.find(m => m.saldoTertahan > 0) || sekolahMitraList[0];
+
+    setTarikGalonForm({
+      Tanggal: today.toISOString().slice(0, 10),
+      No_Dokumen: noDok,
+      ID_Pelanggan: defaultMitra?.idPelanggan || '',
+      Nama_Pelanggan: defaultMitra?.namaPelanggan || '',
+      Level_Pelanggan: defaultMitra?.levelPelanggan || 'Sekolah Mitra',
+      Alamat: defaultMitra?.alamat || '',
+      Sopir: defaultMitra?.lastDriver && defaultMitra.lastDriver !== '-' ? defaultMitra.lastDriver : '',
+      Jumlah_Tarik: '' as any,
+      Keterangan: ''
+    });
+    setShowTarikGalonModal(true);
+  };
+
+  // Handler Simpan Transaksi Penarikan Galon Kosong
+  const handleSaveTarikGalon = async () => {
+    const qtyTarik = Number(tarikGalonForm.Jumlah_Tarik);
+    if (!tarikGalonForm.Nama_Pelanggan) {
+      showToast('Pilih Mitra / Sekolah', 'Mohon pilih nama sekolah atau pelanggan mitra asal penarikan galon.', 'warning');
+      return;
+    }
+    if (!qtyTarik || qtyTarik <= 0) {
+      showToast('Jumlah Tidak Valid', 'Masukkan jumlah galon kosong yang ditarik (minimal 1 pcs).', 'warning');
+      return;
+    }
+    if (!tarikGalonForm.Sopir?.trim()) {
+      showToast('Sopir / Armada Wajib Diisi', 'Masukkan nama sopir atau petugas armada yang melakukan penarikan galon.', 'warning');
+      return;
+    }
+
+    setIsSavingTarikGalon(true);
+    try {
+      const nextDistId = getNextSequenceId(distributions, 'ID_Distribusi', 'DST', 3);
+      const newRecord: DistributionItem = {
+        ID_Distribusi: nextDistId,
+        Tanggal: tarikGalonForm.Tanggal,
+        No_Surat_Jalan: tarikGalonForm.No_Dokumen || `TRK-${Date.now().toString().slice(-4)}`,
+        No_Invoice: '-',
+        ID_Pelanggan: tarikGalonForm.ID_Pelanggan,
+        Nama_Pelanggan: tarikGalonForm.Nama_Pelanggan,
+        Level_Pelanggan: tarikGalonForm.Level_Pelanggan || 'Sekolah Mitra',
+        Tujuan: tarikGalonForm.Alamat || '-',
+        Pengirim: tarikGalonForm.Sopir.trim(),
+        Penerima: 'Gudang Pabrik (Galon Kosong)',
+        Metode_Kirim: 'Armada Pabrik',
+        Tipe_Transaksi_Galon: 'Tarik Galon',
+        Galon_Kosong_Kembali: qtyTarik,
+        G19: 0,
+        C120: 0,
+        C220: 0,
+        B330: 0,
+        B600: 0,
+        Total_Tagihan: 0,
+        Status_Pengiriman: 'Selesai',
+        Keterangan: tarikGalonForm.Keterangan || `Penarikan ${qtyTarik} galon kosong dari ${tarikGalonForm.Nama_Pelanggan}`,
+        Tarif_Penyusutan_Galon: 0,
+        Total_Penyusutan_Galon: 0,
+        Waktu_Dibuat: new Date().toISOString()
+      };
+
+      const currentDists = getTableData<DistributionItem>('Distribusi', distributions);
+      const updated = [newRecord, ...currentDists];
+      setTableData('Distribusi', updated);
+
+      // Sinkronisasi ke cloud Turso jika aktif
+      try {
+        const { pushTableRowToTurso } = await import('../services/tursoAdapter');
+        await pushTableRowToTurso('Distribusi', newRecord);
+      } catch (e) {
+        console.warn('Gagal push penarikan ke Turso:', e);
+      }
+
+      showToast('Penarikan Berhasil Disimpan', `Berhasil mencatat penarikan ${qtyTarik} galon kosong dari ${tarikGalonForm.Nama_Pelanggan}. Saldo tertahan otomatis berkurang.`, 'success');
+      setShowTarikGalonModal(false);
+      onRefresh();
+    } catch (err: any) {
+      showToast('Gagal Menyimpan', err?.message || 'Terjadi kesalahan saat menyimpan data penarikan.', 'danger');
+    } finally {
+      setIsSavingTarikGalon(false);
+    }
+  };
+
+  // Handler Hapus Data Penarikan Galon Kosong
+  const handleDeleteTarikGalon = async (id: string, mitraName: string, qty: number) => {
+    const ok = await confirmAction({
+      title: 'Hapus Catatan Penarikan Galon',
+      message: `Hapus catatan penarikan ${qty} galon kosong dari ${mitraName}? Saldo galon tertahan mitra akan dikembalikan ke posisi semula.`,
+      confirmText: 'Ya, Hapus Data',
+      cancelText: 'Batal',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    recordDeletedDistributionId(id);
+    await deleteTableRow('Distribusi', id);
+    onRefresh();
+    showToast('Data Dihapus', `Catatan penarikan ${id} telah dihapus. Saldo galon diperbarui.`, 'info');
   };
 
   // Customer dropdown change
@@ -3185,14 +3338,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedDistForAdd(null);
-                  setShowAddDistModal(true);
-                }}
+                onClick={() => handleOpenTarikGalonModal()}
                 className="px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Input data penarikan galon kosong dari mitra / sekolah"
               >
-                <Plus size={14} />
-                <span>Kirim Galon Baru</span>
+                <RotateCcw size={14} />
+                <span>Input Data Penarikan Galon Kosong</span>
               </button>
             </div>
           </div>
@@ -3234,7 +3385,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             {/* 3. Total Galon Kembali */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
               <div className="flex items-center justify-between text-slate-600 mb-1">
-                <span className="text-xs font-medium">Total Galon Kembali</span>
+                <span className="text-xs font-medium">Total Galon Kembali / Ditarik</span>
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
                   <RotateCcw size={16} />
                 </div>
@@ -3264,135 +3415,307 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             </div>
           </div>
 
-          {/* Tabel Detail Saldo Galon Mitra */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <span>Daftar Saldo &amp; Sirkulasi Galon per Mitra</span>
-                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-xs">
-                    {filteredMitraList.length} Mitra
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Klik tombol <strong>Mutasi</strong> untuk meninjau rekaman riwayat surat jalan, pengembalian, dan penyusutan tiap pengiriman.
-                </p>
+          {/* Sub-Switcher: Saldo Galon Mitra vs Data Penarikan Galon */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <button
+              type="button"
+              onClick={() => setRekapSubView('saldo_mitra')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-2 cursor-pointer shadow-2xs ${
+                rekapSubView === 'saldo_mitra'
+                  ? 'bg-indigo-600 text-white font-bold ring-2 ring-indigo-600/20'
+                  : 'bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <GraduationCap size={15} />
+              <span>Saldo Galon per Mitra</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                rekapSubView === 'saldo_mitra' ? 'bg-indigo-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {filteredMitraList.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRekapSubView('data_penarikan')}
+              className={`px-4 py-2 text-xs font-semibold rounded-xl transition flex items-center gap-2 cursor-pointer shadow-2xs ${
+                rekapSubView === 'data_penarikan'
+                  ? 'bg-emerald-600 text-white font-bold ring-2 ring-emerald-600/20'
+                  : 'bg-white text-slate-700 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <RotateCcw size={15} />
+              <span>Data Penarikan Galon Kosong</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                rekapSubView === 'data_penarikan' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {riwayatPenarikanGalon.length}
+              </span>
+            </button>
+          </div>
+
+          {/* VIEW 1: TABEL REKAPITULASI SALDO MITRA */}
+          {rekapSubView === 'saldo_mitra' && (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <span>Daftar Saldo &amp; Sirkulasi Galon per Mitra</span>
+                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-xs">
+                      {filteredMitraList.length} Mitra
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Klik tombol <strong>Mutasi</strong> untuk riwayat sirkulasi, atau tombol <strong>Tarik</strong> untuk langsung input penarikan galon kosong.
+                  </p>
+                </div>
+
+                {mitraSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setMitraSearchQuery('')}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
+                  >
+                    Reset Pencarian
+                  </button>
+                )}
               </div>
 
-              {mitraSearchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setMitraSearchQuery('')}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer"
-                >
-                  Reset Pencarian
-                </button>
+              {filteredMitraList.length === 0 ? (
+                <div className="py-16 text-center text-slate-500">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500">
+                    <GraduationCap size={32} />
+                  </div>
+                  <h4 className="font-bold text-slate-800 text-base mb-1">
+                    {mitraSearchQuery ? 'Tidak Ada Mitra yang Cocok' : 'Belum Ada Transaksi Galon Pinjam Pakai'}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+                    {mitraSearchQuery 
+                      ? `Tidak ditemukan mitra dengan kata kunci "${mitraSearchQuery}".`
+                      : 'Data rekapitulasi akan terisi otomatis saat Anda mencatat pengiriman distribusi dengan tipe transaksi "Pinjam Galon" atau ke pelanggan bertipe "Sekolah Mitra".'
+                    }
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTarikGalonModal()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    <RotateCcw size={14} />
+                    <span>Input Data Penarikan Galon Kosong</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
+                      <tr>
+                        <th className="p-3 w-12 text-center">No</th>
+                        <th className="p-3">Nama Mitra &amp; Kontak</th>
+                        <th className="p-3">Alamat</th>
+                        <th className="p-3 text-right">Galon Terkirim</th>
+                        <th className="p-3 text-right">Galon Kembali</th>
+                        <th className="p-3 text-right">Saldo Tertahan</th>
+                        <th className="p-3 text-right">Akumulasi HPP</th>
+                        <th className="p-3 text-center">Pengiriman Terakhir</th>
+                        <th className="p-3 text-center w-36">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredMitraList.map((m, idx) => (
+                        <tr key={m.idPelanggan} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-3 text-center text-slate-400 font-mono">
+                            {idx + 1}
+                          </td>
+                          <td className="p-3">
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span>{m.namaPelanggan}</span>
+                              {m.levelPelanggan && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {m.levelPelanggan}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {m.kontak || '-'}
+                            </div>
+                          </td>
+                          <td className="p-3 max-w-[220px] truncate text-slate-600" title={m.alamat}>
+                            {m.alamat || '-'}
+                          </td>
+                          <td className="p-3 text-right font-semibold text-slate-900 tabular-nums">
+                            {m.totalGalonKirim.toLocaleString('id-ID')} Pcs
+                          </td>
+                          <td className="p-3 text-right font-semibold text-emerald-700 tabular-nums">
+                            {m.totalGalonKembali.toLocaleString('id-ID')} Pcs
+                          </td>
+                          <td className="p-3 text-right tabular-nums">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-xs ${
+                              m.saldoTertahan > 0 
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {m.saldoTertahan.toLocaleString('id-ID')} Pcs
+                            </span>
+                          </td>
+                          <td className="p-3 text-right font-bold text-purple-800 tabular-nums">
+                            Rp {m.totalPenyusutan.toLocaleString('id-ID')}
+                          </td>
+                          <td className="p-3 text-center text-slate-600">
+                            <div className="font-medium">{formatDateDDMMYYYY(m.lastDate)}</div>
+                            <div className="text-[10px] font-mono text-slate-400">{m.lastSj}</div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedMitraHistory(m)}
+                                className="px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                title="Lihat riwayat mutasi sirkulasi galon"
+                              >
+                                <History size={13} />
+                                <span>Mutasi</span>
+                              </button>
+                              {m.saldoTertahan > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTarikGalonModal(m)}
+                                  className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                  title={`Input penarikan galon kosong dari ${m.namaPelanggan}`}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Tarik</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
+          )}
 
-            {filteredMitraList.length === 0 ? (
-              <div className="py-16 text-center text-slate-500">
-                <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500">
-                  <GraduationCap size={32} />
+          {/* VIEW 2: TABEL DATA PENARIKAN GALON KOSONG DARI MITRA */}
+          {rekapSubView === 'data_penarikan' && (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <span>Data Penarikan Galon Kosong dari Mitra</span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-xs">
+                      {riwayatPenarikanGalon.length} Catatan Penarikan
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Riwayat penarikan galon kosong dari sekolah dan pelanggan mitra yang masuk kembali ke gudang pabrik.
+                  </p>
                 </div>
-                <h4 className="font-bold text-slate-800 text-base mb-1">
-                  {mitraSearchQuery ? 'Tidak Ada Mitra yang Cocok' : 'Belum Ada Transaksi Galon Pinjam Pakai'}
-                </h4>
-                <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                  {mitraSearchQuery 
-                    ? `Tidak ditemukan mitra dengan kata kunci "${mitraSearchQuery}".`
-                    : 'Data rekapitulasi akan terisi otomatis saat Anda mencatat pengiriman distribusi dengan tipe transaksi "Pinjam Galon" atau ke pelanggan bertipe "Sekolah Mitra".'
-                  }
-                </p>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedDistForAdd(null);
-                    setShowAddDistModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                  onClick={() => handleOpenTarikGalonModal()}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <Plus size={14} />
-                  <span>Catat Pengiriman Galon Sekarang</span>
+                  <RotateCcw size={13} />
+                  <span>+ Input Penarikan Baru</span>
                 </button>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
-                    <tr>
-                      <th className="p-3 w-12 text-center">No</th>
-                      <th className="p-3">Nama Mitra &amp; Kontak</th>
-                      <th className="p-3">Alamat</th>
-                      <th className="p-3 text-right">Galon Terkirim</th>
-                      <th className="p-3 text-right">Galon Kembali</th>
-                      <th className="p-3 text-right">Saldo Tertahan</th>
-                      <th className="p-3 text-right">Akumulasi HPP</th>
-                      <th className="p-3 text-center">Pengiriman Terakhir</th>
-                      <th className="p-3 text-center w-28">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredMitraList.map((m, idx) => (
-                      <tr key={m.idPelanggan} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3 text-center text-slate-400 font-mono">
-                          {idx + 1}
-                        </td>
-                        <td className="p-3">
-                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                            <span>{m.namaPelanggan}</span>
-                            {m.levelPelanggan && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                {m.levelPelanggan}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            {m.kontak || '-'}
-                          </div>
-                        </td>
-                        <td className="p-3 max-w-[220px] truncate text-slate-600" title={m.alamat}>
-                          {m.alamat || '-'}
-                        </td>
-                        <td className="p-3 text-right font-semibold text-slate-900 tabular-nums">
-                          {m.totalGalonKirim.toLocaleString('id-ID')} Pcs
-                        </td>
-                        <td className="p-3 text-right font-semibold text-emerald-700 tabular-nums">
-                          {m.totalGalonKembali.toLocaleString('id-ID')} Pcs
-                        </td>
-                        <td className="p-3 text-right tabular-nums">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-xs ${
-                            m.saldoTertahan > 0 
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          }`}>
-                            {m.saldoTertahan.toLocaleString('id-ID')} Pcs
-                          </span>
-                        </td>
-                        <td className="p-3 text-right font-bold text-purple-800 tabular-nums">
-                          Rp {m.totalPenyusutan.toLocaleString('id-ID')}
-                        </td>
-                        <td className="p-3 text-center text-slate-600">
-                          <div className="font-medium">{formatDateDDMMYYYY(m.lastDate)}</div>
-                          <div className="text-[10px] font-mono text-slate-400">{m.lastSj}</div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedMitraHistory(m)}
-                            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition cursor-pointer flex items-center justify-center gap-1 mx-auto shadow-2xs"
-                          >
-                            <History size={13} />
-                            <span>Mutasi</span>
-                          </button>
-                        </td>
+
+              {riwayatPenarikanGalon.length === 0 ? (
+                <div className="py-16 text-center text-slate-500">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                    <RotateCcw size={30} />
+                  </div>
+                  <h4 className="font-bold text-slate-800 text-base mb-1">
+                    Belum Ada Data Penarikan Galon Kosong
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+                    Catat penarikan galon kosong dari mitra sekolah/konsumen untuk mengurangi saldo tertahan fisik galon di lapangan.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTarikGalonModal()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    <RotateCcw size={14} />
+                    <span>Input Data Penarikan Galon Sekarang</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
+                      <tr>
+                        <th className="p-3 w-12 text-center">No</th>
+                        <th className="p-3">No. Bukti / Dokumen</th>
+                        <th className="p-3">Tanggal Tarik</th>
+                        <th className="p-3">Sekolah / Pelanggan Mitra</th>
+                        <th className="p-3">Alamat</th>
+                        <th className="p-3">Sopir / Armada</th>
+                        <th className="p-3 text-right">Galon Ditarik</th>
+                        <th className="p-3">Keterangan</th>
+                        <th className="p-3 text-center w-20">Aksi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {riwayatPenarikanGalon.map((d, idx) => {
+                        const qtyTarik = Number(d.Galon_Kosong_Kembali) || 0;
+                        return (
+                          <tr key={d.ID_Distribusi} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-3 text-center text-slate-400 font-mono">
+                              {idx + 1}
+                            </td>
+                            <td className="p-3 font-mono font-bold text-indigo-700">
+                              {d.No_Surat_Jalan || d.ID_Distribusi}
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              {formatDateDDMMYYYY(d.Tanggal)}
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-slate-900">
+                                {d.Nama_Pelanggan}
+                              </div>
+                              {d.Level_Pelanggan && (
+                                <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {d.Level_Pelanggan}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-slate-600 max-w-[180px] truncate" title={d.Tujuan || '-'}>
+                              {d.Tujuan || '-'}
+                            </td>
+                            <td className="p-3 text-slate-700 font-medium">
+                              {d.Pengirim || '-'}
+                            </td>
+                            <td className="p-3 text-right tabular-nums">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full font-bold text-xs bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                +{qtyTarik.toLocaleString('id-ID')} Pcs
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-500 max-w-[200px] truncate" title={d.Keterangan || '-'}>
+                              {d.Keterangan || '-'}
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTarikGalon(d.ID_Distribusi, d.Nama_Pelanggan, qtyTarik)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                title="Hapus catatan penarikan ini"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       </div>
@@ -5058,47 +5381,6 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                         </span>
                       )}
                     </div>
-
-                    {/* Perhitungan Penyusutan Galon Sekolah Mitra (HPP Refill) */}
-                    {(formData.Level_Pelanggan === 'Sekolah Mitra' || formData.Tipe_Transaksi_Galon === 'Pinjam Galon') && totalGalonKirim > 0 && (
-                      <div className="pt-2 border-t border-sky-200/80 bg-white/80 rounded-lg p-2.5 space-y-2 mt-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-indigo-950">Perhitungan Penyusutan Galon Mitra (HPP Refill)</span>
-                            <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold border border-indigo-200">
-                              Otomatis Jurnal
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-500 font-medium">Beban 514-70 vs Akum. 122-70</span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-600 mb-0.5">
-                              Tarif Penyusutan / Galon (Standar Rp 1.250):
-                            </label>
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-1.5 text-[11px] text-slate-400 font-medium">Rp</span>
-                              <input
-                                type="number"
-                                min="0"
-                                value={formData.Tarif_Penyusutan_Galon !== undefined && formData.Tarif_Penyusutan_Galon !== null && formData.Tarif_Penyusutan_Galon !== '' ? formData.Tarif_Penyusutan_Galon : getGallonDepreciationRate()}
-                                onChange={e => setFormData({ ...formData, Tarif_Penyusutan_Galon: e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0) })}
-                                className="w-full pl-8 pr-2.5 py-1 text-xs border border-indigo-300 rounded-md bg-white font-mono font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-600 mb-0.5">
-                              Total Beban Penyusutan ({totalGalonKirim} Galon):
-                            </label>
-                            <div className="px-2.5 py-1 text-xs bg-indigo-50 border border-indigo-200 rounded-md font-mono font-bold text-indigo-800 flex items-center justify-between">
-                              <span>Rp {((totalGalonKirim) * (Number(formData.Tarif_Penyusutan_Galon !== undefined && formData.Tarif_Penyusutan_Galon !== '' ? formData.Tarif_Penyusutan_Galon : getGallonDepreciationRate()))).toLocaleString('id-ID')}</span>
-                              <span className="text-[10px] text-indigo-600 font-normal">HPP Refill</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })()}
@@ -5196,6 +5478,249 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* MODAL INPUT DATA PENARIKAN GALON KOSONG DARI MITRA             */}
+      {/* ============================================================== */}
+      {showTarikGalonModal && (() => {
+        const selectedMitra = sekolahMitraList.find(m => m.idPelanggan === tarikGalonForm.ID_Pelanggan) 
+          || sekolahMitraList.find(m => m.namaPelanggan.toLowerCase() === (tarikGalonForm.Nama_Pelanggan || '').toLowerCase());
+        const saldoSaatIni = selectedMitra ? selectedMitra.saldoTertahan : 0;
+        const qtyTarik = Number(tarikGalonForm.Jumlah_Tarik) || 0;
+        const sisaSaldoSetelahTarik = saldoSaatIni - qtyTarik;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden my-6 animate-in zoom-in-95">
+              {/* Header Modal */}
+              <div className="flex items-center justify-between px-5 py-4 bg-indigo-900 text-white">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-700 flex items-center justify-center text-indigo-200">
+                    <RotateCcw size={16} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-xs uppercase tracking-wider">
+                      Input Data Penarikan Galon Kosong
+                    </h3>
+                    <p className="text-[10.5px] text-indigo-300">
+                      Pencatatan penarikan fisik galon pabrik dari sekolah / pelanggan mitra
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowTarikGalonModal(false)}
+                  className="p-1 text-indigo-300 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <div className="p-5 space-y-4 text-xs">
+                {/* Tanggal & No Dokumen */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Tanggal Penarikan <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={tarikGalonForm.Tanggal}
+                      onChange={e => setTarikGalonForm({ ...tarikGalonForm, Tanggal: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      No. Bukti / Dokumen Tarik
+                    </label>
+                    <input
+                      type="text"
+                      value={tarikGalonForm.No_Dokumen}
+                      onChange={e => setTarikGalonForm({ ...tarikGalonForm, No_Dokumen: e.target.value })}
+                      placeholder="TRK-001/XI/26"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-semibold text-indigo-900 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Pilih Mitra / Sekolah */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Sekolah / Pelanggan Mitra Asal <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={tarikGalonForm.ID_Pelanggan}
+                    onChange={e => {
+                      const selId = e.target.value;
+                      const m = sekolahMitraList.find(item => item.idPelanggan === selId);
+                      setTarikGalonForm(prev => ({
+                        ...prev,
+                        ID_Pelanggan: selId,
+                        Nama_Pelanggan: m ? m.namaPelanggan : prev.Nama_Pelanggan,
+                        Level_Pelanggan: m?.levelPelanggan || 'Sekolah Mitra',
+                        Alamat: m?.alamat || prev.Alamat,
+                        Sopir: m?.lastDriver && m.lastDriver !== '-' ? m.lastDriver : prev.Sopir
+                      }));
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  >
+                    <option value="">-- Pilih Sekolah / Mitra --</option>
+                    {sekolahMitraList.map(m => (
+                      <option key={m.idPelanggan} value={m.idPelanggan}>
+                        {m.namaPelanggan} ({m.saldoTertahan > 0 ? `Tertahan: ${m.saldoTertahan} Pcs` : 'Saldo Lunas / 0 Pcs'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Info Saldo Tertahan Mitra Terpilih */}
+                {selectedMitra && (
+                  <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">Saldo Galon Tertahan Saat Ini:</span>
+                      <span className="font-mono font-bold text-indigo-900 text-sm">
+                        {saldoSaatIni.toLocaleString('id-ID')} Pcs
+                      </span>
+                    </div>
+                    {qtyTarik > 0 && (
+                      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-indigo-200/60">
+                        <span className="text-slate-600 font-medium">Sisa Tertahan Setelah Ditarik:</span>
+                        <span className={`font-mono font-bold text-xs ${
+                          sisaSaldoSetelahTarik < 0 ? 'text-amber-700' : 'text-emerald-700'
+                        }`}>
+                          {sisaSaldoSetelahTarik.toLocaleString('id-ID')} Pcs
+                          {sisaSaldoSetelahTarik < 0 && ' (Ditarik melebihi saldo catatan)'}
+                        </span>
+                      </div>
+                    )}
+                    <div className="text-[11px] text-slate-500">
+                      Alamat: <span className="text-slate-700">{selectedMitra.alamat}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Jumlah Galon Kosong yang Ditarik */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700">
+                      Jumlah Galon Kosong yang Ditarik (Pcs) <span className="text-red-500">*</span>
+                    </label>
+                    {saldoSaatIni > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTarikGalonForm({ ...tarikGalonForm, Jumlah_Tarik: saldoSaatIni })}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                      >
+                        Tarik Semua ({saldoSaatIni} Pcs)
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Masukkan jumlah galon..."
+                      value={tarikGalonForm.Jumlah_Tarik}
+                      onChange={e => setTarikGalonForm({
+                        ...tarikGalonForm,
+                        Jumlah_Tarik: e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value) || 0)
+                      })}
+                      className="w-full px-3 py-2.5 border border-indigo-300 rounded-lg text-sm font-mono font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                      Pcs Galon
+                    </span>
+                  </div>
+
+                  {/* Preset Pills */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400 font-medium">Preset Cepat:</span>
+                    {[5, 10, 15, 20, 25, 50].map(qty => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setTarikGalonForm({ ...tarikGalonForm, Jumlah_Tarik: qty })}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded text-[11px] font-semibold border border-slate-200 transition cursor-pointer"
+                      >
+                        +{qty}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sopir / Petugas Pengambil */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Sopir / Petugas Armada Penjemput <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nama sopir / petugas yang mengambil..."
+                    value={tarikGalonForm.Sopir}
+                    onChange={e => setTarikGalonForm({ ...tarikGalonForm, Sopir: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  {/* Quick Drivers */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400 font-medium">Sering:</span>
+                    {frequentDrivers.slice(0, 4).map(d => (
+                      <button
+                        key={d.name}
+                        type="button"
+                        onClick={() => setTarikGalonForm({ ...tarikGalonForm, Sopir: d.name })}
+                        className={`text-[10px] px-2 py-0.5 rounded-md font-semibold transition cursor-pointer border ${
+                          tarikGalonForm.Sopir === d.name
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                            : 'bg-slate-100 hover:bg-indigo-50 text-slate-700 border-slate-200 hover:border-indigo-200'
+                        }`}
+                      >
+                        {d.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Catatan / Keterangan */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Keterangan / Catatan Tambahan (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Kondisi galon baik, untuk pencucian rutin..."
+                    value={tarikGalonForm.Keterangan}
+                    onChange={e => setTarikGalonForm({ ...tarikGalonForm, Keterangan: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Footer Modal */}
+              <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50 border-t border-slate-200">
+                <button
+                  type="button"
+                  disabled={isSavingTarikGalon}
+                  onClick={() => setShowTarikGalonModal(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingTarikGalon}
+                  onClick={handleSaveTarikGalon}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSavingTarikGalon && <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full"></span>}
+                  <RotateCcw size={14} />
+                  <span>{isSavingTarikGalon ? 'Menyimpan...' : 'Simpan Penarikan Galon'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal: Input Pesanan / Rencana Distribusi */}
       {showPlanModal && (
