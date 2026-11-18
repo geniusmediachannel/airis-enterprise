@@ -85,16 +85,32 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   // State untuk Histori & Pengaturan Perubahan Harga Berdasarkan Tanggal
   const [priceHistories, setPriceHistories] = useState<PriceHistoryItem[]>(() => getAllPriceHistories());
 
-  // State untuk Standar Tarif Penyusutan Galon per Varian (Khusus Resep Produk Galon)
-  const [gallonVariantRates, setGallonVariantRates] = useState<Record<string, number>>(() => getGallonVariantDepreciationRates());
-  const [isSavingGallonVariantRate, setIsSavingGallonVariantRate] = useState(false);
-  const [variantRateSuccess, setVariantRateSuccess] = useState(false);
-
   // State untuk Master BOM Ringkas per Produk
   const [bomViewMode, setBomViewMode] = useState<'per_produk' | 'flat_table'>('per_produk');
   const [expandedProductBOM, setExpandedProductBOM] = useState<Record<string, boolean>>({});
   const [variantFilterPerProduct, setVariantFilterPerProduct] = useState<Record<string, string>>({});
   const [customVariantInput, setCustomVariantInput] = useState<string>('');
+
+  // Helper: Ambil harga satuan per komponen BOM (mendukung override custom / nilai susut galon mitra Rp 1.250)
+  const getBOMItemUnitPrice = (bom: BOMItem): number => {
+    if (bom.Harga_Satuan !== undefined && bom.Harga_Satuan !== null && bom.Harga_Satuan !== '' as any && !isNaN(Number(bom.Harga_Satuan))) {
+      return Number(bom.Harga_Satuan);
+    }
+    const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
+    const matPrice = Number(mat?.Harga_Satuan) || 0;
+    const isGalonMat = (bom.ID_Bahan || '').includes('GLN') || (mat?.Nama_Bahan || '').toLowerCase().includes('galon');
+    const varian = (bom.Varian || '').toLowerCase();
+    
+    // Jika bahan Galon pada Varian Sekolah Mitra / Pinjam Pakai: default tarif penyusutan Rp 1.250
+    if (isGalonMat && (varian.includes('sekolah') || varian.includes('mitra') || varian.includes('pinjam'))) {
+      return 1250;
+    }
+    // Jika varian Refill murni isi ulang, tidak ada pemakaian galon baru dari pabrik
+    if (isGalonMat && varian.includes('refill')) {
+      return 0;
+    }
+    return matPrice;
+  };
 
   // Kelompokkan data BOM berdasarkan produk (Product-Centric)
   const productBOMGroups = useMemo(() => {
@@ -107,21 +123,38 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       });
       const variantsList = Array.from(variantsSet);
 
-      let totalEstCost = 0;
-      prodBoms.forEach(b => {
-        const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
-        const cost = Number(mat?.Harga_Satuan || 0) * (Number(b.Jumlah_Dibutuhkan) || 0);
-        totalEstCost += cost;
-      });
-
       const isBotol = isBottleProduct(prod.ID_Produk) || isBottleProduct(prod.Nama_Produk);
       const isGalon = isGallonProduct(prod.ID_Produk) || isGallonProduct(prod.Nama_Produk);
+
+      // Hitung biaya estimasi per varian
+      const variantCostMap: Record<string, number> = {};
+      variantsList.forEach(v => {
+        const vLower = v.toLowerCase();
+        const items = prodBoms.filter(b => {
+          const bVar = (b.Varian || 'Standar').toLowerCase();
+          return bVar === vLower || bVar === 'standar' || bVar === 'semua';
+        });
+        variantCostMap[v] = items.reduce((sum, b) => {
+          return sum + (getBOMItemUnitPrice(b) * (Number(b.Jumlah_Dibutuhkan) || 0));
+        }, 0);
+      });
+
+      // Default HPP kartu: Varian Sekolah Mitra (untuk galon) atau SN (untuk botol) atau varian pertama/standar
+      let displayHPP = 0;
+      if (isGalon && variantCostMap['Sekolah Mitra']) {
+        displayHPP = variantCostMap['Sekolah Mitra'];
+      } else if (variantsList.length > 0 && variantCostMap[variantsList[0]] !== undefined) {
+        displayHPP = variantCostMap[variantsList[0]];
+      } else {
+        displayHPP = prodBoms.reduce((sum, b) => sum + (getBOMItemUnitPrice(b) * (Number(b.Jumlah_Dibutuhkan) || 0)), 0);
+      }
 
       return {
         product: prod,
         boms: prodBoms,
         variants: variantsList,
-        totalEstCost,
+        variantCostMap,
+        totalEstCost: displayHPP,
         isBotol,
         isGalon
       };
@@ -130,24 +163,12 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
   const toggleExpandProductBOM = (prodId: string) => {
     setExpandedProductBOM(prev => {
-      // Jika belum di-set, defaultnya false maka dibuka (true)
       const isCurrentlyOpen = prev[prodId] ?? false;
       return {
         ...prev,
         [prodId]: !isCurrentlyOpen
       };
     });
-  };
-
-  const handleApplyTemplate = async (prodId: string, templateType: 'botol_sn_ln' | 'galon_refill_beli_sekolah') => {
-    const res = applyProductBOMTemplate(prodId, templateType);
-    if (res.success) {
-      showToast('Template Berhasil Diterapkan', res.message, 'success');
-      onRefresh();
-      setExpandedProductBOM(prev => ({ ...prev, [prodId]: true }));
-    } else {
-      showToast('Info Template', res.message, 'info');
-    }
   };
 
   const [showPriceModal, setShowPriceModal] = useState<boolean>(false);
@@ -306,9 +327,11 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Tanggal_Selesai: item.Tanggal_Selesai || ''
       });
     } else if (activeTab === 'bom') {
+      const uPrice = (item.Harga_Satuan !== undefined && item.Harga_Satuan !== null) ? item.Harga_Satuan : '';
       setFormData({
         ...item,
-        Varian: item.Varian || 'Standar'
+        Varian: item.Varian || 'Standar',
+        Harga_Satuan: uPrice
       });
     } else {
       setFormData({ ...item });
@@ -1447,12 +1470,22 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
 
                             {/* Bagian Kanan Header: Estimasi Biaya & Tombol Aksi */}
                             <div className="flex flex-wrap items-center gap-2.5 self-end md:self-center shrink-0">
-                              <div className="text-right">
-                                <div className="text-[10px] text-slate-500 font-medium">HPP Bahan Baku (Estimasi)</div>
-                                <div className="text-xs font-mono font-bold text-indigo-700">
-                                  Rp {Math.round(grp.totalEstCost).toLocaleString('id-ID')} <span className="text-[10px] text-slate-400 font-normal">/ {grp.product.Satuan || 'unit'}</span>
-                                </div>
-                              </div>
+                              {(() => {
+                                const activeVarianFilter = variantFilterPerProduct[grp.product.ID_Produk] || 'semua';
+                                const activeCost = (activeVarianFilter !== 'semua' && grp.variantCostMap && grp.variantCostMap[activeVarianFilter] !== undefined)
+                                  ? grp.variantCostMap[activeVarianFilter]
+                                  : grp.totalEstCost;
+                                return (
+                                  <div className="text-right">
+                                    <div className="text-[10px] text-slate-500 font-medium">
+                                      HPP Bahan Baku {activeVarianFilter !== 'semua' ? `(${activeVarianFilter})` : '(Estimasi)'}
+                                    </div>
+                                    <div className="text-xs font-mono font-bold text-indigo-700">
+                                      Rp {Math.round(activeCost).toLocaleString('id-ID')} <span className="text-[10px] text-slate-400 font-normal">/ {grp.product.Satuan || 'unit'}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
 
@@ -1460,36 +1493,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                                 {grp.boms.length} Bahan Penolong
                               </span>
 
-                              {/* Tombol Template Cepat jika produk Galon atau Botol */}
-                              {grp.isGalon && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleApplyTemplate(grp.product.ID_Produk, 'galon_refill_beli_sekolah');
-                                  }}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px] rounded-lg shadow-2xs flex items-center gap-1 transition cursor-pointer"
-                                  title="Otomatis tambahkan formula resep varian Galon (Refill, Beli Baru, dan Sekolah Mitra)"
-                                >
-                                  <Sparkles size={12} className="text-amber-600" />
-                                  <span>Template Galon (Refill/Beli/Sekolah)</span>
-                                </button>
-                              )}
 
-                              {grp.isBotol && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleApplyTemplate(grp.product.ID_Produk, 'botol_sn_ln');
-                                  }}
-                                  className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-[11px] rounded-lg shadow-2xs flex items-center gap-1 transition cursor-pointer"
-                                  title="Otomatis tambahkan formula resep botol (Varian Short Neck SN & Long Neck LN)"
-                                >
-                                  <Sparkles size={12} className="text-purple-600" />
-                                  <span>Template Botol (SN & LN)</span>
-                                </button>
-                              )}
 
                               <button
                                 type="button"
@@ -1516,166 +1520,6 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                           {/* Card Body (BOM Table / Empty State) */}
                           {isExpanded && (
                             <div className="p-4 bg-white space-y-3.5">
-                              {/* Panel Standar Tarif Beban Penyusutan Galon (HPP) Khusus Produk Galon per Varian */}
-                              {grp.isGalon && (
-                                <div className="p-4 bg-gradient-to-r from-indigo-50/90 via-purple-50/30 to-white border border-indigo-200 rounded-xl shadow-2xs space-y-3">
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                                    <div className="flex items-start gap-2.5">
-                                      <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0 mt-0.5">
-                                        HPP
-                                      </div>
-                                      <div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <h4 className="font-bold text-xs text-indigo-950">
-                                            Standar Tarif Penyusutan Galon (HPP Refill) per Varian
-                                          </h4>
-                                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-semibold px-2 py-0.5 rounded-full border border-indigo-200">
-                                            Akun 514-70 (Beban HPP) vs 122-70 (Akumulasi Penyusutan)
-                                          </span>
-                                        </div>
-                                        <p className="text-[11px] text-slate-500 mt-0.5">
-                                          Pengaturan tarif penyusutan aset galon untuk setiap varian galon 19L. Nilai ini otomatis diterapkan di Modul Keuangan saat pengiriman varian tersebut dicatat.
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      disabled={isSavingGallonVariantRate}
-                                      onClick={() => {
-                                        setIsSavingGallonVariantRate(true);
-                                        setGallonVariantDepreciationRates(gallonVariantRates);
-                                        setVariantRateSuccess(true);
-                                        showToast('success', 'Tarif Varian Galon Disimpan', 'Konfigurasi tarif beban penyusutan per varian galon berhasil diperbarui.');
-                                        setTimeout(() => {
-                                          setIsSavingGallonVariantRate(false);
-                                          setVariantRateSuccess(false);
-                                        }, 1500);
-                                      }}
-                                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer shrink-0 self-end sm:self-center"
-                                    >
-                                      <Save size={13} />
-                                      <span>{variantRateSuccess ? 'Tersimpan!' : 'Simpan Tarif Varian'}</span>
-                                    </button>
-                                  </div>
-
-                                  {/* Grid Setting per Varian */}
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-0.5">
-                                    {/* 1. Varian Sekolah Mitra */}
-                                    <div className="bg-white p-3 rounded-lg border border-amber-200 shadow-2xs space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                          🏫 Sekolah Mitra (Pinjam Pakai)
-                                        </span>
-                                        <span className="text-[10px] font-mono text-slate-400">40x refill</span>
-                                      </div>
-                                      <p className="text-[11px] text-slate-500">
-                                        Galon investasi pabrik dipinjamkan ke sekolah mitra. Beban susut per galon:
-                                      </p>
-                                      <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 border border-amber-300 rounded-lg">
-                                        <span className="text-xs font-semibold text-slate-600">Tarif / Galon:</span>
-                                        <span className="text-xs font-bold text-amber-700">Rp</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={gallonVariantRates['Sekolah Mitra'] ?? 1250}
-                                          onChange={(e) => {
-                                            const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                            setGallonVariantRates(prev => ({ ...prev, 'Sekolah Mitra': val }));
-                                          }}
-                                          className="w-full text-xs font-mono font-bold text-amber-900 bg-transparent outline-none focus:ring-0"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* 2. Varian Refill Pabrik */}
-                                    <div className="bg-white p-3 rounded-lg border border-emerald-200 shadow-2xs space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                          🔄 Varian Refill (Isi Ulang)
-                                        </span>
-                                        <span className="text-[10px] font-mono text-slate-400">Milik Konsumen</span>
-                                      </div>
-                                      <p className="text-[11px] text-slate-500">
-                                        Isi ulang galon milik konsumen/agen sendiri. Beban susut galon pabrik:
-                                      </p>
-                                      <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 border border-emerald-300 rounded-lg">
-                                        <span className="text-xs font-semibold text-slate-600">Tarif / Galon:</span>
-                                        <span className="text-xs font-bold text-emerald-700">Rp</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={gallonVariantRates['Refill'] ?? 0}
-                                          onChange={(e) => {
-                                            const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                            setGallonVariantRates(prev => ({ ...prev, 'Refill': val }));
-                                          }}
-                                          className="w-full text-xs font-mono font-bold text-emerald-900 bg-transparent outline-none focus:ring-0"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* 3. Varian Beli Baru */}
-                                    <div className="bg-white p-3 rounded-lg border border-blue-200 shadow-2xs space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                                          📦 Varian Beli Galon Baru
-                                        </span>
-                                        <span className="text-[10px] font-mono text-slate-400">Beli Putus</span>
-                                      </div>
-                                      <p className="text-[11px] text-slate-500">
-                                        Penjualan fisik galon baru beli putus. Biaya galon ada di bahan baku:
-                                      </p>
-                                      <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 border border-blue-300 rounded-lg">
-                                        <span className="text-xs font-semibold text-slate-600">Tarif / Galon:</span>
-                                        <span className="text-xs font-bold text-blue-700">Rp</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          value={gallonVariantRates['Beli Baru'] ?? 0}
-                                          onChange={(e) => {
-                                            const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                            setGallonVariantRates(prev => ({ ...prev, 'Beli Baru': val }));
-                                          }}
-                                          className="w-full text-xs font-mono font-bold text-blue-900 bg-transparent outline-none focus:ring-0"
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Varian Kustom Galon Lainnya */}
-                                    {grp.variants
-                                      .filter(v => !['Sekolah Mitra', 'Refill', 'Beli Baru', 'Standar'].includes(v))
-                                      .map(customV => (
-                                        <div key={customV} className="bg-white p-3 rounded-lg border border-purple-200 shadow-2xs space-y-2">
-                                          <div className="flex items-center justify-between">
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                                              ✨ Varian {customV}
-                                            </span>
-                                            <span className="text-[10px] font-mono text-slate-400">Kustom</span>
-                                          </div>
-                                          <p className="text-[11px] text-slate-500">
-                                            Tarif beban penyusutan untuk varian khusus {customV}:
-                                          </p>
-                                          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 border border-purple-300 rounded-lg">
-                                            <span className="text-xs font-semibold text-slate-600">Tarif / Galon:</span>
-                                            <span className="text-xs font-bold text-purple-700">Rp</span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={gallonVariantRates[customV] ?? 0}
-                                              onChange={(e) => {
-                                                const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                                setGallonVariantRates(prev => ({ ...prev, [customV]: val }));
-                                              }}
-                                              className="w-full text-xs font-mono font-bold text-purple-900 bg-transparent outline-none focus:ring-0"
-                                            />
-                                          </div>
-                                        </div>
-                                      ))}
-                                  </div>
-                                </div>
-                              )}
-
                               {grp.boms.length === 0 ? (
                                 <div className="p-6 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2.5">
                                   <div className="w-10 h-10 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -1698,28 +1542,6 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                                       <Plus size={13} />
                                       <span>+ Buat Resep Pertama</span>
                                     </button>
-
-                                    {grp.isGalon && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApplyTemplate(grp.product.ID_Produk, 'galon_refill_beli_sekolah')}
-                                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-                                      >
-                                        <Sparkles size={13} />
-                                        <span>Gunakan Template Galon (Refill, Beli Baru, Sekolah Mitra)</span>
-                                      </button>
-                                    )}
-
-                                    {grp.isBotol && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleApplyTemplate(grp.product.ID_Produk, 'botol_sn_ln')}
-                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-                                      >
-                                        <Sparkles size={13} />
-                                        <span>Gunakan Template Botol (SN & LN)</span>
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
                               ) : (
@@ -1779,7 +1601,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                                       <tbody className="divide-y divide-slate-100">
                                         {displayedBOMs.map(bom => {
                                           const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
-                                          const unitPrice = Number(mat?.Harga_Satuan) || 0;
+                                          const unitPrice = getBOMItemUnitPrice(bom);
                                           const qty = Number(bom.Jumlah_Dibutuhkan) || 0;
                                           const estCost = unitPrice * qty;
 
@@ -1799,7 +1621,13 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                                                 {bom.Jumlah_Dibutuhkan} {bom.Satuan} <span className="text-[10px] text-slate-400 font-normal">/ {grp.product.Satuan || 'unit'}</span>
                                               </td>
                                               <td className="p-2.5 text-right font-mono text-slate-600 whitespace-nowrap">
-                                                Rp {unitPrice.toLocaleString('id-ID')}
+                                                <div className="font-bold text-slate-800">Rp {Math.round(unitPrice).toLocaleString('id-ID')}</div>
+                                                {bom.Harga_Satuan !== undefined && bom.Harga_Satuan !== null && bom.Harga_Satuan !== '' && (
+                                                  <span className="text-[10px] text-indigo-600 font-sans font-semibold">Custom</span>
+                                                )}
+                                                {(bom.Harga_Satuan === undefined || bom.Harga_Satuan === null || bom.Harga_Satuan === '') && (bom.ID_Bahan || '').includes('GLN') && (bom.Varian || '').toLowerCase().includes('sekolah') && (
+                                                  <span className="text-[10px] text-amber-800 font-sans font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Susut Mitra</span>
+                                                )}
                                               </td>
                                               <td className="p-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
                                                 Rp {Math.round(estCost).toLocaleString('id-ID')}
@@ -1874,7 +1702,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         .map(bom => {
                           const prod = products.find(p => p.ID_Produk === bom.ID_Produk);
                           const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
-                          const unitPrice = Number(mat?.Harga_Satuan) || 0;
+                          const unitPrice = getBOMItemUnitPrice(bom);
                           const qty = Number(bom.Jumlah_Dibutuhkan) || 0;
                           const estCost = unitPrice * qty;
 
@@ -2965,6 +2793,60 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         <option value="Batang">Batang</option>
                       </select>
                     </div>
+                  </div>\n                  {/* Harga Satuan / Nilai Komponen HPP (Bisa Custom / Default Otomatis) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-slate-700">
+                        Harga Satuan / Nilai Komponen HPP (Rp)
+                      </label>
+                      <span className="text-[10px] text-slate-400">
+                        Opsional • Bisa custom per resep varian
+                      </span>
+                    </div>
+                    {(() => {
+                      const selMat = rawMaterials.find(m => m.ID_Bahan === formData.ID_Bahan);
+                      const defaultMasterPrice = Number(selMat?.Harga_Satuan) || 0;
+                      const isGalon = isGallonProduct(formData.ID_Produk);
+                      const isGalonMat = (formData.ID_Bahan || '').includes('GLN') || (selMat?.Nama_Bahan || '').toLowerCase().includes('galon');
+                      const varian = (formData.Varian || '').toLowerCase();
+                      const isMitra = varian.includes('sekolah') || varian.includes('mitra') || varian.includes('pinjam');
+                      
+                      const autoDefaultHint = (isGalon && isGalonMat && isMitra) 
+                        ? '1.250 (Standar Penyusutan Galon Mitra)'
+                        : `${defaultMasterPrice.toLocaleString('id-ID')} (Harga Master Bahan)`;
+
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-500 font-mono">Rp</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder={`Default otomatis: ${autoDefaultHint}`}
+                              value={formData.Harga_Satuan ?? ''}
+                              onChange={e => setFormData({ ...formData, Harga_Satuan: e.target.value })}
+                              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 bg-white placeholder:text-slate-400 placeholder:font-normal placeholder:text-xs"
+                            />
+                            {isGalon && isGalonMat && isMitra && (
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, Harga_Satuan: 1250 })}
+                                className="shrink-0 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                                title="Gunakan tarif penyusutan standar Rp 1.250"
+                              >
+                                Set Rp 1.250
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            {isGalon && isGalonMat && isMitra
+                              ? 'Khusus resep varian Sekolah Mitra, biaya galon adalah tarif penyusutan pinjam pakai (standar Rp 1.250 atau bisa disesuaikan).'
+                              : 'Biarkan kosong untuk otomatis mengikuti harga master bahan baku, atau masukkan nilai custom.'}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Keterangan Formula</label>

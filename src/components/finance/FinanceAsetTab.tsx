@@ -1,15 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React from 'react';
 import { 
   Building2, Plus, Download, Edit2, Trash2, X, Save,
-  Package, CheckCircle2, RotateCcw, AlertCircle, Sparkles, ArrowRight
+  Package, CheckCircle2, RotateCcw, AlertCircle
 } from 'lucide-react';
-import { FixedAssetItem, GeneralJournalItem, DistributionItem } from '../../types';
-import { 
-  getTableData, 
-  getGallonDepreciationRate, 
-  setGallonDepreciationRate, 
-  DEFAULT_GALLON_DEPRECIATION_RATE 
-} from '../../services/dbAdapter';
+import { FixedAssetItem } from '../../types';
 
 interface FinanceAsetTabProps {
   assets: FixedAssetItem[];
@@ -38,153 +32,22 @@ export const FinanceAsetTab: React.FC<FinanceAsetTabProps> = ({
   setAssetForm,
   handleSaveAsset
 }) => {
-  const [depRate, setDepRate] = useState<number>(getGallonDepreciationRate());
-  const [rateSavedToast, setRateSavedToast] = useState<boolean>(false);
-
-  // Perhitungan statistik penyusutan galon dari Jurnal Umum & Distribusi
-  const { totalDepJurnal, totalGalonMitra, totalTransaksiMitra } = useMemo(() => {
-    const journals = getTableData<GeneralJournalItem>('Jurnal_Umum', []);
-    const distributions = getTableData<DistributionItem>('Distribusi', []);
-
-    // Total debit beban penyusutan galon 514-70
-    const depJournals = journals.filter(j => j.KODE_AKUN === '514-70');
-    const totalDep = depJournals.reduce((sum, j) => sum + (Number(j.DEBIT) || 0), 0);
-
-    // Distribusi ke Sekolah Mitra / Pinjam Galon
-    const mitraDists = distributions.filter(d => d.Level_Pelanggan === 'Sekolah Mitra' || d.Tipe_Transaksi_Galon === 'Pinjam Galon');
-    const galonCount = mitraDists.reduce((sum, d) => sum + (Number(d.G19 || (d as any)['ASH-GLN19L'] || 0)), 0);
-
-    return {
-      totalDepJurnal: totalDep,
-      totalGalonMitra: galonCount,
-      totalTransaksiMitra: mitraDists.length
-    };
-  }, []);
-
-  const handleSaveRate = () => {
-    const val = Math.max(0, Number(depRate) || 0);
-    setGallonDepreciationRate(val);
-    setRateSavedToast(true);
-    setTimeout(() => setRateSavedToast(false), 3000);
-  };
-
-  const handleResetRate = () => {
-    setDepRate(DEFAULT_GALLON_DEPRECIATION_RATE);
-    setGallonDepreciationRate(DEFAULT_GALLON_DEPRECIATION_RATE);
-    setRateSavedToast(true);
-    setTimeout(() => setRateSavedToast(false), 3000);
-  };
-
   return (
     <>
-        <div className="space-y-4">
-          {/* Card Skema Penyusutan Galon Investasi Pabrik (Sekolah Mitra) */}
-          <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 shadow-lg border border-indigo-700/50 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-800/80 pb-3.5">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-indigo-600/80 text-white rounded-xl shadow-md border border-indigo-400/30">
-                  <Package size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold tracking-tight">Penyusutan Galon Pabrik (Sekolah Mitra)</h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
-                      HPP Refill Otomatis
-                    </span>
-                  </div>
-                  <p className="text-xs text-indigo-300/90 mt-0.5">
-                    Metode Unit Produksi / Putaran: Galon investasi pabrik disusutkan 40x isi ulang (refill cycle) per pengiriman ke mitra sekolah.
-                  </p>
-                </div>
-              </div>
-
-              {/* Form Input Custom Tarif Penyusutan */}
-              <div className="flex items-center gap-2 bg-indigo-950/70 p-1.5 rounded-xl border border-indigo-700/60 self-start sm:self-auto">
-                <div className="flex items-center pl-2">
-                  <span className="text-xs text-indigo-300 font-semibold mr-1.5">Tarif / Galon:</span>
-                  <span className="text-xs text-indigo-400 font-mono">Rp</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="50"
-                    value={depRate}
-                    onChange={e => setDepRate(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-24 px-2 py-1 ml-1 text-xs font-mono font-bold bg-white text-indigo-950 rounded-lg outline-none border border-indigo-300 focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-                <button
-                  onClick={handleSaveRate}
-                  className="px-3 py-1 text-xs font-semibold bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                  title="Simpan tarif penyusutan aktif"
-                >
-                  <Save size={13} />
-                  <span>Simpan</span>
-                </button>
-                <button
-                  onClick={handleResetRate}
-                  className="p-1.5 text-indigo-300 hover:text-white hover:bg-indigo-800 rounded-lg transition-colors cursor-pointer"
-                  title="Kembalikan ke tarif default (Rp 1.250)"
-                >
-                  <RotateCcw size={13} />
-                </button>
-              </div>
-            </div>
-
-            {rateSavedToast && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs animate-in fade-in">
-                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                <span>Tarif penyusutan berhasil diperbarui menjadi <strong>Rp {depRate.toLocaleString('id-ID')} / galon</strong>.</span>
-              </div>
-            )}
-
-            {/* Statistik & Pemetaan Akun Jurnal */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-indigo-950/50 p-3 rounded-xl border border-indigo-800/60">
-                <span className="text-[11px] text-indigo-300 uppercase tracking-wider font-semibold block">Total Beban Terjurnal</span>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-lg font-mono font-bold text-white">Rp {totalDepJurnal.toLocaleString('id-ID')}</span>
-                </div>
-                <span className="text-[10px] text-indigo-400 mt-0.5 block">Akun Debet: 514-70 (HPP Refill Mitra)</span>
-              </div>
-
-              <div className="bg-indigo-950/50 p-3 rounded-xl border border-indigo-800/60">
-                <span className="text-[11px] text-indigo-300 uppercase tracking-wider font-semibold block">Galon Terkirim ke Mitra</span>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-lg font-mono font-bold text-emerald-400">{totalGalonMitra.toLocaleString('id-ID')}</span>
-                  <span className="text-xs text-indigo-300">Galon ({totalTransaksiMitra} Pengiriman)</span>
-                </div>
-                <span className="text-[10px] text-indigo-400 mt-0.5 block">Level: Sekolah Mitra / Pinjam Galon</span>
-              </div>
-
-              <div className="bg-indigo-950/50 p-3 rounded-xl border border-indigo-800/60">
-                <span className="text-[11px] text-indigo-300 uppercase tracking-wider font-semibold block">Akun Kontra Aset</span>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-lg font-mono font-bold text-sky-400">122-70</span>
-                  <span className="text-xs text-indigo-300 ml-1">Akum. Penyusutan Galon</span>
-                </div>
-                <span className="text-[10px] text-indigo-400 mt-0.5 block">Aset Induk: 121-70 (Aset Galon Pabrik)</span>
-              </div>
-            </div>
-
-            <div className="text-[11px] text-indigo-300/80 bg-indigo-950/30 px-3 py-2 rounded-lg border border-indigo-800/40 flex items-center justify-between">
-              <span>Jurnal Otomatis Tiap Distribusi: <strong>Debet [514-70] Beban Penyusutan</strong> vs <strong>Kredit [122-70] Akumulasi Penyusutan Galon</strong>.</span>
-              <span className="font-mono text-indigo-200">Default: Rp 50.000 / 40x = Rp 1.250</span>
-            </div>
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Daftar Aktiva Tetap & Jadwal Penyusutan</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Pencatatan aset mesin, armada, dan fasilitas pabrik AMDK.</p>
           </div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Daftar Aktiva Tetap & Jadwal Penyusutan</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Pencatatan aset mesin, armada, dan fasilitas pabrik AMDK.</p>
-            </div>
-            <button
-              onClick={onOpenAddAsset}
-              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Plus size={14} />
-              <span>Tambah Aset Tetap</span>
-            </button>
-          </div>
+          <button
+            onClick={onOpenAddAsset}
+            className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Plus size={14} />
+            <span>Tambah Aset Tetap</span>
+          </button>
+        </div>
 
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
             <div className="overflow-x-auto">

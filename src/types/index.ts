@@ -173,6 +173,7 @@ export interface BOMItem {
   Satuan: 'Pcs' | 'Roll' | 'Lembar' | 'Kg' | 'Liter' | 'Box' | 'Dus' | 'Batang' | string;
   Keterangan?: string;
   Varian?: 'Standar' | 'LN' | 'SN' | 'Refill' | 'Beli Baru' | 'Sekolah Mitra' | string;
+  Harga_Satuan?: number; // Nilai biaya satuan khusus (misal beban susut galon Rp 1.250 atau custom per varian)
 }
 
 export interface EmployeeItem {

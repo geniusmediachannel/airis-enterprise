@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Boxes, Plus, Download, Printer, AlertTriangle, 
   CheckCircle2, ArrowDownRight, ArrowUpRight, X, PackagePlus, 
@@ -370,6 +370,55 @@ export const StockView: React.FC<StockViewProps> = ({
 
   // Parse bulan filter ke tahun & bulan angka
   const [fyear, fmonth] = filterMonth.split('-').map(Number);
+
+  // Pagination & Filtering untuk Pembelian dan Mutasi (Anti-Lag & Filter Bulan Aktif)
+  const [purchasePage, setPurchasePage] = useState(1);
+  const [mutationPage, setMutationPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
+
+  // Reset pagination saat bulan filter berubah
+  useEffect(() => {
+    setPurchasePage(1);
+    setMutationPage(1);
+  }, [filterMonth]);
+
+  // Filter Pembelian Bahan Masuk sesuai bulan terpilih
+  const filteredPurchases = useMemo(() => {
+    if (!filterMonth) return purchases;
+    return purchases.filter(p => {
+      const dt = parseDateObj(p.Tanggal);
+      if (dt) {
+        return dt.getFullYear() === fyear && (dt.getMonth() + 1) === fmonth;
+      }
+      return String(p.Tanggal || '').startsWith(filterMonth);
+    });
+  }, [purchases, filterMonth, fyear, fmonth]);
+
+  // Filter Mutasi Pemakaian & Reject Keluar sesuai bulan terpilih
+  const filteredMutations = useMemo(() => {
+    if (!filterMonth) return mutations;
+    return mutations.filter(m => {
+      const dt = parseDateObj(m.Tanggal);
+      if (dt) {
+        return dt.getFullYear() === fyear && (dt.getMonth() + 1) === fmonth;
+      }
+      return String(m.Tanggal || '').startsWith(filterMonth);
+    });
+  }, [mutations, filterMonth, fyear, fmonth]);
+
+  // Paginated data untuk render anti-freeze DOM
+  const paginatedPurchases = useMemo(() => {
+    const start = (purchasePage - 1) * ITEMS_PER_PAGE;
+    return filteredPurchases.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredPurchases, purchasePage]);
+
+  const paginatedMutations = useMemo(() => {
+    const start = (mutationPage - 1) * ITEMS_PER_PAGE;
+    return filteredMutations.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredMutations, mutationPage]);
+
+  const totalPurchasePages = Math.ceil(filteredPurchases.length / ITEMS_PER_PAGE) || 1;
+  const totalMutationPages = Math.ceil(filteredMutations.length / ITEMS_PER_PAGE) || 1;
 
   // Hitung saldo awal (sebelum bulan filter) - memoized
   const saldoLalu: Record<string, number> = useMemo(() => {
@@ -802,7 +851,7 @@ export const StockView: React.FC<StockViewProps> = ({
             activeTab === 'pembelian' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          Riwayat Pembelian Masuk ({purchases.length})
+          Riwayat Pembelian Masuk ({filteredPurchases.length})
         </button>
         <button
           onClick={() => setActiveTab('pemakaian')}
@@ -810,7 +859,7 @@ export const StockView: React.FC<StockViewProps> = ({
             activeTab === 'pemakaian' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          Pemakaian & Reject ({mutations.length})
+          Pemakaian & Reject ({filteredMutations.length})
         </button>
       </div>
 
@@ -1167,7 +1216,9 @@ export const StockView: React.FC<StockViewProps> = ({
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Riwayat Pembelian Bahan Penolong (Masuk)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Catatan penerimaan dan pasokan bahan baku dari vendor / supplier.</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Catatan penerimaan dan pasokan bahan baku dari vendor / supplier — Periode <strong>{formatBulanIndo(filterMonth)}</strong> ({filteredPurchases.length} transaksi).
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1184,11 +1235,11 @@ export const StockView: React.FC<StockViewProps> = ({
                 <span>Sinkronkan Data</span>
               </button>
               <button
-                onClick={() => exportDataToExcel(purchases, 'Pembelian', `AIRIS_Pembelian_Bahan_${filterMonth}`)}
+                onClick={() => exportDataToExcel(filteredPurchases, 'Pembelian', `AIRIS_Pembelian_Bahan_${filterMonth}`)}
                 className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
               >
                 <Download size={14} />
-                <span>Export Excel</span>
+                <span>Export Excel ({filteredPurchases.length})</span>
               </button>
             </div>
           </div>
@@ -1208,12 +1259,12 @@ export const StockView: React.FC<StockViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
-                {purchases.length === 0 ? (
+                {filteredPurchases.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-8 text-center text-slate-500 font-sans">
                       <div className="space-y-2 max-w-md mx-auto">
-                        <p className="font-semibold text-xs text-slate-700">Belum ada data pembelian bahan yang tercatat.</p>
-                        <p className="text-[11px] text-slate-400">Data pembelian bahan penolong kosong atau belum tersinkronisasi.</p>
+                        <p className="font-semibold text-xs text-slate-700">Tidak ada data pembelian bahan pada periode {formatBulanIndo(filterMonth)}.</p>
+                        <p className="text-[11px] text-slate-400">Silakan ubah filter bulan di pojok kanan atas atau input pembelian baru.</p>
                         <button
                           type="button"
                           onClick={() => {
@@ -1230,7 +1281,7 @@ export const StockView: React.FC<StockViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  purchases.map(p => (
+                  paginatedPurchases.map(p => (
                     <tr key={p.ID_Pembelian} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-blue-700">{p.ID_Pembelian}</td>
                       <td className="p-3 text-slate-500 font-mono">{formatDateDDMMYYYY(p.Tanggal)}</td>
@@ -1264,6 +1315,42 @@ export const StockView: React.FC<StockViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Baris Pagination Anti-Lag Pembelian */}
+          {filteredPurchases.length > 0 && (
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-600">
+              <div>
+                Menampilkan{' '}
+                <span className="font-bold text-slate-900">
+                  {(purchasePage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(filteredPurchases.length, purchasePage * ITEMS_PER_PAGE)}
+                </span>{' '}
+                dari <span className="font-bold text-slate-900">{filteredPurchases.length}</span> pembelian ({formatBulanIndo(filterMonth)})
+              </div>
+              {totalPurchasePages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={purchasePage <= 1}
+                    onClick={() => setPurchasePage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 text-xs font-semibold rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Sebelumnya
+                  </button>
+                  <span className="px-2 font-mono text-xs font-bold text-slate-700">
+                    {purchasePage} / {totalPurchasePages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={purchasePage >= totalPurchasePages}
+                    onClick={() => setPurchasePage(p => Math.min(totalPurchasePages, p + 1))}
+                    className="px-2.5 py-1 text-xs font-semibold rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Selanjutnya
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1273,7 +1360,9 @@ export const StockView: React.FC<StockViewProps> = ({
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900">Riwayat Mutasi Pemakaian & Barang Rusak (Keluar)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Pemotongan bahan penolong otomatis dari SPK Produksi serta pencatatan reject/afkir.</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pemotongan bahan penolong otomatis dari SPK Produksi serta pencatatan reject/afkir — Periode <strong>{formatBulanIndo(filterMonth)}</strong> ({filteredMutations.length} catatan).
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -1290,11 +1379,11 @@ export const StockView: React.FC<StockViewProps> = ({
                 <span>Sinkronkan Ulang dari Produksi</span>
               </button>
               <button
-                onClick={() => exportDataToExcel(mutations, 'Mutasi_Keluar', `AIRIS_Pemakaian_Bahan_${filterMonth}`)}
+                onClick={() => exportDataToExcel(filteredMutations, 'Mutasi_Keluar', `AIRIS_Pemakaian_Bahan_${filterMonth}`)}
                 className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
               >
                 <Download size={14} />
-                <span>Export Excel</span>
+                <span>Export Excel ({filteredMutations.length})</span>
               </button>
             </div>
           </div>
@@ -1312,13 +1401,13 @@ export const StockView: React.FC<StockViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
-                {mutations.length === 0 ? (
+                {filteredMutations.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-slate-500 font-sans">
                       <div className="space-y-2 max-w-md mx-auto">
-                        <p className="font-semibold text-xs text-slate-700">Belum ada data mutasi pemakaian atau barang rusak tercatat.</p>
+                        <p className="font-semibold text-xs text-slate-700">Tidak ada data mutasi pemakaian atau barang rusak pada periode {formatBulanIndo(filterMonth)}.</p>
                         <p className="text-[11px] text-slate-400">
-                          Mutasi pemakaian bahan baku otomatis terbentuk saat produksi dijalankan atau Anda dapat mencatat reject manual.
+                          Silakan ubah filter bulan di header atau sinkronkan mutasi otomatis dari riwayat realisasi produksi.
                         </p>
                         <button
                           type="button"
@@ -1336,7 +1425,7 @@ export const StockView: React.FC<StockViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  mutations.map(m => (
+                  paginatedMutations.map(m => (
                     <tr key={m.ID_Mutasi} className="hover:bg-slate-50">
                       <td className="p-3 font-bold text-red-700">{m.ID_Mutasi}</td>
                       <td className="p-3 text-slate-500 font-mono">{formatDateDDMMYYYY(m.Tanggal)}</td>
@@ -1372,6 +1461,42 @@ export const StockView: React.FC<StockViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Baris Pagination Anti-Lag Pemakaian */}
+          {filteredMutations.length > 0 && (
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-600">
+              <div>
+                Menampilkan{' '}
+                <span className="font-bold text-slate-900">
+                  {(mutationPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(filteredMutations.length, mutationPage * ITEMS_PER_PAGE)}
+                </span>{' '}
+                dari <span className="font-bold text-slate-900">{filteredMutations.length}</span> mutasi ({formatBulanIndo(filterMonth)})
+              </div>
+              {totalMutationPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={mutationPage <= 1}
+                    onClick={() => setMutationPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 text-xs font-semibold rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Sebelumnya
+                  </button>
+                  <span className="px-2 font-mono text-xs font-bold text-slate-700">
+                    {mutationPage} / {totalMutationPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={mutationPage >= totalMutationPages}
+                    onClick={() => setMutationPage(p => Math.min(totalMutationPages, p + 1))}
+                    className="px-2.5 py-1 text-xs font-semibold rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Selanjutnya
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
