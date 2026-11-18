@@ -3,7 +3,7 @@ import {
   FileSpreadsheet, Plus, Printer, Download, Eye, 
   Trash2, Edit2, FileCheck, X, Building, Save, FileDown, 
   CheckCircle2, Search, Check, RefreshCw, Calendar, Settings, 
-  Image, Sliders, RotateCcw, Upload, FileText
+  Image, Sliders, RotateCcw, Upload, FileText, UserPlus
 } from 'lucide-react';
 import { 
   AdminPOHeader, AdminPODetail, SupplierItem, RawMaterialItem, 
@@ -191,6 +191,23 @@ export const AdminPOTab: React.FC<AdminPOTabProps> = ({
     return `${monthNames[monthIdx] || parts[1]} ${year}`;
   };
 
+  // Filtered PO Headers berdasarkan Tahun, Bulan, dan Kata Kunci Pencarian
+  const filteredPoHeaders = useMemo(() => {
+    return (poHeaders || []).filter(p => {
+      if (poFilterYear !== 'all' && getPoYear(p) !== poFilterYear) return false;
+      if (poFilterMonth !== 'all' && getPoMonthKey(p) !== poFilterMonth) return false;
+      if (poSearchQuery.trim()) {
+        const q = poSearchQuery.toLowerCase();
+        const matchNo = (p.No_PO || '').toLowerCase().includes(q);
+        const matchSupplier = (p.Order_Ke || '').toLowerCase().includes(q);
+        const matchStatus = (p.Status || '').toLowerCase().includes(q);
+        const matchDate = (p.Tanggal_PO || '').toLowerCase().includes(q);
+        return matchNo || matchSupplier || matchStatus || matchDate;
+      }
+      return true;
+    });
+  }, [poHeaders, poFilterYear, poFilterMonth, poSearchQuery]);
+
   const [showPoModal, setShowPoModal] = useState(false);
   const [editingPO, setEditingPO] = useState<AdminPOHeader | null>(null);
   const [viewPoModal, setViewPoModal] = useState<AdminPOHeader | null>(null);
@@ -320,13 +337,44 @@ export const AdminPOTab: React.FC<AdminPOTabProps> = ({
     });
   };
 
+  const compressUploadedImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = document.createElement('img');
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxWidth || h > maxHeight) {
+            const ratio = Math.min(maxWidth / w, maxHeight / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, w, h);
+          }
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.src = ev.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleAddPOSignatory = () => {
     const currentList: POSignatory[] = tempPOSettings.signatories || [];
     const newSig: POSignatory = {
-      id: pos- + Date.now().toString(),
+      id: 'pos-' + Date.now().toString(),
       keterangan: 'Mengetahui / Menyetujui,',
       nama: '',
       jabatan: '',
+      customTtdImage: '',
       useCustomTtdImage: false
     };
     setTempPOSettings(prev => ({
@@ -347,6 +395,81 @@ export const AdminPOTab: React.FC<AdminPOTabProps> = ({
       ...prev,
       signatories: (prev.signatories || []).map(s => s.id === id ? { ...s, [field]: value } : s)
     }));
+  };
+
+  const handleUpdatePOSignatoryMultiple = (id: string, updates: Partial<POSignatory>) => {
+    setTempPOSettings(prev => ({
+      ...prev,
+      signatories: (prev.signatories || []).map(s => s.id === id ? { ...s, ...updates } : s)
+    }));
+  };
+
+  const handleApplyPOSignatoryPreset = (preset: 'single' | 'dual' | 'triple') => {
+    if (preset === 'single') {
+      setTempPOSettings(prev => ({
+        ...prev,
+        signatories: [{
+          id: 'pos-1',
+          keterangan: 'Hormat Kami (Purchasing),',
+          nama: prev.namaPenandatangan || 'Marko Dwi Nugroho',
+          jabatan: prev.jabatanPenandatangan || 'Bag. Purchasing',
+          customTtdImage: prev.customTtdImage || '',
+          useCustomTtdImage: Boolean(prev.customTtdImage)
+        }]
+      }));
+    } else if (preset === 'dual') {
+      setTempPOSettings(prev => ({
+        ...prev,
+        signatories: [
+          {
+            id: 'pos-1',
+            keterangan: 'Diterima & Dikonfirmasi Vendor,',
+            nama: '',
+            jabatan: 'Pemasok / Vendor',
+            customTtdImage: '',
+            useCustomTtdImage: false
+          },
+          {
+            id: 'pos-2',
+            keterangan: 'Hormat Kami (AIRIS),',
+            nama: prev.namaPenandatangan || 'Marko Dwi Nugroho',
+            jabatan: prev.jabatanPenandatangan || 'Bag. Purchasing',
+            customTtdImage: prev.customTtdImage || '',
+            useCustomTtdImage: Boolean(prev.customTtdImage)
+          }
+        ]
+      }));
+    } else if (preset === 'triple') {
+      setTempPOSettings(prev => ({
+        ...prev,
+        signatories: [
+          {
+            id: 'pos-1',
+            keterangan: 'Diterima & Dikonfirmasi Vendor,',
+            nama: '',
+            jabatan: 'Pemasok / Vendor',
+            customTtdImage: '',
+            useCustomTtdImage: false
+          },
+          {
+            id: 'pos-2',
+            keterangan: 'Dibuat Oleh (Purchasing),',
+            nama: prev.namaPenandatangan || 'Marko Dwi Nugroho',
+            jabatan: prev.jabatanPenandatangan || 'Bag. Purchasing',
+            customTtdImage: prev.customTtdImage || '',
+            useCustomTtdImage: Boolean(prev.customTtdImage)
+          },
+          {
+            id: 'pos-3',
+            keterangan: 'Disetujui Oleh (Direktur),',
+            nama: 'Dyah Kusuma Ningrum',
+            jabatan: 'Direktur Utama',
+            customTtdImage: '',
+            useCustomTtdImage: false
+          }
+        ]
+      }));
+    }
   };
 
   // ==============================================================
@@ -1198,7 +1321,8 @@ export const AdminPOTab: React.FC<AdminPOTabProps> = ({
                       keterangan: `Klaten, ${formatDateIndonesia(viewPoModal.Tanggal_PO)}`,
                       nama: poSettings.namaPenandatangan || 'Marko Dwi Nugroho',
                       jabatan: poSettings.jabatanPenandatangan || 'Bag. Purcasing',
-                      useCustomTtdImage: false
+                      customTtdImage: poSettings.customTtdImage || '',
+                      useCustomTtdImage: Boolean(poSettings.customTtdImage)
                     }];
 
                 const showCap = poSettings.showCap ?? true;
