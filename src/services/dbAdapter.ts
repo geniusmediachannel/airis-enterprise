@@ -3392,6 +3392,74 @@ export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { tota
 export const DEFAULT_GALLON_DEPRECIATION_RATE = 1250;
 
 /**
+ * Standard default depreciation rates per gallon variant
+ */
+export const DEFAULT_GALLON_VARIANT_DEPRECIATION_RATES: Record<string, number> = {
+  'Sekolah Mitra': 1250,
+  'Refill': 0,
+  'Beli Baru': 0,
+  'Standar': 0
+};
+
+/**
+ * Get all configured gallon depreciation rates mapped per variant
+ */
+export function getGallonVariantDepreciationRates(): Record<string, number> {
+  const defaults = { ...DEFAULT_GALLON_VARIANT_DEPRECIATION_RATES };
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PREFIX + 'GALLON_VARIANT_DEPRECIATION_RATES');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return { ...defaults, ...parsed };
+      }
+    }
+  } catch (e) {}
+  // Fallback: sinkronkan jika ada rate lama di GALLON_DEPRECIATION_RATE
+  const legacyVal = localStorage.getItem(STORAGE_KEY_PREFIX + 'GALLON_DEPRECIATION_RATE');
+  if (legacyVal) {
+    const parsedLegacy = parseFloat(legacyVal);
+    if (!isNaN(parsedLegacy) && parsedLegacy >= 0) {
+      defaults['Sekolah Mitra'] = parsedLegacy;
+    }
+  }
+  return defaults;
+}
+
+/**
+ * Save custom gallon depreciation rates per variant
+ */
+export function setGallonVariantDepreciationRates(rates: Record<string, number>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY_PREFIX + 'GALLON_VARIANT_DEPRECIATION_RATES', JSON.stringify(rates));
+    if (rates['Sekolah Mitra'] !== undefined) {
+      localStorage.setItem(STORAGE_KEY_PREFIX + 'GALLON_DEPRECIATION_RATE', String(rates['Sekolah Mitra']));
+    }
+  } catch (e) {}
+  notifyDbChange();
+}
+
+/**
+ * Get the specific depreciation rate for a given gallon variant
+ */
+export function getGallonDepreciationRateForVariant(variant?: string): number {
+  const rates = getGallonVariantDepreciationRates();
+  if (!variant) return rates['Sekolah Mitra'] ?? DEFAULT_GALLON_DEPRECIATION_RATE;
+  const v = variant.trim();
+  if (rates[v] !== undefined) return rates[v];
+  const vLower = v.toLowerCase();
+  for (const [key, val] of Object.entries(rates)) {
+    if (key.toLowerCase() === vLower) return val;
+  }
+  if (vLower.includes('sekolah') || vLower.includes('mitra') || vLower.includes('pinjam')) {
+    return rates['Sekolah Mitra'] ?? DEFAULT_GALLON_DEPRECIATION_RATE;
+  }
+  return 0;
+}
+
+/**
  * Get the currently configured gallon depreciation rate (custom or default 1250)
  */
 export function getGallonDepreciationRate(): number {
