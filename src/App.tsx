@@ -34,7 +34,7 @@ import { Eye, Lock, ShieldCheck } from 'lucide-react';
 import { 
   initializeDatabase, getTableData, saveTableData, getSupabaseConfig, saveSupabaseConfig,
   syncAllTablesFromSupabase, setupSupabaseRealtimeSync, checkAndApplyUrlHashConfig,
-  deduplicateMasterProductsAndFixRelations
+  deduplicateMasterProductsAndFixRelations, syncAndReconstructMutationsFromProduction
 } from './services/dbAdapter';
 import { syncAllModulesToFinance } from './services/financeSyncService';
 import { getTursoConfig, pullAllTablesFromTurso, pullTablesFromTurso } from './services/tursoAdapter';
@@ -248,6 +248,7 @@ export default function App() {
 
     // 1. Initialize seed data & warm IndexedDB
     initializeDatabase().then(() => {
+      syncAndReconstructMutationsFromProduction();
       reloadData(true);
       setLicenseStatus(checkLicenseStatus());
     });

@@ -840,6 +840,19 @@ export async function pullTableFromTurso(
     const res = await executeTursoQuery(`SELECT * FROM "${table}"`, [], cfg);
     if (res.success && Array.isArray(res.rows)) {
       const cleanedRows = cleanPulledTableRows(table, res.rows);
+
+      // Perlindungan Data Hilang (Anti Data Wipeout):
+      // Jika hasil dari Turso 0 baris, tapi lokal memiliki data, jangan timpa data lokal!
+      const currentLocal = (memoryTableCache[table] && Array.isArray(memoryTableCache[table]) && memoryTableCache[table].length > 0)
+        ? memoryTableCache[table]
+        : getTableData<any>(table, []);
+
+      if (cleanedRows.length === 0 && currentLocal.length > 0) {
+        // Pertahankan data lokal dan push ke Turso agar tidak hilang
+        syncTableToTurso(table, currentLocal).catch(() => {});
+        return { success: true, rowsCount: currentLocal.length };
+      }
+
       memoryTableCache[table] = cleanedRows;
       idbSet(table, cleanedRows).catch(() => {});
       try {
@@ -951,6 +964,29 @@ export async function pullAllTablesFromTurso(options?: {
 
         if (res.success && Array.isArray(res.rows)) {
           const cleanedRows = cleanPulledTableRows(table, res.rows, deletedRecordsMap);
+
+          // Perlindungan Data Hilang (Anti Data Wipeout):
+          // Jika Turso mengembalikan 0 baris, tapi di lokal sudah ada data,
+          // JANGAN menimpa data lokal menjadi kosong! Sebaliknya, pertahankan dan push data lokal ke Turso!
+          const currentLocal = (memoryTableCache[table] && Array.isArray(memoryTableCache[table]) && memoryTableCache[table].length > 0)
+            ? memoryTableCache[table]
+            : getTableData<any>(table, []);
+
+          if (cleanedRows.length === 0 && currentLocal.length > 0) {
+            const pk = TABLE_PRIMARY_KEYS[table] || 'id';
+            const tableDeletedIds = deletedRecordsMap?.get(table);
+            const validLocalRows = tableDeletedIds && tableDeletedIds.size > 0
+              ? currentLocal.filter((r: any) => !tableDeletedIds.has(String(r[pk] ?? '').trim().toLowerCase()))
+              : currentLocal;
+
+            if (validLocalRows.length > 0) {
+              syncTableToTurso(table, validLocalRows).catch(() => {});
+              pulledTables++;
+              totalRows += validLocalRows.length;
+              return;
+            }
+          }
+
           memoryTableCache[table] = cleanedRows;
           idbSet(table, cleanedRows).catch(() => {});
           try {

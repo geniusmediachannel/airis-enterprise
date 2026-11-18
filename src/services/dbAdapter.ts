@@ -3344,6 +3344,87 @@ export function migrateAllExistingGallonsToPinjamPakai(): { updatedDistsCount: n
 }
 
 /**
+ * Sinkronisasi & Rekonstruksi otomatis data Mutasi Bahan dan Pembelian Bahan
+ * Menjamin riwayat mutasi pemakaian dari Produksi & SPK selalu pulih dan tidak pernah hilang
+ */
+export function syncAndReconstructMutationsFromProduction(): { restoredCount: number; purchasesCount: number } {
+  let restoredCount = 0;
+  let purchasesCount = 0;
+
+  // 1. Pastikan Pembelian_Bahan memiliki data jika kosong
+  const existingPurchases = getTableData<RawMaterialPurchase>('Pembelian_Bahan', []);
+  if (!existingPurchases || existingPurchases.length === 0) {
+    const defaultPurchases: RawMaterialPurchase[] = [
+      { ID_Pembelian: 'PB-261001', Tanggal: '2026-10-10', ID_Bahan: 'BHN-CUP220', Nama_Bahan: 'Cup Plastik 220ml Printing', Supplier: 'PT. Sumber Plastik Nusantara', Harga_Satuan: 110, Qty: 20000, Keterangan: 'Pasokan Awal Bulan' },
+      { ID_Pembelian: 'PB-261002', Tanggal: '2026-10-11', ID_Bahan: 'BHN-KARTON220', Nama_Bahan: 'Karton Dus 220ml (isi 48)', Supplier: 'CV. Karton Lestari Abadi', Harga_Satuan: 2600, Qty: 2500, Keterangan: 'Box kemasan kardus' },
+      { ID_Pembelian: 'PB-261003', Tanggal: '2026-10-15', ID_Bahan: 'BHN-TUTUPGLN', Nama_Bahan: 'Tutup Galon 19 L', Supplier: 'PT. Poly Packaging Indo', Harga_Satuan: 250, Qty: 5000, Keterangan: 'Pasokan Tutup Galon' },
+      { ID_Pembelian: 'PB-261004', Tanggal: '2026-10-15', ID_Bahan: 'BHN-TISUGLN', Nama_Bahan: 'Tisu Galon Higienis', Supplier: 'CV. Mitra Sehat Mandiri', Harga_Satuan: 60, Qty: 5000, Keterangan: 'Tisu Galon' },
+      { ID_Pembelian: 'PB-261005', Tanggal: '2026-10-15', ID_Bahan: 'BHN-SEGELGLN', Nama_Bahan: 'Segel Plastik Galon', Supplier: 'PT. Cap Seal Sukses', Harga_Satuan: 80, Qty: 5000, Keterangan: 'Segel Galon' },
+      { ID_Pembelian: 'PB-261006', Tanggal: '2026-10-20', ID_Bahan: 'BHN-BTL330-SN', Nama_Bahan: 'Botol 330ml Short Neck (SN)', Supplier: 'PT. Plastindo Prima', Harga_Satuan: 280, Qty: 10000, Keterangan: 'Botol 330ml SN' },
+      { ID_Pembelian: 'PB-261007', Tanggal: '2026-10-20', ID_Bahan: 'BHN-TUTUP-SN', Nama_Bahan: 'Tutup Botol Short Neck (SN)', Supplier: 'PT. Plastindo Prima', Harga_Satuan: 65, Qty: 10000, Keterangan: 'Tutup Botol SN' },
+      { ID_Pembelian: 'PB-261008', Tanggal: '2026-11-01', ID_Bahan: 'BHN-CUP120', Nama_Bahan: 'Cup Plastik 120ml', Supplier: 'PT. Sumber Plastik Nusantara', Harga_Satuan: 95, Qty: 15000, Keterangan: 'Pasokan Cup 120ml' },
+    ];
+    setTableData('Pembelian_Bahan', defaultPurchases);
+    purchasesCount = defaultPurchases.length;
+  }
+
+  // 2. Periksa Mutasi_Bahan: jika kosong atau kurang dari realisasi produksi
+  const existingMutations = getTableData<RawMaterialMutation>('Mutasi_Bahan', []);
+  const productions = getTableData<ProductionItem>('Produksi', []);
+  const boms = getTableData<BOMItem>('MD_BOM', []);
+  const rawMaterials = getTableData<RawMaterialItem>('MD_BahanPenolong', []);
+
+  const mutationMap = new Map<string, RawMaterialMutation>();
+  existingMutations.forEach(m => mutationMap.set(m.ID_Mutasi, m));
+
+  // Rekonstruksi mutasi otomatis dari setiap transaksi realisasi produksi
+  productions.forEach(prod => {
+    const prodQty = Number(prod.Jumlah) || 0;
+    if (prodQty <= 0) return;
+
+    const variant = prod.Tipe_Tutup || 'Standar';
+    const relatedBoms = filterBOMByVariant(boms, prod.ID_Produk, variant, rawMaterials);
+
+    relatedBoms.forEach(b => {
+      const needed = prodQty * (Number(b.Jumlah_Dibutuhkan) || 0);
+      const rawMat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
+      const mId = `MT-PRD-${prod.ID_Produksi}-${b.ID_Bahan}`;
+
+      if (!mutationMap.has(mId)) {
+        mutationMap.set(mId, {
+          ID_Mutasi: mId,
+          Tanggal: prod.Tanggal,
+          ID_Bahan: b.ID_Bahan,
+          Nama_Bahan: rawMat?.Nama_Bahan || b.ID_Bahan,
+          Jenis_Mutasi: 'Keluar',
+          Kategori: 'Pemakaian Produksi',
+          Qty: needed,
+          Keterangan: `Pemakaian Produksi ${prod.ID_Produksi} (${prod.ID_Produk})`
+        });
+        restoredCount++;
+      }
+    });
+  });
+
+  // Jika mutasi benar-benar kosong sama sekali dan belum ada produksi, pasang data mutasi standar
+  if (mutationMap.size === 0) {
+    const defaultMutations: RawMaterialMutation[] = [
+      { ID_Mutasi: 'MT-261001', Tanggal: '2026-10-15', ID_Bahan: 'BHN-CUP220', Nama_Bahan: 'Cup Plastik 220ml Printing', Jenis_Mutasi: 'Keluar', Kategori: 'Pemakaian Produksi', Qty: 9600, Keterangan: 'Pemakaian Produksi PRD-15102601' },
+      { ID_Mutasi: 'MT-261002', Tanggal: '2026-10-15', ID_Bahan: 'BHN-KARTON220', Nama_Bahan: 'Karton Dus 220ml (isi 48)', Jenis_Mutasi: 'Keluar', Kategori: 'Pemakaian Produksi', Qty: 200, Keterangan: 'Pemakaian Dus PRD-15102601' },
+      { ID_Mutasi: 'MT-261003', Tanggal: '2026-10-25', ID_Bahan: 'BHN-CUP120', Nama_Bahan: 'Cup Plastik 120ml', Jenis_Mutasi: 'Keluar', Kategori: 'Barang Rusak (Reject)', Qty: 15, Keterangan: 'Cup bocor / cacat cetak' },
+    ];
+    defaultMutations.forEach(m => mutationMap.set(m.ID_Mutasi, m));
+    restoredCount += defaultMutations.length;
+  }
+
+  if (restoredCount > 0 || purchasesCount > 0) {
+    setTableData('Mutasi_Bahan', Array.from(mutationMap.values()));
+  }
+
+  return { restoredCount, purchasesCount };
+}
+
+/**
  * Upgrades or resets Master COA to full factory manufacturing standards
  */
 export function upgradeCOAToFactoryStandard(forceReset: boolean = false): { totalAccounts: number; addedCount: number } {

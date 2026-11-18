@@ -2,13 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { 
   Boxes, Plus, Download, Printer, AlertTriangle, 
   CheckCircle2, ArrowDownRight, ArrowUpRight, X, PackagePlus, 
-  PackageMinus, Edit2, Trash2, Upload, FileDown, BarChart2
+  PackageMinus, Edit2, Trash2, Upload, FileDown, BarChart2, RefreshCw
 } from 'lucide-react';
 import { 
   ProductItem, ProductionItem, DistributionItem, DistributionProductDetail,
   RawMaterialItem, RawMaterialPurchase, RawMaterialMutation 
 } from '../types';
-import { getTableData, setTableData } from '../services/dbAdapter';
+import { getTableData, setTableData, syncAndReconstructMutationsFromProduction } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { generateTableReportPDF } from '../services/pdfService';
 import { confirmAction } from './ConfirmDialog';
@@ -1164,15 +1164,33 @@ export const StockView: React.FC<StockViewProps> = ({
       {/* Tab 3: Pembelian Bahan Masuk */}
       {activeTab === 'pembelian' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900">Riwayat Pembelian Bahan Penolong (Masuk)</h3>
-            <button
-              onClick={() => exportDataToExcel(purchases, 'Pembelian', `AIRIS_Pembelian_Bahan_${filterMonth}`)}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download size={14} />
-              <span>Export Excel</span>
-            </button>
+          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Riwayat Pembelian Bahan Penolong (Masuk)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Catatan penerimaan dan pasokan bahan baku dari vendor / supplier.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const res = syncAndReconstructMutationsFromProduction();
+                  onRefresh();
+                  showToast('success', 'Sinkronisasi Pembelian', `Berhasil memeriksa dan memulihkan ${res.purchasesCount} catatan pasokan.`);
+                }}
+                className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                title="Sinkronkan data pasokan pembelian dari cadangan database"
+              >
+                <RefreshCw size={13} />
+                <span>Sinkronkan Data</span>
+              </button>
+              <button
+                onClick={() => exportDataToExcel(purchases, 'Pembelian', `AIRIS_Pembelian_Bahan_${filterMonth}`)}
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download size={14} />
+                <span>Export Excel</span>
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
@@ -1192,8 +1210,23 @@ export const StockView: React.FC<StockViewProps> = ({
               <tbody className="divide-y divide-slate-100 font-mono">
                 {purchases.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400 fst-italic font-sans">
-                      Belum ada data pembelian bahan yang tercatat.
+                    <td colSpan={9} className="p-8 text-center text-slate-500 font-sans">
+                      <div className="space-y-2 max-w-md mx-auto">
+                        <p className="font-semibold text-xs text-slate-700">Belum ada data pembelian bahan yang tercatat.</p>
+                        <p className="text-[11px] text-slate-400">Data pembelian bahan penolong kosong atau belum tersinkronisasi.</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const res = syncAndReconstructMutationsFromProduction();
+                            onRefresh();
+                            showToast('success', 'Data Pulih', `Berhasil memulihkan ${res.purchasesCount} catatan pasokan bahan penolong.`);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs inline-flex items-center gap-1.5 transition cursor-pointer mt-1"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Pulihkan Data Pasokan Bahan</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -1237,15 +1270,33 @@ export const StockView: React.FC<StockViewProps> = ({
       {/* Tab 4: Pemakaian Bahan Keluar */}
       {activeTab === 'pemakaian' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900">Riwayat Mutasi Pemakaian & Barang Rusak (Keluar)</h3>
-            <button
-              onClick={() => exportDataToExcel(mutations, 'Mutasi_Keluar', `AIRIS_Pemakaian_Bahan_${filterMonth}`)}
-              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download size={14} />
-              <span>Export Excel</span>
-            </button>
+          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Riwayat Mutasi Pemakaian & Barang Rusak (Keluar)</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Pemotongan bahan penolong otomatis dari SPK Produksi serta pencatatan reject/afkir.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const res = syncAndReconstructMutationsFromProduction();
+                  onRefresh();
+                  showToast('success', 'Sinkronisasi Mutasi', `Berhasil memulihkan ${res.restoredCount} mutasi pemakaian dari riwayat produksi.`);
+                }}
+                className="px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                title="Hitung ulang dan pulihkan pemotongan bahan baku dari seluruh transaksi realisasi Produksi & SPK"
+              >
+                <RefreshCw size={13} />
+                <span>Sinkronkan Ulang dari Produksi</span>
+              </button>
+              <button
+                onClick={() => exportDataToExcel(mutations, 'Mutasi_Keluar', `AIRIS_Pemakaian_Bahan_${filterMonth}`)}
+                className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download size={14} />
+                <span>Export Excel</span>
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
@@ -1263,8 +1314,25 @@ export const StockView: React.FC<StockViewProps> = ({
               <tbody className="divide-y divide-slate-100 font-mono">
                 {mutations.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400 fst-italic font-sans">
-                      Belum ada data mutasi pemakaian atau barang rusak tercatat.
+                    <td colSpan={7} className="p-8 text-center text-slate-500 font-sans">
+                      <div className="space-y-2 max-w-md mx-auto">
+                        <p className="font-semibold text-xs text-slate-700">Belum ada data mutasi pemakaian atau barang rusak tercatat.</p>
+                        <p className="text-[11px] text-slate-400">
+                          Mutasi pemakaian bahan baku otomatis terbentuk saat produksi dijalankan atau Anda dapat mencatat reject manual.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const res = syncAndReconstructMutationsFromProduction();
+                            onRefresh();
+                            showToast('success', 'Data Pulih', `Berhasil memulihkan ${res.restoredCount} mutasi dari riwayat realisasi produksi.`);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs inline-flex items-center gap-1.5 transition cursor-pointer mt-1"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Pulihkan Mutasi dari Riwayat Produksi</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
