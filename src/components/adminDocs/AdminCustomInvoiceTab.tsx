@@ -1149,6 +1149,8 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
         shipmentGroups: shipmentGroupsForPdf,
         potonganEkspedisi: inv.Potongan_Ekspedisi || 0,
         grandTotal: inv.Grand_Total,
+        isCustomInvoice: true,
+        keterangan: inv.Keterangan,
         customSettings: {
           namaPerusahaan: docSettings.namaPerusahaan,
           subNamaPerusahaan: docSettings.subNamaPerusahaan,
@@ -1223,6 +1225,8 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
         shipmentGroups: shipmentGroupsForPdf,
         potonganEkspedisi: inv.Potongan_Ekspedisi || 0,
         grandTotal: inv.Grand_Total,
+        isCustomInvoice: true,
+        keterangan: inv.Keterangan,
         customSettings: {
           namaPerusahaan: docSettings.namaPerusahaan,
           subNamaPerusahaan: docSettings.subNamaPerusahaan,
