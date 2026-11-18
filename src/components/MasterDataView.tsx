@@ -3,14 +3,14 @@ import {
   Database, Plus, Search, Edit2, Trash2, Download, 
   Printer, CheckCircle2, AlertCircle, X, Save, FileSpreadsheet,
   FileDown, RefreshCw, TrendingUp, TrendingDown, Calendar, CalendarClock, History, Tag, ArrowRight, Clock,
-  ShieldCheck, UserCheck, UserX, Layers, Check
+  ShieldCheck, UserCheck, UserX, Layers, Check, ChevronDown, ChevronUp, Sparkles, Package, Box, Filter, Wand2
 } from 'lucide-react';
 import { 
   ProductItem, CustomerItem, SupplierItem, RawMaterialItem, 
   BOMItem, EmployeeItem, UserAccount, SpecialPriceItem, UserRole, PriceHistoryItem 
 } from '../types';
 import { 
-  getTableData, setTableData, deleteTableRow, isBottleProduct,
+  getTableData, setTableData, deleteTableRow, isBottleProduct, isGallonProduct, applyProductBOMTemplate,
   getGallonDepreciationRate, setGallonDepreciationRate, DEFAULT_GALLON_DEPRECIATION_RATE 
 } from '../services/dbAdapter';
 import { exportDataToExcel, ExcelTemplateType } from '../services/excelService';
@@ -88,6 +88,67 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   const [gallonDepRate, setGallonDepRate] = useState<number>(() => getGallonDepreciationRate());
   const [isSavingGallonRate, setIsSavingGallonRate] = useState(false);
   const [rateSuccess, setRateSuccess] = useState(false);
+
+  // State untuk Master BOM Ringkas per Produk
+  const [bomViewMode, setBomViewMode] = useState<'per_produk' | 'flat_table'>('per_produk');
+  const [expandedProductBOM, setExpandedProductBOM] = useState<Record<string, boolean>>({});
+  const [variantFilterPerProduct, setVariantFilterPerProduct] = useState<Record<string, string>>({});
+  const [customVariantInput, setCustomVariantInput] = useState<string>('');
+
+  // Kelompokkan data BOM berdasarkan produk (Product-Centric)
+  const productBOMGroups = useMemo(() => {
+    return products.map(prod => {
+      const prodBoms = boms.filter(b => b.ID_Produk === prod.ID_Produk);
+      const variantsSet = new Set<string>();
+      prodBoms.forEach(b => {
+        const v = (b.Varian || 'Standar').trim();
+        variantsSet.add(v);
+      });
+      const variantsList = Array.from(variantsSet);
+
+      let totalEstCost = 0;
+      prodBoms.forEach(b => {
+        const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
+        const cost = Number(mat?.Harga_Satuan || 0) * (Number(b.Jumlah_Dibutuhkan) || 0);
+        totalEstCost += cost;
+      });
+
+      const isBotol = isBottleProduct(prod.ID_Produk) || isBottleProduct(prod.Nama_Produk);
+      const isGalon = isGallonProduct(prod.ID_Produk) || isGallonProduct(prod.Nama_Produk);
+
+      return {
+        product: prod,
+        boms: prodBoms,
+        variants: variantsList,
+        totalEstCost,
+        isBotol,
+        isGalon
+      };
+    });
+  }, [products, boms, rawMaterials]);
+
+  const toggleExpandProductBOM = (prodId: string) => {
+    setExpandedProductBOM(prev => {
+      // Jika belum di-set, defaultnya false maka dibuka (true)
+      const isCurrentlyOpen = prev[prodId] ?? false;
+      return {
+        ...prev,
+        [prodId]: !isCurrentlyOpen
+      };
+    });
+  };
+
+  const handleApplyTemplate = async (prodId: string, templateType: 'botol_sn_ln' | 'galon_refill_beli_sekolah') => {
+    const res = applyProductBOMTemplate(prodId, templateType);
+    if (res.success) {
+      showToast('Template Berhasil Diterapkan', res.message, 'success');
+      onRefresh();
+      setExpandedProductBOM(prev => ({ ...prev, [prodId]: true }));
+    } else {
+      showToast('Info Template', res.message, 'info');
+    }
+  };
+
   const [showPriceModal, setShowPriceModal] = useState<boolean>(false);
   const [priceFilterType, setPriceFilterType] = useState<'all' | 'Bahan Penolong' | 'Produk'>('all');
   const [priceFilterMonth, setPriceFilterMonth] = useState<string>('all');
@@ -126,7 +187,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   }, [activeTab]);
 
   // Open Add modal with proper defaults
-  const handleOpenAdd = () => {
+  const handleOpenAdd = (preselectedProductId?: string, defaultVariant?: string) => {
     if (activeTab === 'histori_harga') {
       handleOpenPriceModal('Produk');
       return;
@@ -178,18 +239,22 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
       };
     } else if (activeTab === 'bom') {
       const nextId = getNextSequenceId(boms, 'ID_BOM', 'BOM', 4);
-      const defaultProd = products[0]?.ID_Produk || '';
+      const targetProd = preselectedProductId || products[0]?.ID_Produk || '';
+      const isBotol = isBottleProduct(targetProd);
+      const isGalon = isGallonProduct(targetProd);
+      const initialVariant = defaultVariant || (isBotol ? 'SN' : isGalon ? 'Refill' : 'Standar');
       const defaultMat = rawMaterials[0]?.ID_Bahan || '';
       const defaultSatuan = rawMaterials[0]?.Satuan || 'Pcs';
       initial = { 
         ID_BOM: nextId, 
-        ID_Produk: defaultProd, 
+        ID_Produk: targetProd, 
         ID_Bahan: defaultMat, 
         Jumlah_Dibutuhkan: '', 
         Satuan: defaultSatuan, 
         Keterangan: '',
-        Varian: 'Standar'
+        Varian: initialVariant
       };
+      setCustomVariantInput('');
     } else if (activeTab === 'karyawan') {
       const nextId = getNextSequenceId(employees, 'ID_Karyawan', 'KAR', 4);
       initial = { 
@@ -1245,53 +1310,517 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 </div>
               </div>
 
-              <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-3">ID BOM</th>
-                  <th className="p-3">Target Produk</th>
-                  <th className="p-3 text-center">Varian Resep</th>
-                  <th className="p-3">Bahan Penolong Dibutuhkan</th>
-                  <th className="p-3 text-center">Rasio Kebutuhan</th>
-                  <th className="p-3">Keterangan</th>
-                  <th className="p-3 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {boms.map(bom => {
-                  const prod = products.find(p => p.ID_Produk === bom.ID_Produk);
-                  const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
-                  return (
-                    <tr key={bom.ID_BOM} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-blue-700">{bom.ID_BOM}</td>
-                      <td className="p-3 font-semibold text-slate-900">{prod?.Nama_Produk || bom.ID_Produk}</td>
-                      <td className="p-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          bom.Varian === 'LN'
-                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                            : bom.Varian === 'SN'
-                              ? 'bg-cyan-100 text-cyan-700 border border-cyan-200'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}>
-                          {bom.Varian === 'LN' ? 'Long Neck (LN)' : bom.Varian === 'SN' ? 'Short Neck (SN)' : 'Standar / Semua'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-700">{mat?.Nama_Bahan || bom.ID_Bahan}</td>
-                      <td className="p-3 text-center font-mono font-bold text-indigo-700">
-                        {bom.Jumlah_Dibutuhkan} {bom.Satuan} / unit
-                      </td>
-                      <td className="p-3 text-slate-500">{bom.Keterangan || '-'}</td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => handleOpenEdit(bom)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit BOM"><Edit2 size={14} /></button>
-                          <button onClick={() => handleDelete(bom.ID_BOM)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded" title="Hapus BOM"><Trash2 size={14} /></button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/80">
+                {/* View Mode Switcher & Stats */}
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex p-1 bg-slate-100 rounded-lg border border-slate-200 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setBomViewMode('per_produk')}
+                      className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                        bomViewMode === 'per_produk'
+                          ? 'bg-white text-blue-700 shadow-xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Package size={14} />
+                      <span>Ringkas per Produk ({products.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBomViewMode('flat_table')}
+                      className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                        bomViewMode === 'flat_table'
+                          ? 'bg-white text-blue-700 shadow-xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <FileSpreadsheet size={14} />
+                      <span>Tabel Semua Baris BOM ({boms.length})</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500">
+                    Formula Terdaftar: <strong className="text-slate-800">{boms.length}</strong> komponen bahan baku
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAdd()}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus size={13} />
+                    <span>+ Tambah Bahan BOM</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* MODE 1: RINGKAS PER PRODUK (PRODUCT-CENTRIC VIEW) */}
+              {bomViewMode === 'per_produk' && (
+                <div className="space-y-3.5">
+                  {(() => {
+                    const filteredGroups = productBOMGroups.filter(grp => {
+                      if (!searchQuery) return true;
+                      const q = searchQuery.toLowerCase();
+                      const matchProd = 
+                        grp.product.Nama_Produk?.toLowerCase().includes(q) || 
+                        grp.product.ID_Produk?.toLowerCase().includes(q) || 
+                        grp.product.Kategori?.toLowerCase().includes(q);
+                      const matchBOM = grp.boms.some(b => {
+                        const mat = rawMaterials.find(m => m.ID_Bahan === b.ID_Bahan);
+                        return b.ID_BOM?.toLowerCase().includes(q) ||
+                          b.Varian?.toLowerCase().includes(q) ||
+                          mat?.Nama_Bahan?.toLowerCase().includes(q) ||
+                          b.ID_Bahan?.toLowerCase().includes(q);
+                      });
+                      return matchProd || matchBOM;
+                    });
+
+                    if (filteredGroups.length === 0) {
+                      return (
+                        <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-500">
+                          <Package size={32} className="mx-auto mb-2 text-slate-400 opacity-60" />
+                          <p className="font-semibold text-xs text-slate-700">Tidak ada produk yang cocok dengan pencarian "{searchQuery}"</p>
+                          <p className="text-[11px] text-slate-400 mt-1">Coba gunakan kata kunci lain atau bersihkan kotak pencarian.</p>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      );
+                    }
+
+                    return filteredGroups.map(grp => {
+                      // Default expanded jika belum di-set adalah true agar user langsung bisa melihat resep
+                      const isExpanded = expandedProductBOM[grp.product.ID_Produk] ?? true;
+                      const activeFilter = variantFilterPerProduct[grp.product.ID_Produk] || 'semua';
+
+                      // Saring BOM berdasarkan varian filter pada card ini
+                      const displayedBOMs = grp.boms.filter(b => {
+                        if (activeFilter === 'semua') return true;
+                        const v = (b.Varian || 'Standar').trim().toLowerCase();
+                        return v === activeFilter.toLowerCase();
+                      });
+
+                      const renderVariantBadge = (v?: string) => {
+                        const norm = (v || 'Standar').trim();
+                        if (norm === 'SN') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                              Short Neck (SN)
+                            </span>
+                          );
+                        }
+                        if (norm === 'LN') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                              Long Neck (LN)
+                            </span>
+                          );
+                        }
+                        if (norm === 'Refill') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              Refill Pabrik
+                            </span>
+                          );
+                        }
+                        if (norm === 'Beli Baru') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                              Beli Galon Baru
+                            </span>
+                          );
+                        }
+                        if (norm === 'Sekolah Mitra') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              🏫 Sekolah Mitra
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            {norm === 'Standar' ? 'Standar / Bersama' : norm}
+                          </span>
+                        );
+                      };
+
+                      return (
+                        <div
+                          key={grp.product.ID_Produk}
+                          className="border border-slate-200 hover:border-slate-300 rounded-xl bg-white shadow-xs overflow-hidden transition-all"
+                        >
+                          {/* Card Header (Product Summary & Actions) */}
+                          <div
+                            onClick={() => toggleExpandProductBOM(grp.product.ID_Produk)}
+                            className="p-3.5 bg-slate-50/70 hover:bg-slate-50 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 select-none"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm shadow-2xs shrink-0 mt-0.5 ${
+                                grp.isGalon 
+                                  ? 'bg-sky-100 text-sky-700 border border-sky-200' 
+                                  : grp.isBotol 
+                                    ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                                    : 'bg-teal-100 text-teal-700 border border-teal-200'
+                              }`}>
+                                <Box size={18} />
+                              </div>
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="font-bold text-slate-900 text-sm">
+                                    {grp.product.Nama_Produk}
+                                  </h3>
+                                  <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                    {grp.product.ID_Produk}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded border border-slate-200">
+                                    {grp.product.Kategori} ({grp.product.Satuan})
+                                  </span>
+                                </div>
+
+                                {/* Pills Varian yang terdaftar di produk ini */}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  <span className="text-[11px] text-slate-500 font-medium">Varian Resep:</span>
+                                  {grp.boms.length === 0 ? (
+                                    <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                                      Belum ada resep bahan
+                                    </span>
+                                  ) : (
+                                    grp.variants.map(v => (
+                                      <span key={v}>
+                                        {renderVariantBadge(v)}
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bagian Kanan Header: Estimasi Biaya & Tombol Aksi */}
+                            <div className="flex flex-wrap items-center gap-2.5 self-end md:self-center shrink-0">
+                              <div className="text-right">
+                                <div className="text-[10px] text-slate-500 font-medium">HPP Bahan Baku (Estimasi)</div>
+                                <div className="text-xs font-mono font-bold text-indigo-700">
+                                  Rp {Math.round(grp.totalEstCost).toLocaleString('id-ID')} <span className="text-[10px] text-slate-400 font-normal">/ {grp.product.Satuan || 'unit'}</span>
+                                </div>
+                              </div>
+
+                              <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+
+                              <span className="text-[11px] font-semibold text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                                {grp.boms.length} Bahan Penolong
+                              </span>
+
+                              {/* Tombol Template Cepat jika produk Galon atau Botol */}
+                              {grp.isGalon && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleApplyTemplate(grp.product.ID_Produk, 'galon_refill_beli_sekolah');
+                                  }}
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px] rounded-lg shadow-2xs flex items-center gap-1 transition cursor-pointer"
+                                  title="Otomatis tambahkan formula resep varian Galon (Refill, Beli Baru, dan Sekolah Mitra)"
+                                >
+                                  <Sparkles size={12} className="text-amber-600" />
+                                  <span>Template Galon (Refill/Beli/Sekolah)</span>
+                                </button>
+                              )}
+
+                              {grp.isBotol && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleApplyTemplate(grp.product.ID_Produk, 'botol_sn_ln');
+                                  }}
+                                  className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-[11px] rounded-lg shadow-2xs flex items-center gap-1 transition cursor-pointer"
+                                  title="Otomatis tambahkan formula resep botol (Varian Short Neck SN & Long Neck LN)"
+                                >
+                                  <Sparkles size={12} className="text-purple-600" />
+                                  <span>Template Botol (SN & LN)</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenAdd(grp.product.ID_Produk);
+                                }}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-1 transition cursor-pointer"
+                              >
+                                <Plus size={13} />
+                                <span>+ Tambah Bahan</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                className="p-1 text-slate-400 hover:text-slate-700 rounded-md transition"
+                                title={isExpanded ? 'Tutup Rincian' : 'Buka Rincian Resep'}
+                              >
+                                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Card Body (BOM Table / Empty State) */}
+                          {isExpanded && (
+                            <div className="p-4 bg-white space-y-3">
+                              {grp.boms.length === 0 ? (
+                                <div className="p-6 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-2.5">
+                                  <div className="w-10 h-10 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                                    <Package size={20} />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <h4 className="text-xs font-bold text-slate-800">
+                                      Produk ini belum memiliki formula bahan baku penolong
+                                    </h4>
+                                    <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                                      Resep BOM diperlukan untuk menghitung kebutuhan bahan baku saat SPK Produksi dijalankan dan estimasi HPP.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAdd(grp.product.ID_Produk)}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                                    >
+                                      <Plus size={13} />
+                                      <span>+ Buat Resep Pertama</span>
+                                    </button>
+
+                                    {grp.isGalon && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApplyTemplate(grp.product.ID_Produk, 'galon_refill_beli_sekolah')}
+                                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                                      >
+                                        <Sparkles size={13} />
+                                        <span>Gunakan Template Galon (Refill, Beli Baru, Sekolah Mitra)</span>
+                                      </button>
+                                    )}
+
+                                    {grp.isBotol && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApplyTemplate(grp.product.ID_Produk, 'botol_sn_ln')}
+                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                                      >
+                                        <Sparkles size={13} />
+                                        <span>Gunakan Template Botol (SN & LN)</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {/* Sub-filter Varian di dalam Card Produk */}
+                                  {grp.variants.length > 1 && (
+                                    <div className="flex items-center gap-1.5 pb-1 overflow-x-auto text-xs">
+                                      <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
+                                        <Filter size={11} /> Filter:
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setVariantFilterPerProduct(prev => ({ ...prev, [grp.product.ID_Produk]: 'semua' }))}
+                                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                          activeFilter === 'semua'
+                                            ? 'bg-blue-600 text-white shadow-2xs'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                        }`}
+                                      >
+                                        Semua Bahan ({grp.boms.length})
+                                      </button>
+                                      {grp.variants.map(v => {
+                                        const count = grp.boms.filter(b => (b.Varian || 'Standar').trim().toLowerCase() === v.toLowerCase()).length;
+                                        return (
+                                          <button
+                                            key={v}
+                                            type="button"
+                                            onClick={() => setVariantFilterPerProduct(prev => ({ ...prev, [grp.product.ID_Produk]: v }))}
+                                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                                              activeFilter.toLowerCase() === v.toLowerCase()
+                                                ? 'bg-blue-600 text-white shadow-2xs'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
+                                          >
+                                            {v} ({count})
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* Table Bahan Penolong untuk Produk Ini */}
+                                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                                        <tr>
+                                          <th className="p-2.5">ID BOM</th>
+                                          <th className="p-2.5">Bahan Penolong</th>
+                                          <th className="p-2.5 text-center">Varian Resep</th>
+                                          <th className="p-2.5 text-center">Rasio Kebutuhan</th>
+                                          <th className="p-2.5 text-right">Harga Satuan</th>
+                                          <th className="p-2.5 text-right">Estimasi Biaya</th>
+                                          <th className="p-2.5">Keterangan</th>
+                                          <th className="p-2.5 text-center">Aksi</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {displayedBOMs.map(bom => {
+                                          const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
+                                          const unitPrice = Number(mat?.Harga_Satuan) || 0;
+                                          const qty = Number(bom.Jumlah_Dibutuhkan) || 0;
+                                          const estCost = unitPrice * qty;
+
+                                          return (
+                                            <tr key={bom.ID_BOM} className="hover:bg-slate-50/80 transition-colors">
+                                              <td className="p-2.5 font-mono font-bold text-blue-700 whitespace-nowrap">
+                                                {bom.ID_BOM}
+                                              </td>
+                                              <td className="p-2.5">
+                                                <div className="font-semibold text-slate-900">{mat?.Nama_Bahan || bom.ID_Bahan}</div>
+                                                <div className="font-mono text-[10px] text-slate-400">{bom.ID_Bahan} {mat?.Kategori ? `• ${mat.Kategori}` : ''}</div>
+                                              </td>
+                                              <td className="p-2.5 text-center whitespace-nowrap">
+                                                {renderVariantBadge(bom.Varian)}
+                                              </td>
+                                              <td className="p-2.5 text-center font-mono font-bold text-indigo-700 whitespace-nowrap">
+                                                {bom.Jumlah_Dibutuhkan} {bom.Satuan} <span className="text-[10px] text-slate-400 font-normal">/ {grp.product.Satuan || 'unit'}</span>
+                                              </td>
+                                              <td className="p-2.5 text-right font-mono text-slate-600 whitespace-nowrap">
+                                                Rp {unitPrice.toLocaleString('id-ID')}
+                                              </td>
+                                              <td className="p-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                                Rp {Math.round(estCost).toLocaleString('id-ID')}
+                                              </td>
+                                              <td className="p-2.5 text-slate-500 max-w-xs truncate">
+                                                {bom.Keterangan || '-'}
+                                              </td>
+                                              <td className="p-2.5 text-center whitespace-nowrap">
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                  <button
+                                                    onClick={() => handleOpenEdit(bom)}
+                                                    className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition cursor-pointer"
+                                                    title="Edit BOM"
+                                                  >
+                                                    <Edit2 size={13} />
+                                                  </button>
+                                                  <button
+                                                    onClick={() => handleDelete(bom.ID_BOM)}
+                                                    className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                                                    title="Hapus BOM"
+                                                  >
+                                                    <Trash2 size={13} />
+                                                  </button>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+
+              {/* MODE 2: TABEL SEMUA BARIS BOM (FLAT TABLE LAMA) */}
+              {bomViewMode === 'flat_table' && (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">ID BOM</th>
+                        <th className="p-3">Target Produk</th>
+                        <th className="p-3 text-center">Varian Resep</th>
+                        <th className="p-3">Bahan Penolong Dibutuhkan</th>
+                        <th className="p-3 text-center">Rasio Kebutuhan</th>
+                        <th className="p-3 text-right">Estimasi Biaya</th>
+                        <th className="p-3">Keterangan</th>
+                        <th className="p-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {boms
+                        .filter(bom => {
+                          if (!searchQuery) return true;
+                          const q = searchQuery.toLowerCase();
+                          const prod = products.find(p => p.ID_Produk === bom.ID_Produk);
+                          const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
+                          return bom.ID_BOM.toLowerCase().includes(q) ||
+                            bom.ID_Produk.toLowerCase().includes(q) ||
+                            prod?.Nama_Produk.toLowerCase().includes(q) ||
+                            mat?.Nama_Bahan.toLowerCase().includes(q) ||
+                            bom.Varian?.toLowerCase().includes(q);
+                        })
+                        .map(bom => {
+                          const prod = products.find(p => p.ID_Produk === bom.ID_Produk);
+                          const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
+                          const unitPrice = Number(mat?.Harga_Satuan) || 0;
+                          const qty = Number(bom.Jumlah_Dibutuhkan) || 0;
+                          const estCost = unitPrice * qty;
+
+                          return (
+                            <tr key={bom.ID_BOM} className="hover:bg-slate-50">
+                              <td className="p-3 font-mono font-bold text-blue-700 whitespace-nowrap">{bom.ID_BOM}</td>
+                              <td className="p-3 font-semibold text-slate-900">
+                                <div>{prod?.Nama_Produk || bom.ID_Produk}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{bom.ID_Produk}</div>
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  bom.Varian === 'LN'
+                                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                    : bom.Varian === 'SN'
+                                      ? 'bg-cyan-100 text-cyan-700 border border-cyan-200'
+                                      : bom.Varian === 'Refill'
+                                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                        : bom.Varian === 'Beli Baru'
+                                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                          : bom.Varian === 'Sekolah Mitra'
+                                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                }`}>
+                                  {bom.Varian === 'LN' ? 'Long Neck (LN)' : bom.Varian === 'SN' ? 'Short Neck (SN)' : (bom.Varian || 'Standar / Semua')}
+                                </span>
+                              </td>
+                              <td className="p-3 text-slate-700">
+                                <div className="font-semibold text-slate-900">{mat?.Nama_Bahan || bom.ID_Bahan}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{bom.ID_Bahan}</div>
+                              </td>
+                              <td className="p-3 text-center font-mono font-bold text-indigo-700 whitespace-nowrap">
+                                {bom.Jumlah_Dibutuhkan} {bom.Satuan} / unit
+                              </td>
+                              <td className="p-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                                Rp {Math.round(estCost).toLocaleString('id-ID')}
+                              </td>
+                              <td className="p-3 text-slate-500">{bom.Keterangan || '-'}</td>
+                              <td className="p-3 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button onClick={() => handleOpenEdit(bom)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded cursor-pointer" title="Edit BOM"><Edit2 size={14} /></button>
+                                  <button onClick={() => handleDelete(bom.ID_BOM)} className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer" title="Hapus BOM"><Trash2 size={14} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -2191,23 +2720,88 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                     </select>
                   </div>
 
-                  {/* Dropdown Varian Leher & Tutup Botol */}
+                  {/* Dropdown Varian Resep (Multi-Varian Adaptif) */}
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Varian Leher & Tutup Botol
+                      Varian Formula Resep <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={formData.Varian || 'Standar'}
-                      onChange={e => setFormData({ ...formData, Varian: e.target.value })}
-                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-900 bg-white"
-                    >
-                      <option value="Standar">Standar / Semua Varian (Bahan Bersama: Kardus, Label, Lakban)</option>
-                      <option value="SN">SN - Short Neck (Khusus Botol SN & Tutup SN)</option>
-                      <option value="LN">LN - Long Neck (Khusus Botol LN & Tutup LN)</option>
-                    </select>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      Pilih SN atau LN untuk botol & tutup kemasan khusus, atau Standar untuk bahan umum.
-                    </p>
+                    {(() => {
+                      const selProdId = formData.ID_Produk;
+                      const isBotol = isBottleProduct(selProdId);
+                      const isGalon = isGallonProduct(selProdId);
+                      const currentVarian = formData.Varian || 'Standar';
+
+                      // Opsi varian bawaan sesuai jenis produk
+                      let standardOptions: { value: string; label: string }[] = [];
+                      if (isGalon) {
+                        standardOptions = [
+                          { value: 'Standar', label: 'Standar / Bahan Bersama (Tutup, Tisu, Segel, Label)' },
+                          { value: 'Refill', label: 'Varian Refill (Isi Ulang Tanpa Galon Baru)' },
+                          { value: 'Beli Baru', label: 'Varian Beli Galon Baru (Dengan Galon 19L Baru)' },
+                          { value: 'Sekolah Mitra', label: 'Varian Sekolah Mitra (Pinjam Pakai Galon Pabrik)' },
+                        ];
+                      } else if (isBotol) {
+                        standardOptions = [
+                          { value: 'Standar', label: 'Standar / Bahan Bersama (Kardus Box, Label, Lakban)' },
+                          { value: 'SN', label: 'SN - Short Neck (Khusus Botol SN & Tutup SN)' },
+                          { value: 'LN', label: 'LN - Long Neck (Khusus Botol LN & Tutup LN)' },
+                        ];
+                      } else {
+                        standardOptions = [
+                          { value: 'Standar', label: 'Standar / Semua Varian' },
+                        ];
+                      }
+
+                      const isCustom = !standardOptions.some(opt => opt.value === currentVarian);
+
+                      return (
+                        <div className="space-y-2">
+                          <select
+                            value={isCustom ? '__custom__' : currentVarian}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === '__custom__') {
+                                setFormData({ ...formData, Varian: customVariantInput || 'Varian Kustom' });
+                              } else {
+                                setFormData({ ...formData, Varian: val });
+                              }
+                            }}
+                            className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-medium text-slate-900 bg-white"
+                          >
+                            {standardOptions.map(opt => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                            <option value="__custom__">-- + Ketik Varian Lain / Kustom --</option>
+                          </select>
+
+                          {isCustom && (
+                            <div className="flex items-center gap-2 pt-1 animate-in fade-in">
+                              <input
+                                type="text"
+                                placeholder="Ketik nama varian baru (contoh: Kemasan Khusus, Event, dll)"
+                                value={formData.Varian || ''}
+                                onChange={e => {
+                                  setCustomVariantInput(e.target.value);
+                                  setFormData({ ...formData, Varian: e.target.value });
+                                }}
+                                className="w-full px-3 py-1.5 border border-blue-400 rounded-lg text-xs font-semibold text-blue-900 bg-blue-50/50 focus:bg-white"
+                                required
+                              />
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-slate-500">
+                            {isGalon
+                              ? 'Atur bahan khusus untuk Varian Refill, Beli Galon Baru, Sekolah Mitra, atau Bahan Bersama.'
+                              : isBotol
+                                ? 'Pilih varian leher botol (SN / LN) untuk botol & tutup, atau Standar untuk bahan bersama.'
+                                : 'Pilih Standar atau buat varian khusus jika produk memiliki beberapa variasi formula.'}
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                   {/* Dropdown ID Bahan */}
                   <div>

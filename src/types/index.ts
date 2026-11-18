@@ -170,9 +170,9 @@ export interface BOMItem {
   ID_Produk: string;
   ID_Bahan: string;
   Jumlah_Dibutuhkan: number;
-  Satuan: 'Pcs' | 'Roll' | 'Lembar' | 'Kg' | 'Liter' | 'Box' | 'Dus' | 'Batang';
+  Satuan: 'Pcs' | 'Roll' | 'Lembar' | 'Kg' | 'Liter' | 'Box' | 'Dus' | 'Batang' | string;
   Keterangan?: string;
-  Varian?: 'Standar' | 'LN' | 'SN';
+  Varian?: 'Standar' | 'LN' | 'SN' | 'Refill' | 'Beli Baru' | 'Sekolah Mitra' | string;
 }
 
 export interface EmployeeItem {
