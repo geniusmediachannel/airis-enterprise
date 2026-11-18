@@ -91,24 +91,54 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   const [variantFilterPerProduct, setVariantFilterPerProduct] = useState<Record<string, string>>({});
   const [customVariantInput, setCustomVariantInput] = useState<string>('');
 
-  // Helper: Ambil harga satuan per komponen BOM (mendukung override custom / nilai susut galon mitra Rp 1.250)
+  // Helper: Deteksi apakah bahan secara spesifik adalah fisik wadah GALON 19 L (bukan tutup/tisu/segel/label)
+  const isPhysicalGallonItem = (idBahan?: string, namaBahan?: string): boolean => {
+    const id = String(idBahan || '').trim().toUpperCase();
+    const nm = String(namaBahan || '').trim().toUpperCase();
+
+    // Jika komponen kemasan pelengkap / aksesori, BUKAN fisik galon
+    if (
+      nm.includes('LABEL') || id.includes('LBL') ||
+      nm.includes('SEGEL') || id.includes('SGL') || nm.includes('SEAL') ||
+      nm.includes('TISU') || nm.includes('TISSUE') || id.includes('TSU') ||
+      nm.includes('TUTUP') || id.includes('TTP') || nm.includes('CAP') ||
+      nm.includes('PLASTER') || nm.includes('LAKBAN') || nm.includes('KARDUS') || nm.includes('DUS')
+    ) {
+      return false;
+    }
+
+    // Jika ID atau Nama secara spesifik adalah galon fisik kosong
+    return (
+      id === 'GLN-19' || id === 'BHN-GLN19' || id === 'GLN19' || id === 'G19' ||
+      nm === 'GALON 19 L' || nm === 'GALON 19L' || nm === 'GALON' || nm === 'GALON KOSONG' ||
+      (nm.includes('GALON') && (nm.includes('19') || nm.includes('L')))
+    );
+  };
+
+  // Helper: Ambil harga satuan per komponen BOM (HANYA bahan fisik GALON 19 L yang susut mitra Rp 1.250, bahan lain sesuai master bahan)
   const getBOMItemUnitPrice = (bom: BOMItem): number => {
+    // 1. Jika ada harga satuan kustom manual pada baris BOM tersebut, prioritaskan
     if (bom.Harga_Satuan !== undefined && bom.Harga_Satuan !== null && bom.Harga_Satuan !== '' as any && !isNaN(Number(bom.Harga_Satuan))) {
       return Number(bom.Harga_Satuan);
     }
     const mat = rawMaterials.find(m => m.ID_Bahan === bom.ID_Bahan);
     const matPrice = Number(mat?.Harga_Satuan) || 0;
-    const isGalonMat = (bom.ID_Bahan || '').includes('GLN') || (mat?.Nama_Bahan || '').toLowerCase().includes('galon');
-    const varian = (bom.Varian || '').toLowerCase();
     
-    // Jika bahan Galon pada Varian Sekolah Mitra / Pinjam Pakai: default tarif penyusutan Rp 1.250
-    if (isGalonMat && (varian.includes('sekolah') || varian.includes('mitra') || varian.includes('pinjam'))) {
+    // 2. Cek apakah bahan ini secara spesifik HANYA FISIK GALON 19 L (wadah galon)
+    const isWadahGalon = isPhysicalGallonItem(bom.ID_Bahan, mat?.Nama_Bahan);
+    const varian = (bom.Varian || '').toLowerCase();
+    const isMitra = varian.includes('sekolah') || varian.includes('mitra') || varian.includes('pinjam');
+    
+    // HANYA bahan fisik galon 19 L pada resep varian Sekolah Mitra yang menggunakan tarif susut Rp 1.250
+    if (isWadahGalon && isMitra) {
       return 1250;
     }
-    // Jika varian Refill murni isi ulang, tidak ada pemakaian galon baru dari pabrik
-    if (isGalonMat && varian.includes('refill')) {
+    // Jika varian Refill murni isi ulang, tidak ada pemakaian galon fisik dari pabrik (Rp 0)
+    if (isWadahGalon && varian.includes('refill')) {
       return 0;
     }
+    
+    // Semua bahan lain (Label, Segel, Tisu, Tutup, Kardus, dll) harganya murni sesuai harga di master bahan!
     return matPrice;
   };
 
@@ -1625,7 +1655,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                                                 {bom.Harga_Satuan !== undefined && bom.Harga_Satuan !== null && bom.Harga_Satuan !== '' && (
                                                   <span className="text-[10px] text-indigo-600 font-sans font-semibold">Custom</span>
                                                 )}
-                                                {(bom.Harga_Satuan === undefined || bom.Harga_Satuan === null || bom.Harga_Satuan === '') && (bom.ID_Bahan || '').includes('GLN') && (bom.Varian || '').toLowerCase().includes('sekolah') && (
+                                                {(bom.Harga_Satuan === undefined || bom.Harga_Satuan === null || bom.Harga_Satuan === '') && isPhysicalGallonItem(bom.ID_Bahan, mat?.Nama_Bahan) && (bom.Varian || '').toLowerCase().includes('sekolah') && (
                                                   <span className="text-[10px] text-amber-800 font-sans font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Susut Mitra</span>
                                                 )}
                                               </td>
@@ -2793,7 +2823,8 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                         <option value="Batang">Batang</option>
                       </select>
                     </div>
-                  </div>\n                  {/* Harga Satuan / Nilai Komponen HPP (Bisa Custom / Default Otomatis) */}
+                  </div>
+                  {/* Harga Satuan / Nilai Komponen HPP (Bisa Custom / Default Otomatis) */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block font-semibold text-slate-700">
@@ -2807,11 +2838,11 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       const selMat = rawMaterials.find(m => m.ID_Bahan === formData.ID_Bahan);
                       const defaultMasterPrice = Number(selMat?.Harga_Satuan) || 0;
                       const isGalon = isGallonProduct(formData.ID_Produk);
-                      const isGalonMat = (formData.ID_Bahan || '').includes('GLN') || (selMat?.Nama_Bahan || '').toLowerCase().includes('galon');
+                      const isWadahGalon = isPhysicalGallonItem(formData.ID_Bahan, selMat?.Nama_Bahan);
                       const varian = (formData.Varian || '').toLowerCase();
                       const isMitra = varian.includes('sekolah') || varian.includes('mitra') || varian.includes('pinjam');
                       
-                      const autoDefaultHint = (isGalon && isGalonMat && isMitra) 
+                      const autoDefaultHint = (isGalon && isWadahGalon && isMitra) 
                         ? '1.250 (Standar Penyusutan Galon Mitra)'
                         : `${defaultMasterPrice.toLocaleString('id-ID')} (Harga Master Bahan)`;
 
@@ -2828,7 +2859,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                               onChange={e => setFormData({ ...formData, Harga_Satuan: e.target.value })}
                               className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 bg-white placeholder:text-slate-400 placeholder:font-normal placeholder:text-xs"
                             />
-                            {isGalon && isGalonMat && isMitra && (
+                            {isGalon && isWadahGalon && isMitra && (
                               <button
                                 type="button"
                                 onClick={() => setFormData({ ...formData, Harga_Satuan: 1250 })}
@@ -2840,8 +2871,8 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                             )}
                           </div>
                           <p className="text-[10px] text-slate-500">
-                            {isGalon && isGalonMat && isMitra
-                              ? 'Khusus resep varian Sekolah Mitra, biaya galon adalah tarif penyusutan pinjam pakai (standar Rp 1.250 atau bisa disesuaikan).'
+                            {isGalon && isWadahGalon && isMitra
+                              ? 'Khusus resep bahan GALON 19 L varian Sekolah Mitra, biaya yang masuk ke HPP adalah tarif penyusutan (standar Rp 1.250 atau bisa disesuaikan). Bahan lain (Label, Segel, Tisu, Tutup) tetap sesuai harga master.'
                               : 'Biarkan kosong untuk otomatis mengikuti harga master bahan baku, atau masukkan nilai custom.'}
                           </p>
                         </div>
