@@ -866,6 +866,7 @@ export default function App() {
                 distributions={distributions}
                 distributionItems={distributionItems}
                 products={products}
+                specialPrices={specialPrices}
                 onRefresh={reloadData}
               />
             </ErrorBoundary>

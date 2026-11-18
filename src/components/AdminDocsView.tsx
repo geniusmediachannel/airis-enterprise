@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FileText, ShoppingBag, Receipt } from 'lucide-react';
 import { 
   SupplierItem, RawMaterialItem, CustomerItem, 
-  DistributionItem, DistributionProductDetail, ProductItem 
+  DistributionItem, DistributionProductDetail, ProductItem, SpecialPriceItem 
 } from '../types';
 import { AdminSuratTab } from './adminDocs/AdminSuratTab';
 import { AdminPOTab } from './adminDocs/AdminPOTab';
@@ -15,6 +15,7 @@ interface AdminDocsViewProps {
   distributions?: DistributionItem[];
   distributionItems?: DistributionProductDetail[];
   products?: ProductItem[];
+  specialPrices?: SpecialPriceItem[];
   onRefresh: () => void;
 }
 
@@ -25,6 +26,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
   distributions = [],
   distributionItems = [],
   products = [],
+  specialPrices = [],
   onRefresh
 }) => {
   const [activeTab, setActiveTab] = useState<'surat' | 'po' | 'invoice_custom'>('surat');
@@ -94,6 +96,7 @@ export const AdminDocsView: React.FC<AdminDocsViewProps> = ({
           distributions={distributions}
           distributionItems={distributionItems}
           products={products}
+          specialPrices={specialPrices}
           onRefresh={onRefresh}
         />
       )}

@@ -9,7 +9,7 @@ import {
 import { 
   CustomInvoiceItem, CustomInvoiceDetailItem, CustomerItem, 
   DistributionItem, DistributionProductDetail, ProductItem, 
-  DocumentTemplateSettings, ShipmentGroup
+  DocumentTemplateSettings, ShipmentGroup, SpecialPriceItem
 } from '../../types';
 import { getTableData, setTableData, deleteTableRow } from '../../services/dbAdapter';
 import { exportDataToExcel } from '../../services/excelService';
@@ -23,6 +23,7 @@ interface AdminCustomInvoiceTabProps {
   distributionItems?: DistributionProductDetail[];
   products?: ProductItem[];
   customers?: CustomerItem[];
+  specialPrices?: SpecialPriceItem[];
   onRefresh: () => void;
 }
 
@@ -31,16 +32,22 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
   distributionItems = [],
   products = [],
   customers = [],
+  specialPrices = [],
   onRefresh
 }) => {
   const [customInvoices, setCustomInvoices] = useState<CustomInvoiceItem[]>(() => {
     const data = getTableData<CustomInvoiceItem>('Data_Custom_Invoice', []);
     return Array.isArray(data) ? data : [];
   });
+  const [specialPricesList, setSpecialPricesList] = useState<SpecialPriceItem[]>(() => {
+    if (specialPrices && specialPrices.length > 0) return specialPrices;
+    return getTableData<SpecialPriceItem>('MD_HargaKhusus', []);
+  });
 
   useEffect(() => {
     const handleDbChange = () => {
       setCustomInvoices(getTableData<CustomInvoiceItem>('Data_Custom_Invoice', []));
+      setSpecialPricesList(getTableData<SpecialPriceItem>('MD_HargaKhusus', []));
     };
     window.addEventListener('airis_db_updated', handleDbChange);
     window.addEventListener('storage', handleDbChange);
@@ -198,6 +205,224 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
   // Helper to format date as standard DD-MM-YYYY (e.g. 15-10-2026)
   const formatDisplayDate = (dateStr?: string): string => {
     return formatDateDDMMYYYY(dateStr);
+  };
+
+  // Robust timestamp extractor for sorting dates in diverse formats
+  const toComparableDate = (dateStr?: string | number): number => {
+    if (!dateStr && dateStr !== 0) return 0;
+    if (typeof dateStr === 'number' || (!isNaN(Number(dateStr)) && Number(dateStr) > 30000 && Number(dateStr) < 60000)) {
+      const serial = Number(dateStr);
+      return (serial - 25569) * 86400 * 1000;
+    }
+    const str = String(dateStr).trim();
+    if (!str) return 0;
+
+    const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (ymd) {
+      return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10)).getTime();
+    }
+    const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (dmy) {
+      return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10)).getTime();
+    }
+    const dmyShort = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+    if (dmyShort) {
+      const yr = 2000 + parseInt(dmyShort[3], 10);
+      return new Date(yr, parseInt(dmyShort[2], 10) - 1, parseInt(dmyShort[1], 10)).getTime();
+    }
+    const months = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agu', 'sep', 'okt', 'nov', 'des'];
+    const monthsEn = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const lower = str.toLowerCase();
+    for (let i = 0; i < 12; i++) {
+      if (lower.includes(months[i]) || lower.includes(monthsEn[i])) {
+        const yrMatch = str.match(/(20\d{2})/);
+        const dayMatch = str.match(/^(\d{1,2})/);
+        const yr = yrMatch ? parseInt(yrMatch[1], 10) : 2026;
+        const day = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+        return new Date(yr, i, day).getTime();
+      }
+    }
+    const fallback = new Date(str);
+    return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+  };
+
+  // Ekstrak angka urutan surat jalan (misal "748/XI/26" -> 748)
+  const extractSjNumber = (sjStr?: string): number => {
+    if (!sjStr) return 0;
+    const match = String(sjStr).match(/^(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
+  // Helper mendapatkan Nomor Invoice Normal dari Pengiriman (Sesuai Logika Modul Distribusi)
+  const getNormalInvoiceNumber = (dist: DistributionItem, allDistList?: DistributionItem[]): string => {
+    if (!dist) return '';
+
+    // 1. Jika pada data pengiriman sudah tersimpan No_Invoice khusus dan bukan '-', gunakan langsung
+    const rawInv = String(dist.No_Invoice || '').trim();
+    if (rawInv && rawInv !== '-' && rawInv !== 'null' && rawInv !== 'undefined') {
+      return rawInv;
+    }
+
+    // 2. Hitung nomor urut bulanan deterministik persis seperti DistributionView
+    const distSource = (allDistList && allDistList.length > 0)
+      ? allDistList
+      : (distributions && distributions.length > 0)
+        ? distributions
+        : [];
+
+    const parseSafe = (raw: any): Date => {
+      if (!raw) return new Date();
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? new Date() : raw;
+      const t = toComparableDate(raw);
+      return t > 0 ? new Date(t) : new Date();
+    };
+
+    const validD = parseSafe(dist.Tanggal);
+    const targetYear = validD.getFullYear();
+    const targetMonth = validD.getMonth();
+    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+    const romanMonth = romanMonths[targetMonth] || 'X';
+    const year2Digits = String(targetYear).slice(-2);
+
+    const monthItems = distSource.filter(item => {
+      if (!item || !item.Tanggal) return false;
+      const d = parseSafe(item.Tanggal);
+      return d.getFullYear() === targetYear && d.getMonth() === targetMonth;
+    });
+
+    monthItems.sort((a, b) => {
+      const timeA = toComparableDate(a.Tanggal);
+      const timeB = toComparableDate(b.Tanggal);
+      if (timeA !== timeB) return timeA - timeB;
+
+      const sjA = extractSjNumber(a.No_Surat_Jalan);
+      const sjB = extractSjNumber(b.No_Surat_Jalan);
+      if (sjA !== sjB && sjA > 0 && sjB > 0) return sjA - sjB;
+
+      const sjStrA = String(a.No_Surat_Jalan || '');
+      const sjStrB = String(b.No_Surat_Jalan || '');
+      const sjComp = sjStrA.localeCompare(sjStrB, undefined, { numeric: true, sensitivity: 'base' });
+      if (sjComp !== 0) return sjComp;
+
+      return String(a.ID_Distribusi || '').localeCompare(String(b.ID_Distribusi || ''));
+    });
+
+    let seqNumber = 0;
+    const foundIdx = monthItems.findIndex(d => 
+      String(d.ID_Distribusi).trim() === String(dist.ID_Distribusi).trim() ||
+      (d.No_Surat_Jalan && dist.No_Surat_Jalan && String(d.No_Surat_Jalan).trim() === String(dist.No_Surat_Jalan).trim())
+    );
+    if (foundIdx !== -1) {
+      seqNumber = foundIdx + 1;
+    } else {
+      seqNumber = monthItems.length + 1;
+    }
+
+    const numStr = String(seqNumber).padStart(3, '0');
+    return `${numStr}-INV-${romanMonth}-${year2Digits}`;
+  };
+
+  // Helper kode singkat produk untuk identifikasi kolom
+  const getProductShortCode = (prod: ProductItem): string => {
+    const id = (prod.ID_Produk || '').toUpperCase();
+    const name = (prod.Nama_Produk || '').toUpperCase();
+    if (id.includes('CUP120') || (name.includes('120') && name.includes('CUP'))) return 'C120';
+    if (id.includes('CUP220') || (name.includes('220') && name.includes('CUP'))) return 'C220';
+    if (id.includes('BTL330') || (name.includes('330') && name.includes('BOTOL'))) return 'B330';
+    if (id.includes('BTL600') || (name.includes('600') && name.includes('BOTOL'))) return 'B600';
+    if (id.includes('GLN') || id.includes('G19') || name.includes('GALON')) return 'G19';
+    return id || name;
+  };
+
+  // Helper ekstraksi kuantiti produk dari record distribusi jika tidak ada di Distribusi_Item
+  const getDistProductQty = (dist: DistributionItem, prod: ProductItem): number => {
+    const code = getProductShortCode(prod);
+    const anyDist = dist as any;
+    const isGalon = code === 'G19' || prod.ID_Produk.includes('GLN') || prod.Nama_Produk.toLowerCase().includes('galon');
+
+    if (isGalon) {
+      const galonCandidates = [
+        'G19', 'g19', 'GLN19', 'gln19', 'GLN 19 L', 'ASH-GLN19L', 
+        'Galon', 'galon', 'GALON', 'GLN', 'gln', 'Qty_G19', 'Jumlah_G19', 
+        'Galon 19L', 'Galon 19', 'Qty_Galon', 'Jumlah_Galon'
+      ];
+      for (const cand of galonCandidates) {
+        if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
+          const direct = Number(anyDist[cand]);
+          if (!isNaN(direct) && direct >= 0) return direct;
+        }
+      }
+    } else {
+      if (anyDist[code] !== undefined && anyDist[code] !== null && anyDist[code] !== '') {
+        const direct = Number(anyDist[code]);
+        if (!isNaN(direct) && direct >= 0) return direct;
+      }
+      const candidates = [
+        prod.ID_Produk,
+        prod.Nama_Produk,
+        `Qty_${code}`,
+        `Jumlah_${code}`,
+        code.toLowerCase(),
+        code.toUpperCase()
+      ];
+      for (const cand of candidates) {
+        if (anyDist[cand] !== undefined && anyDist[cand] !== null && anyDist[cand] !== '') {
+          const direct = Number(anyDist[cand]);
+          if (!isNaN(direct) && direct >= 0) return direct;
+        }
+      }
+    }
+    return 0;
+  };
+
+  // Helper evaluasi harga produk termasuk deteksi HARGA KHUSUS mitra (MD_HargaKhusus)
+  const getEffectiveProductPrice = (
+    prod: ProductItem,
+    custNameOrId?: string,
+    deliveryDate?: string
+  ): { price: number; isSpecial: boolean; label?: string } => {
+    const cust = (customers || []).find(c => 
+      c.ID_Pelanggan === custNameOrId || 
+      String(c.Nama_Pelanggan || '').trim().toLowerCase() === String(custNameOrId || '').trim().toLowerCase()
+    );
+    const custRealId = cust?.ID_Pelanggan || custNameOrId;
+    const evalDate = (deliveryDate || new Date().toISOString().slice(0, 10)).trim();
+
+    // 1. Cek evaluasi Harga Khusus di MD_HargaKhusus
+    const activeSpecial = (specialPricesList || []).filter(s => {
+      if (!s) return false;
+      const matchCust = s.ID_Pelanggan === custRealId || 
+        (cust?.Nama_Pelanggan && s.ID_Pelanggan && cust.Nama_Pelanggan.toLowerCase() === s.ID_Pelanggan.toLowerCase());
+      const matchProd = s.ID_Produk === prod.ID_Produk || 
+        (prod.Nama_Produk && s.ID_Produk && prod.Nama_Produk.toLowerCase() === s.ID_Produk.toLowerCase()) ||
+        getProductShortCode(prod) === s.ID_Produk;
+
+      if (!matchCust || !matchProd || !s.Harga_Custom || Number(s.Harga_Custom) <= 0) {
+        return false;
+      }
+      const mulai = (s.Tanggal_Mulai || '').trim();
+      if (mulai && evalDate < mulai) return false;
+      const selesai = (s.Tanggal_Selesai || '').trim();
+      if (selesai && evalDate > selesai) return false;
+      return true;
+    });
+
+    if (activeSpecial.length > 0) {
+      activeSpecial.sort((a, b) => (b.Tanggal_Mulai || '').localeCompare(a.Tanggal_Mulai || ''));
+      return { 
+        price: Number(activeSpecial[0].Harga_Custom), 
+        isSpecial: true,
+        label: activeSpecial[0].Keterangan || 'Harga Khusus Mitra'
+      };
+    }
+
+    // 2. Fallback ke level tier pelanggan
+    const level = cust?.Level_Pelanggan || invoiceForm?.Level_Pelanggan || 'Distributor';
+    if (level === 'Sekolah Mitra') return { price: prod.Harga_Distributor || prod.Harga_Agen || 0, isSpecial: false };
+    if (level === 'Agen') return { price: prod.Harga_Agen || prod.Harga_Distributor || 0, isSpecial: false };
+    if (level === 'Reseller') return { price: prod.Harga_Reseller || prod.Harga_Distributor || 0, isSpecial: false };
+    if (level === 'Konsumen' || level === 'Konsumen Biasa') return { price: prod.Harga_Konsumen || prod.Harga_Distributor || 0, isSpecial: false };
+    return { price: prod.Harga_Distributor || 0, isSpecial: false };
   };
 
   // Helper to group items by shipment (No_SJ_Referensi / Tanggal_Kirim / Kirim_Ke)
@@ -436,42 +661,124 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
     }
   };
 
-  // Pull products from selected shipments
-  const handleConsolidateShipments = () => {
-    if (selectedShipmentIds.length === 0) {
+  // Toggle pemilihan pengiriman (otomatis sinkronkan No Invoice & Tanggal)
+  const toggleSelectShipment = (distId: string) => {
+    const isSelected = selectedShipmentIds.includes(distId);
+    const nextSelected = isSelected
+      ? selectedShipmentIds.filter(id => id !== distId)
+      : [...selectedShipmentIds, distId];
+    setSelectedShipmentIds(nextSelected);
+
+    if (!isSelected) {
+      const targetDist = (distributions || []).find(d => d.ID_Distribusi === distId);
+      if (targetDist) {
+        const invNo = getNormalInvoiceNumber(targetDist, distributions);
+        setInvoiceForm(prev => ({
+          ...prev,
+          No_Invoice: invNo || prev.No_Invoice,
+          Tanggal: targetDist.Tanggal || prev.Tanggal,
+          Alamat_Pelanggan: targetDist.Tujuan || prev.Alamat_Pelanggan
+        }));
+      }
+    }
+  };
+
+  // Pull products from selected shipments and synchronize No. Invoice, Surat Jalan, and Product Prices (including Special Prices)
+  const handleConsolidateShipments = (overrideShipmentIds?: string[]) => {
+    const idsToPull = overrideShipmentIds && overrideShipmentIds.length > 0
+      ? overrideShipmentIds
+      : selectedShipmentIds;
+
+    if (idsToPull.length === 0) {
       showToastGlobal('Pilih minimal 1 pengiriman terlebih dahulu', 'warning');
       return;
     }
 
-    const matchedDistributions = distributions.filter(d => selectedShipmentIds.includes(d.ID_Distribusi));
+    const matchedDistributions = distributions.filter(d => idsToPull.includes(d.ID_Distribusi));
     const matchedSJNumbers = matchedDistributions.map(d => d.No_Surat_Jalan || d.ID_Distribusi);
 
     // Group distributions into ShipmentGroup cards
     const newGroups: ShipmentGroup[] = matchedDistributions.map((dist, idx) => {
       const itemsForDist = distributionItems.filter(di => di.ID_Distribusi === dist.ID_Distribusi);
-      const groupItems: CustomInvoiceDetailItem[] = itemsForDist.length > 0
-        ? itemsForDist.map(it => ({
-            Nama_Produk: it.Nama_Produk,
-            Spesifikasi: `Pengiriman SJ: ${dist.No_Surat_Jalan || dist.ID_Distribusi} (${dist.Tanggal})`,
-            Qty: Number(it.Qty) || 0,
-            Satuan: it.Satuan || 'Dus',
-            Harga_Satuan: Number(it.Harga_Satuan) || 0,
-            Subtotal: (Number(it.Qty) || 0) * (Number(it.Harga_Satuan) || 0),
-            No_SJ_Referensi: dist.No_Surat_Jalan || dist.ID_Distribusi,
-            Tanggal_Kirim: dist.Tanggal,
-            Kirim_Ke: dist.Tujuan || dist.Penerima || invoiceForm.Nama_Pelanggan || ''
-          }))
-        : [{
-            Nama_Produk: 'Air Minum As-Shofaa Galon 19L',
-            Spesifikasi: `Pengiriman SJ: ${dist.No_Surat_Jalan || dist.ID_Distribusi} (${dist.Tanggal})`,
-            Qty: 1,
-            Satuan: 'Galon',
-            Harga_Satuan: Number(dist.Total_Tagihan) || 0,
-            Subtotal: Number(dist.Total_Tagihan) || 0,
-            No_SJ_Referensi: dist.No_Surat_Jalan || dist.ID_Distribusi,
-            Tanggal_Kirim: dist.Tanggal,
-            Kirim_Ke: dist.Tujuan || dist.Penerima || invoiceForm.Nama_Pelanggan || ''
-          }];
+      const normalInvForDist = getNormalInvoiceNumber(dist, distributions);
+
+      let groupItems: CustomInvoiceDetailItem[] = [];
+
+      if (itemsForDist.length > 0) {
+        groupItems = itemsForDist
+          .filter(it => Number(it.Qty) > 0)
+          .map(it => {
+            const matchedProd = products.find(p => 
+              p.ID_Produk === it.ID_Produk || 
+              (p.Nama_Produk && it.Nama_Produk && p.Nama_Produk.toLowerCase() === it.Nama_Produk.toLowerCase()) ||
+              getProductShortCode(p) === it.ID_Produk
+            );
+
+            // Evaluasi harga: Cek harga khusus pelanggan terlebih dahulu
+            let price = Number(it.Harga_Satuan) || 0;
+            let isSpecialPriceApplied = false;
+            let specialLabel = '';
+            if (matchedProd) {
+              const eff = getEffectiveProductPrice(matchedProd, invoiceForm.Nama_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+              if (eff.isSpecial) {
+                price = eff.price;
+                isSpecialPriceApplied = true;
+                specialLabel = eff.label || 'Harga Khusus';
+              } else if (price <= 0 || [12000, 14500, 24000, 28000, 9000].includes(price)) {
+                price = eff.price || price;
+              }
+            }
+
+            const qty = Number(it.Qty) || 0;
+            return {
+              Nama_Produk: matchedProd?.Nama_Produk || it.Nama_Produk,
+              Spesifikasi: `Pengiriman SJ: ${dist.No_Surat_Jalan || dist.ID_Distribusi} (${dist.Tanggal})${normalInvForDist ? ` - Inv: ${normalInvForDist}` : ''}${isSpecialPriceApplied ? ` [${specialLabel || 'Harga Khusus'}]` : ''}`,
+              Qty: qty,
+              Satuan: it.Satuan || matchedProd?.Satuan || 'Dus',
+              Harga_Satuan: price,
+              Subtotal: qty * price,
+              No_SJ_Referensi: dist.No_Surat_Jalan || dist.ID_Distribusi,
+              Tanggal_Kirim: dist.Tanggal,
+              Kirim_Ke: dist.Tujuan || dist.Penerima || invoiceForm.Nama_Pelanggan || ''
+            };
+          });
+      }
+
+      // If no detail records exist (common for direct columns from excel import), reconstruct from products
+      if (groupItems.length === 0) {
+        products.forEach(p => {
+          const q = getDistProductQty(dist, p);
+          if (q > 0) {
+            const eff = getEffectiveProductPrice(p, invoiceForm.Nama_Pelanggan || dist.Nama_Pelanggan, dist.Tanggal);
+            groupItems.push({
+              Nama_Produk: p.Nama_Produk,
+              Spesifikasi: `Pengiriman SJ: ${dist.No_Surat_Jalan || dist.ID_Distribusi} (${dist.Tanggal})${normalInvForDist ? ` - Inv: ${normalInvForDist}` : ''}${eff.isSpecial ? ` [${eff.label || 'Harga Khusus'}]` : ''}`,
+              Qty: q,
+              Satuan: p.Satuan || 'Dus',
+              Harga_Satuan: eff.price,
+              Subtotal: q * eff.price,
+              No_SJ_Referensi: dist.No_Surat_Jalan || dist.ID_Distribusi,
+              Tanggal_Kirim: dist.Tanggal,
+              Kirim_Ke: dist.Tujuan || dist.Penerima || invoiceForm.Nama_Pelanggan || ''
+            });
+          }
+        });
+      }
+
+      // Fallback jika tidak ada produk sama sekali
+      if (groupItems.length === 0) {
+        groupItems = [{
+          Nama_Produk: 'Air Minum As-Shofaa Galon 19L',
+          Spesifikasi: `Pengiriman SJ: ${dist.No_Surat_Jalan || dist.ID_Distribusi} (${dist.Tanggal})${normalInvForDist ? ` - Inv: ${normalInvForDist}` : ''}`,
+          Qty: 1,
+          Satuan: 'Galon',
+          Harga_Satuan: Number(dist.Total_Tagihan) || 0,
+          Subtotal: Number(dist.Total_Tagihan) || 0,
+          No_SJ_Referensi: dist.No_Surat_Jalan || dist.ID_Distribusi,
+          Tanggal_Kirim: dist.Tanggal,
+          Kirim_Ke: dist.Tujuan || dist.Penerima || invoiceForm.Nama_Pelanggan || ''
+        }];
+      }
 
       const groupSubtotal = groupItems.reduce((acc, it) => acc + (Number(it.Subtotal) || 0), 0);
 
@@ -499,17 +806,45 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
       invoiceForm.Pajak_PPN
     );
 
+    // Ambil nomor invoice normal
+    let resolvedInvoiceNo = invoiceForm.No_Invoice;
+    if (matchedDistributions.length === 1) {
+      resolvedInvoiceNo = getNormalInvoiceNumber(matchedDistributions[0], distributions);
+    } else if (matchedDistributions.length > 1) {
+      const invNumbers = Array.from(new Set(matchedDistributions.map(d => getNormalInvoiceNumber(d, distributions)).filter(Boolean)));
+      if (invNumbers.length === 1) {
+        resolvedInvoiceNo = invNumbers[0];
+      } else if (invNumbers.length > 1) {
+        resolvedInvoiceNo = invNumbers.join(', ');
+      }
+    }
+
+    // Ambil tanggal pengiriman terbaru
+    const latestDate = matchedDistributions.reduce((latest, d) => {
+      return (d.Tanggal && d.Tanggal > latest) ? d.Tanggal : latest;
+    }, matchedDistributions[0]?.Tanggal || invoiceForm.Tanggal);
+
+    // Ambil alamat tujuan
+    const targetAlamat = matchedDistributions[0]?.Tujuan || invoiceForm.Alamat_Pelanggan;
+
     setInvoiceForm(prev => ({
       ...prev,
+      No_Invoice: resolvedInvoiceNo || prev.No_Invoice,
+      Tanggal: latestDate || prev.Tanggal,
+      Alamat_Pelanggan: targetAlamat || prev.Alamat_Pelanggan,
       No_Surat_Jalan_List: matchedSJNumbers,
-      ID_Distribusi_List: selectedShipmentIds,
+      ID_Distribusi_List: idsToPull,
       ShipmentGroups: newGroups,
       Items: flattenedItems,
       Subtotal: subtotal,
       Grand_Total: grandTotal
     }));
 
-    showToastGlobal(`Berhasil menarik ${flattenedItems.length} item dari ${selectedShipmentIds.length} pengiriman!`, 'success');
+    if (overrideShipmentIds) {
+      setSelectedShipmentIds(overrideShipmentIds);
+    }
+
+    showToastGlobal(`Berhasil menyesuaikan No. Invoice (${resolvedInvoiceNo || '-'}), Surat Jalan, & ${flattenedItems.length} produk (termasuk harga khusus mitra)!`, 'success');
   };
 
   // Helper functions for card-based ShipmentGroups editing
@@ -687,7 +1022,8 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
       if (field === 'Nama_Produk') {
         const found = products.find(p => p.Nama_Produk === value);
         if (found) {
-          curItem.Harga_Satuan = Number(found.Harga_Distributor || found.Harga_Agen || curItem.Harga_Satuan || 0);
+          const eff = getEffectiveProductPrice(found, invoiceForm.Nama_Pelanggan, grp.tanggalKirim || invoiceForm.Tanggal);
+          curItem.Harga_Satuan = Number(eff.price || curItem.Harga_Satuan || 0);
           curItem.Satuan = found.Satuan || curItem.Satuan || 'Dus';
         }
       }
@@ -912,11 +1248,44 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
     }
   };
 
-  // Filtered shipments available for selected customer
-  const customerAvailableShipments = (distributions || []).filter(d => {
-    if (!d || !invoiceForm?.Nama_Pelanggan) return false;
-    return String(d.Nama_Pelanggan || '').trim().toLowerCase() === String(invoiceForm.Nama_Pelanggan || '').trim().toLowerCase();
-  });
+  // Filtered shipments available for selected customer (diurutkan kronologis tanggal)
+  const customerAvailableShipments = useMemo(() => {
+    if (!invoiceForm?.Nama_Pelanggan?.trim()) return [];
+    const searchTarget = invoiceForm.Nama_Pelanggan.trim().toLowerCase();
+    const matchedCust = customers.find(c => 
+      c.Nama_Pelanggan.trim().toLowerCase() === searchTarget ||
+      c.ID_Pelanggan.trim().toLowerCase() === searchTarget
+    );
+    const custId = matchedCust?.ID_Pelanggan?.toLowerCase();
+
+    return (distributions || []).filter(d => {
+      if (!d) return false;
+      const dName = String(d.Nama_Pelanggan || '').trim().toLowerCase();
+      const dId = String(d.ID_Pelanggan || '').trim().toLowerCase();
+      const dTujuan = String(d.Tujuan || '').trim().toLowerCase();
+      const dAlamat = String((d as any).Alamat || (d as any).Alamat_Pelanggan || '').trim().toLowerCase();
+
+      // 1. Exact or ID match
+      if (dName === searchTarget) return true;
+      if (custId && dId === custId) return true;
+
+      // 2. Partial substring match
+      if (dName.includes(searchTarget) || searchTarget.includes(dName)) return true;
+
+      // 3. Match against Tujuan / Alamat (misal user mencari / beralamat "Prambanan")
+      if (matchedCust?.Alamat && dTujuan.includes(matchedCust.Alamat.toLowerCase())) return true;
+      if (searchTarget.length >= 4 && (dTujuan.includes(searchTarget) || dAlamat.includes(searchTarget))) return true;
+
+      return false;
+    }).sort((a, b) => {
+      const timeA = toComparableDate(a.Tanggal);
+      const timeB = toComparableDate(b.Tanggal);
+      if (timeA !== timeB) return timeA - timeB;
+      const sjA = extractSjNumber(a.No_Surat_Jalan);
+      const sjB = extractSjNumber(b.No_Surat_Jalan);
+      return sjA - sjB;
+    });
+  }, [distributions, invoiceForm.Nama_Pelanggan, customers]);
 
   // Filtered invoices for list view
   const filteredCustomInvoices = (customInvoices || []).filter(inv => {
@@ -1344,7 +1713,7 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
                 {customerAvailableShipments.length > 0 && (
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-center justify-between text-[11px] text-slate-600">
-                      <span>Centang riwayat surat jalan untuk digabung ke invoice:</span>
+                      <span>Centang catatan surat jalan & invoice yang tersedia untuk digabung ke invoice:</span>
                       <div className="flex gap-2 font-medium">
                         <button
                           type="button"
@@ -1353,7 +1722,7 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
                         >
                           Pilih Semua
                         </button>
-                        <span>â€¢</span>
+                        <span>•</span>
                         <button
                           type="button"
                           onClick={() => setSelectedShipmentIds([])}
@@ -1363,44 +1732,64 @@ export const AdminCustomInvoiceTab: React.FC<AdminCustomInvoiceTabProps> = ({
                         </button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-1 bg-white/60 rounded-lg border border-indigo-100">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1.5 bg-white/70 rounded-xl border border-indigo-100 shadow-2xs">
                       {customerAvailableShipments.map(dist => {
                         const isSelected = selectedShipmentIds.includes(dist.ID_Distribusi);
+                        const normalInvNo = getNormalInvoiceNumber(dist, distributions);
+
                         return (
                           <div
                             key={dist.ID_Distribusi}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedShipmentIds(selectedShipmentIds.filter(id => id !== dist.ID_Distribusi));
-                              } else {
-                                setSelectedShipmentIds([...selectedShipmentIds, dist.ID_Distribusi]);
-                              }
-                            }}
-                            className={`p-2 rounded border cursor-pointer transition-all flex items-start gap-2 ${
+                            onClick={() => toggleSelectShipment(dist.ID_Distribusi)}
+                            className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-start gap-2.5 ${
                               isSelected
-                                ? 'bg-indigo-100/90 border-indigo-500 shadow-xs ring-1 ring-indigo-500'
-                                : 'bg-white border-slate-200 hover:border-indigo-300'
+                                ? 'bg-indigo-50 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                                : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50/80 shadow-2xs'
                             }`}
                           >
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => {}}
-                              className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500"
+                              className="mt-1 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                             />
-                            <div className="flex-1 min-w-0 text-[11px]">
+                            <div className="flex-1 min-w-0 text-[11px] space-y-1">
                               <div className="flex items-center justify-between">
-                                <span className="font-mono font-bold text-slate-900 truncate">
+                                <span className="font-mono font-bold text-slate-900 truncate flex items-center gap-1">
+                                  <span className="text-[10px] text-slate-500 font-sans font-medium">SJ:</span>
                                   {dist.No_Surat_Jalan || dist.ID_Distribusi}
                                 </span>
-                                <span className="text-[10px] text-slate-500 font-mono">{dist.Tanggal}</span>
+                                <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">{dist.Tanggal}</span>
                               </div>
-                              <p className="text-[10px] text-slate-600 truncate mt-0.5">
-                                Tujuan: {dist.Tujuan || dist.Penerima || '-'}
-                              </p>
-                              <p className="text-[10px] font-bold text-indigo-700">
-                                Rp {Number(dist.Total_Tagihan || 0).toLocaleString('id-ID')}
-                              </p>
+
+                              <div className="flex items-center justify-between gap-1">
+                                <span 
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-200"
+                                  title={`Nomor Invoice Normal: ${normalInvNo}`}
+                                >
+                                  Inv: {normalInvNo || '-'}
+                                </span>
+                                <span className="text-[11px] font-bold text-emerald-700 font-mono">
+                                  Rp {Number(dist.Total_Tagihan || 0).toLocaleString('id-ID')}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] text-slate-600 pt-1 border-t border-slate-100">
+                                <span className="truncate pr-1" title={dist.Tujuan || dist.Penerima || '-'}>
+                                  Tujuan: {dist.Tujuan || dist.Penerima || '-'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleConsolidateShipments([dist.ID_Distribusi]);
+                                  }}
+                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-semibold cursor-pointer shrink-0 transition-colors shadow-2xs"
+                                  title="Terapkan No. Invoice, Surat Jalan, dan Harga Produk ke Form Card"
+                                >
+                                  Terapkan
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
