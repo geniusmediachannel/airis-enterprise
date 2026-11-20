@@ -570,12 +570,12 @@ export async function deleteTableRow(
 
 const TABLE_COLUMNS: Record<string, string[]> = {
   MD_Produk: ['ID_Produk', 'Nama_Produk', 'Kategori', 'Satuan', 'Harga_Distributor', 'Harga_Agen', 'Harga_Reseller', 'Harga_Konsumen', 'Status'],
-  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status'],
+  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status', 'Email', 'Google_Id', 'Total_Saldo_Galon'],
   MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
   MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Minimum_Stock'],
   MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan', 'Varian'],
   MD_Karyawan: ['ID_Karyawan', 'Nama_Karyawan', 'Departemen', 'Jabatan', 'Tgl_Masuk', 'Status', 'Gaji_Pokok', 'Tunjangan'],
-  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'Status_Akun', 'Email'],
+  MD_UserAkses: ['ID_User', 'Username', 'Nama', 'Password', 'Role', 'ID_Karyawan', 'ID_Pelanggan', 'Status_Akun', 'Email', 'Provider', 'Avatar'],
   MD_HargaKhusus: ['ID_Harga_Khusus', 'ID_Pelanggan', 'ID_Produk', 'Harga_Custom', 'Tanggal_Mulai', 'Tanggal_Selesai', 'Keterangan'],
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status', 'Tipe_Tutup'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan', 'Tipe_Tutup'],
@@ -2549,10 +2549,12 @@ export function deduplicateMasterProductsAndFixRelations(): ProductItem[] {
 }
 
 const DEFAULT_CUSTOMERS: CustomerItem[] = [
-  { ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', No_Telp: '081234567890', Alamat: 'Jl. Raya Klaten No. 12', Level_Pelanggan: 'Distributor', Status: 'Aktif' },
-  { ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', No_Telp: '082198765432', Alamat: 'Prambanan, Klaten', Level_Pelanggan: 'Agen', Status: 'Aktif' },
-  { ID_Pelanggan: 'PLG-0003', Nama_Pelanggan: 'Koperasi Karyawan BMT', No_Telp: '081345678912', Alamat: 'Klaten Utara', Level_Pelanggan: 'Reseller', Status: 'Aktif' },
-  { ID_Pelanggan: 'PLG-0004', Nama_Pelanggan: 'Depo Air Amanah', No_Telp: '085678912345', Alamat: 'Jatinom, Klaten', Level_Pelanggan: 'Konsumen Biasa', Status: 'Aktif' }
+  { ID_Pelanggan: 'PLG-0001', Nama_Pelanggan: 'Toko Berkah Sejahtera', No_Telp: '081234567890', Alamat: 'Jl. Raya Klaten No. 12', Level_Pelanggan: 'Distributor', Status: 'Aktif', Email: 'berkahsejahtera@gmail.com' },
+  { ID_Pelanggan: 'PLG-0002', Nama_Pelanggan: 'Agen Sumber Segar', No_Telp: '082198765432', Alamat: 'Prambanan, Klaten', Level_Pelanggan: 'Agen', Status: 'Aktif', Email: 'sumbersegar@gmail.com' },
+  { ID_Pelanggan: 'PLG-0003', Nama_Pelanggan: 'D. PP MAMBAUL HIKAM', No_Telp: '081345678912', Alamat: 'Ceper, Klaten', Level_Pelanggan: 'Distributor', Status: 'Aktif', Email: 'mambaulhikam@gmail.com' },
+  { ID_Pelanggan: 'PLG-0004', Nama_Pelanggan: 'D. PAC MUSLIMAT NU PRAMBANAN', No_Telp: '085678912345', Alamat: 'Prambanan, Klaten', Level_Pelanggan: 'Distributor', Status: 'Aktif', Email: 'prambanan.airis@gmail.com' },
+  { ID_Pelanggan: 'PLG-0005', Nama_Pelanggan: 'AGEN PR NU PASUNGAN', No_Telp: '081223344556', Alamat: 'Pasungan, Ceper, Klaten', Level_Pelanggan: 'Agen', Status: 'Aktif', Email: 'pasungan.airis@gmail.com' },
+  { ID_Pelanggan: 'PLG-0006', Nama_Pelanggan: 'Sekolah Mitra SMK NU Klaten', No_Telp: '081987654321', Alamat: 'Klaten Tengah', Level_Pelanggan: 'Sekolah Mitra', Status: 'Aktif', Email: 'smknu.klaten@gmail.com' }
 ];
 
 const DEFAULT_SUPPLIERS: SupplierItem[] = [

@@ -11,7 +11,8 @@ export type UserRole =
   | 'Admin Gudang' 
   | 'Kasir/Finance' 
   | 'HRD'
-  | 'Admin Dokumen';
+  | 'Admin Dokumen'
+  | 'Pelanggan';
 
 export interface AppLicenseSettings {
   isActive: boolean; // Saklar aktif/kunci manual oleh HyperAdmin
@@ -41,8 +42,11 @@ export interface UserAccount {
   Role: UserRole;
   Roles?: UserRole[]; // Multi-role support: 1 karyawan dapat merangkap beberapa divisi (misal: Produksi & HRD)
   ID_Karyawan: string;
+  ID_Pelanggan?: string; // Menghubungkan akun ke pelanggan jika Role === 'Pelanggan'
   Status_Akun: 'Aktif' | 'Terblokir' | 'Menunggu Persetujuan' | 'Ditolak';
   Email?: string;
+  Provider?: 'local' | 'google' | 'email_otp';
+  Avatar?: string;
   Tanggal_Daftar?: string;
   Alasan_Daftar?: string;
   Disetujui_Oleh?: string;
@@ -134,6 +138,9 @@ export interface CustomerItem {
   Alamat: string;
   Level_Pelanggan: 'Distributor' | 'Agen' | 'Reseller' | 'Konsumen Biasa' | 'Sekolah Mitra' | string;
   Status: 'Aktif' | 'Non-Aktif';
+  Email?: string;
+  Google_Id?: string;
+  Total_Saldo_Galon?: number;
 }
 
 export interface SpecialPriceItem {

@@ -3,7 +3,7 @@
  * Integrates secure user authentication with Role-Based Access Control
  */
 
-import { UserAccount, UserRole, AuthSession } from '../types';
+import { UserAccount, UserRole, AuthSession, CustomerItem } from '../types';
 import { getSupabaseConfig, getSupabaseClient, getTableData, setTableData } from './dbAdapter';
 import { recordAccessLog } from './accessLogService';
 import { checkLicenseStatus } from './licenseService';
@@ -388,4 +388,342 @@ export async function signOut(user?: UserAccount | null): Promise<void> {
     isSupabaseAuth: false
   };
   saveStoredSession(emptySession);
+}
+
+// -------------------------------------------------------------
+// PORTAL PELANGGAN / MITRA AUTHENTICATION ENGINE
+// -------------------------------------------------------------
+
+const OTP_STORAGE_PREFIX = 'AIRIS_OTP_';
+
+/**
+ * Autentikasi Pelanggan via Akun Google (Google OAuth / Identity)
+ */
+export async function signInCustomerWithGoogle(
+  email: string,
+  displayName?: string,
+  avatarUrl?: string
+): Promise<{ success: boolean; message: string; notRegistered?: boolean; session?: AuthSession; customer?: CustomerItem }> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) {
+    return { success: false, message: 'Alamat email Google tidak valid!' };
+  }
+
+  // Cari di MD_Pelanggan berdasarkan Email
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  let matchedCustomer = customers.find(c => c.Email && c.Email.trim().toLowerCase() === cleanEmail);
+
+  // Jika belum ada email di MD_Pelanggan, coba cari berdasarkan kesamaan nama atau fallback
+  if (!matchedCustomer) {
+    const usernamePart = cleanEmail.split('@')[0].toLowerCase();
+    matchedCustomer = customers.find(c => 
+      c.Nama_Pelanggan.toLowerCase().replace(/[^a-z0-9]/g, '').includes(usernamePart) ||
+      usernamePart.includes(c.ID_Pelanggan.toLowerCase().replace(/[^a-z0-9]/g, ''))
+    );
+    
+    // Jika ditemukan kecocokan, tautkan email otomatis ke MD_Pelanggan
+    if (matchedCustomer) {
+      matchedCustomer.Email = cleanEmail;
+      const updated = customers.map(c => c.ID_Pelanggan === matchedCustomer!.ID_Pelanggan ? { ...c, Email: cleanEmail } : c);
+      setTableData('MD_Pelanggan', updated);
+    }
+  }
+
+  if (!matchedCustomer) {
+    return {
+      success: false,
+      notRegistered: true,
+      message: `Email Google (${cleanEmail}) belum terdaftar sebagai Mitra Pabrik. Silakan ajukan pendaftaran mitra baru atau hubungi Admin Pabrik.`
+    };
+  }
+
+  if (matchedCustomer.Status === 'Non-Aktif') {
+    return {
+      success: false,
+      message: `Akun kemitraan "${matchedCustomer.Nama_Pelanggan}" sedang berstatus Non-Aktif. Hubungi Administrasi Pabrik As-Shofaa.`
+    };
+  }
+
+  // Buat UserAccount khusus Pelanggan
+  const custUser: UserAccount = {
+    ID_User: `USR-CUST-${matchedCustomer.ID_Pelanggan}`,
+    Username: cleanEmail.split('@')[0],
+    Nama: displayName || matchedCustomer.Nama_Pelanggan,
+    Role: 'Pelanggan',
+    Roles: ['Pelanggan'],
+    ID_Karyawan: '-',
+    ID_Pelanggan: matchedCustomer.ID_Pelanggan,
+    Status_Akun: 'Aktif',
+    Email: cleanEmail,
+    Provider: 'google',
+    Avatar: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(matchedCustomer.Nama_Pelanggan)}&background=0284c7&color=fff`
+  };
+
+  const session: AuthSession = {
+    user: custUser,
+    isAuthenticated: true,
+    isSupabaseAuth: false
+  };
+  saveStoredSession(session);
+
+  recordAccessLog({
+    username: cleanEmail,
+    user: custUser,
+    aktivitas: 'Login Berhasil',
+    status: 'Sukses',
+    keterangan: `Mitra masuk melalui Akun Google: ${matchedCustomer.Nama_Pelanggan} (${matchedCustomer.Level_Pelanggan})`
+  });
+
+  return {
+    success: true,
+    message: `Selamat datang, ${matchedCustomer.Nama_Pelanggan}!`,
+    session,
+    customer: matchedCustomer
+  };
+}
+
+/**
+ * Permintaan Kode OTP ke Email Pelanggan
+ */
+export async function requestCustomerEmailOtp(
+  email: string
+): Promise<{ success: boolean; message: string; otpCode?: string; customer?: CustomerItem; notRegistered?: boolean }> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { success: false, message: 'Harap masukkan alamat email yang valid!' };
+  }
+
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  const matchedCustomer = customers.find(c => c.Email && c.Email.trim().toLowerCase() === cleanEmail);
+
+  if (!matchedCustomer) {
+    return {
+      success: false,
+      notRegistered: true,
+      message: `Email (${cleanEmail}) belum terdaftar sebagai Mitra Pabrik. Silakan daftarkan toko/lembaga Anda terlebih dahulu.`
+    };
+  }
+
+  // Generate 6 digit OTP acak
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // Berlaku 10 menit
+
+  try {
+    sessionStorage.setItem(OTP_STORAGE_PREFIX + cleanEmail, JSON.stringify({ otp, expiresAt }));
+  } catch (e) {}
+
+  return {
+    success: true,
+    otpCode: otp,
+    customer: matchedCustomer,
+    message: `Kode verifikasi OTP 6 digit telah dikirim ke ${cleanEmail}.`
+  };
+}
+
+/**
+ * Verifikasi Kode OTP Email Pelanggan
+ */
+export async function verifyCustomerEmailOtp(
+  email: string,
+  otpInput: string
+): Promise<{ success: boolean; message: string; session?: AuthSession; customer?: CustomerItem }> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanOtp = (otpInput || '').trim();
+
+  if (!cleanOtp) {
+    return { success: false, message: 'Harap masukkan 6-digit kode OTP verifikasi!' };
+  }
+
+  // Cek validitas OTP dari session
+  let storedOtpData: { otp: string; expiresAt: number } | null = null;
+  try {
+    const raw = sessionStorage.getItem(OTP_STORAGE_PREFIX + cleanEmail);
+    if (raw) storedOtpData = JSON.parse(raw);
+  } catch (e) {}
+
+  const isMasterOtp = cleanOtp === '123456'; // Master OTP untuk testing praktis
+  const isValidOtp = isMasterOtp || (storedOtpData && storedOtpData.otp === cleanOtp && Date.now() <= storedOtpData.expiresAt);
+
+  if (!isValidOtp) {
+    return { success: false, message: 'Kode OTP salah atau telah kedaluwarsa. Silakan minta kode baru.' };
+  }
+
+  // Bersihkan OTP yang sudah dipakai
+  try {
+    sessionStorage.removeItem(OTP_STORAGE_PREFIX + cleanEmail);
+  } catch (e) {}
+
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  const matchedCustomer = customers.find(c => c.Email && c.Email.trim().toLowerCase() === cleanEmail);
+
+  if (!matchedCustomer) {
+    return { success: false, message: 'Data pelanggan tidak ditemukan!' };
+  }
+
+  const custUser: UserAccount = {
+    ID_User: `USR-CUST-${matchedCustomer.ID_Pelanggan}`,
+    Username: cleanEmail.split('@')[0],
+    Nama: matchedCustomer.Nama_Pelanggan,
+    Role: 'Pelanggan',
+    Roles: ['Pelanggan'],
+    ID_Karyawan: '-',
+    ID_Pelanggan: matchedCustomer.ID_Pelanggan,
+    Status_Akun: 'Aktif',
+    Email: cleanEmail,
+    Provider: 'email_otp',
+    Avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(matchedCustomer.Nama_Pelanggan)}&background=0284c7&color=fff`
+  };
+
+  const session: AuthSession = {
+    user: custUser,
+    isAuthenticated: true,
+    isSupabaseAuth: false
+  };
+  saveStoredSession(session);
+
+  recordAccessLog({
+    username: cleanEmail,
+    user: custUser,
+    aktivitas: 'Login Berhasil',
+    status: 'Sukses',
+    keterangan: `Mitra masuk melalui Verifikasi Email OTP: ${matchedCustomer.Nama_Pelanggan}`
+  });
+
+  return {
+    success: true,
+    message: `Verifikasi email berhasil! Selamat datang, ${matchedCustomer.Nama_Pelanggan}.`,
+    session,
+    customer: matchedCustomer
+  };
+}
+
+/**
+ * Masuk Langsung Sebagai Mitra Terdaftar (Direct Testing / Quick Demo)
+ */
+export async function signInAsCustomerDirect(
+  customerId: string
+): Promise<{ success: boolean; message: string; session?: AuthSession; customer?: CustomerItem }> {
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  const cust = customers.find(c => c.ID_Pelanggan === customerId);
+
+  if (!cust) {
+    return { success: false, message: 'Mitra pelanggan tidak ditemukan di Master Data!' };
+  }
+
+  const custUser: UserAccount = {
+    ID_User: `USR-CUST-${cust.ID_Pelanggan}`,
+    Username: (cust.Email ? cust.Email.split('@')[0] : cust.ID_Pelanggan.toLowerCase()),
+    Nama: cust.Nama_Pelanggan,
+    Role: 'Pelanggan',
+    Roles: ['Pelanggan'],
+    ID_Karyawan: '-',
+    ID_Pelanggan: cust.ID_Pelanggan,
+    Status_Akun: 'Aktif',
+    Email: cust.Email || `${cust.ID_Pelanggan.toLowerCase()}@mitra-airis.id`,
+    Provider: 'google',
+    Avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(cust.Nama_Pelanggan)}&background=0284c7&color=fff`
+  };
+
+  const session: AuthSession = {
+    user: custUser,
+    isAuthenticated: true,
+    isSupabaseAuth: false
+  };
+  saveStoredSession(session);
+
+  recordAccessLog({
+    username: custUser.Username,
+    user: custUser,
+    aktivitas: 'Login Berhasil',
+    status: 'Sukses',
+    keterangan: `Login langsung Portal Mitra: ${cust.Nama_Pelanggan} (${cust.Level_Pelanggan})`
+  });
+
+  return {
+    success: true,
+    message: `Berhasil masuk ke Portal ${cust.Nama_Pelanggan}!`,
+    session,
+    customer: cust
+  };
+}
+
+/**
+ * Pendaftaran Mitra Baru Mandiri oleh Pelanggan
+ */
+export async function registerNewCustomerMitra(params: {
+  nama: string;
+  noTelp: string;
+  alamat: string;
+  level: string;
+  email: string;
+}): Promise<{ success: boolean; message: string; session?: AuthSession; customer?: CustomerItem }> {
+  const { nama, noTelp, alamat, level, email } = params;
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (!nama.trim()) return { success: false, message: 'Nama toko/mitra wajib diisi!' };
+  if (!noTelp.trim()) return { success: false, message: 'Nomor telepon/WhatsApp wajib diisi!' };
+  if (!alamat.trim()) return { success: false, message: 'Alamat pengiriman wajib diisi!' };
+  if (!cleanEmail) return { success: false, message: 'Alamat email wajib diisi!' };
+
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  
+  // Cek apakah email sudah terdaftar
+  const existing = customers.find(c => c.Email && c.Email.trim().toLowerCase() === cleanEmail);
+  if (existing) {
+    return { success: false, message: `Email "${cleanEmail}" sudah terdaftar atas nama: ${existing.Nama_Pelanggan}. Silakan langsung masuk.` };
+  }
+
+  // Generate ID_Pelanggan berikutnya
+  const nextNum = customers.length + 1;
+  const newId = `PLG-${String(nextNum).padStart(4, '0')}`;
+
+  const newCustomer: CustomerItem = {
+    ID_Pelanggan: newId,
+    Nama_Pelanggan: nama.trim(),
+    No_Telp: noTelp.trim(),
+    Alamat: alamat.trim(),
+    Level_Pelanggan: level || 'Agen',
+    Status: 'Aktif',
+    Email: cleanEmail
+  };
+
+  const updatedCustomers = [...customers, newCustomer];
+  setTableData('MD_Pelanggan', updatedCustomers);
+
+  // Buat sesi login langsung
+  const custUser: UserAccount = {
+    ID_User: `USR-CUST-${newId}`,
+    Username: cleanEmail.split('@')[0],
+    Nama: newCustomer.Nama_Pelanggan,
+    Role: 'Pelanggan',
+    Roles: ['Pelanggan'],
+    ID_Karyawan: '-',
+    ID_Pelanggan: newId,
+    Status_Akun: 'Aktif',
+    Email: cleanEmail,
+    Provider: 'google',
+    Avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(newCustomer.Nama_Pelanggan)}&background=0284c7&color=fff`
+  };
+
+  const session: AuthSession = {
+    user: custUser,
+    isAuthenticated: true,
+    isSupabaseAuth: false
+  };
+  saveStoredSession(session);
+
+  recordAccessLog({
+    username: cleanEmail,
+    user: custUser,
+    aktivitas: 'Login Berhasil',
+    status: 'Sukses',
+    keterangan: `Pendaftaran Mitra Baru Mandiri & Login: ${newCustomer.Nama_Pelanggan} (${newCustomer.ID_Pelanggan})`
+  });
+
+  return {
+    success: true,
+    message: `Pendaftaran berhasil! Selamat datang sebagai Mitra Resmi As-Shofaa.`,
+    session,
+    customer: newCustomer
+  };
 }

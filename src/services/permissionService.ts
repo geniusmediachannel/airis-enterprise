@@ -10,13 +10,15 @@ export type AppMenuId =
   | 'keuangan' 
   | 'hrd' 
   | 'administrasi' 
-  | 'log_akses';
+  | 'log_akses'
+  | 'portal_pelanggan';
 
 /**
  * Normalisasi ID menu dari berbagai alias (misal 'master' -> 'master_data')
  */
 export function normalizeMenuId(menuId: string): AppMenuId {
   const target = menuId.toLowerCase().trim();
+  if (target === 'portal_pelanggan' || target === 'portal' || target === 'pelanggan' || target === 'customer_portal') return 'portal_pelanggan';
   if (target === 'master' || target === 'masterdata' || target === 'master_data') return 'master_data';
   if (target === 'production' || target === 'produksi') return 'produksi';
   if (target === 'distribution' || target === 'distribusi') return 'distribusi';
@@ -102,6 +104,9 @@ export const ROLE_WRITE_PERMISSIONS: Record<UserRole, AppMenuId[]> = {
   ],
   'Admin Dokumen': [
     'dashboard', 'administrasi'
+  ],
+  'Pelanggan': [
+    'portal_pelanggan'
   ]
 };
 
@@ -139,7 +144,10 @@ export function formatUserRolesLabel(userOrRole: UserAccount | UserRole | UserRo
  * Sesuai permintaan: seluruh user dapat MELIHAT seluruh menu.
  */
 export function canAccessMenu(role: UserRole | undefined, menuId: string): boolean {
-  // Semua user dapat melihat semua menu
+  if (role === 'Pelanggan') {
+    return menuId === 'portal_pelanggan';
+  }
+  // Semua user internal pabrik dapat melihat semua menu
   return true;
 }
 
@@ -249,6 +257,12 @@ export const ROLE_INFO: Record<UserRole, { label: string; badgeColor: string; de
     badgeColor: 'bg-teal-500/10 text-teal-400 border border-teal-500/20',
     description: 'Pembuatan surat resmi, PO pembelian, tanda terima, & pengarsipan dokumen',
     mainDuty: 'Administrasi, Persuratan & Purchase Order'
+  },
+  'Pelanggan': {
+    label: 'Mitra & Pelanggan',
+    badgeColor: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
+    description: 'Portal mandiri pelanggan untuk pemesanan produk, pantau status pesanan, faktur invoice, dan saldo galon',
+    mainDuty: 'Pemesanan Mandiri, Tracking Order & Pembayaran'
   }
 };
 
@@ -259,10 +273,13 @@ export function getDefaultViewForRole(userOrRole: UserAccount | UserRole | undef
   const roles = getUserRoles(userOrRole);
   if (roles.length === 0) return 'dashboard';
   if (roles.includes('SuperAdmin')) return 'dashboard';
+  if (roles.includes('Pelanggan')) return 'portal_pelanggan';
   
   // Jika multi-role, pilih landing page sesuai prioritas peran pertamanya
   const firstRole = roles[0];
   switch (firstRole) {
+    case 'Pelanggan':
+      return 'portal_pelanggan';
     case 'Admin Produksi':
       return 'produksi';
     case 'Admin Gudang':

@@ -23,6 +23,7 @@ import { AccessLogView } from './components/AccessLogView';
 import { LicenseLockScreen } from './components/LicenseLockScreen';
 import { HyperAdminModal } from './components/HyperAdminModal';
 import { LicenseTransferModal } from './components/LicenseTransferModal';
+import { CustomerPortalView } from './components/CustomerPortalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { 
   canAccessMenu, canEditModule, getAuthorizedRolesForModule, getDefaultViewForRole,
@@ -677,6 +678,20 @@ export default function App() {
     );
   }
 
+  // Jika yang masuk adalah Pelanggan / Mitra, langsung tampilkan Portal Khusus Pelanggan secara penuh
+  if (currentUser.Role === 'Pelanggan') {
+    return (
+      <ErrorBoundary viewName="Portal Khusus Pelanggan">
+        <CustomerPortalView
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+        <ToastContainer />
+        <ConfirmDialog />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
       {/* Sidebar Navigation */}
@@ -877,6 +892,16 @@ export default function App() {
               <AccessLogView
                 currentRole={currentUser?.Role}
                 onRefresh={reloadData}
+              />
+            </ErrorBoundary>
+          )}
+
+          {(currentView === 'portal_pelanggan' || currentView === 'portal' || currentView === 'pelanggan') && (
+            <ErrorBoundary viewName="Portal Khusus Pelanggan">
+              <CustomerPortalView
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onSwitchToFactoryAdmin={() => setCurrentView('dashboard')}
               />
             </ErrorBoundary>
           )}

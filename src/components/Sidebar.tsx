@@ -3,7 +3,8 @@ import {
   LayoutDashboard, Database, Factory, Truck, 
   Boxes, FlaskConical, Scale, Users, FileSpreadsheet, 
   ChevronRight, Shield, X, Settings, Sliders, History,
-  Eye, Edit3, ShieldAlert, Clock, Mail, Check, Minus, Droplets
+  Eye, Edit3, ShieldAlert, Clock, Mail, Check, Minus, Droplets,
+  ShoppingBag
 } from 'lucide-react';
 import { UserAccount } from '../types';
 import { canAccessMenu, canEditModule, isHyperAdmin } from '../services/permissionService';
@@ -112,10 +113,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
       description: 'Audit Trail Login & Keamanan',
     },
+    {
+      id: 'portal_pelanggan',
+      label: 'Portal Pelanggan',
+      icon: ShoppingBag,
+      badge: 'Mitra',
+      badgeColor: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
+      description: 'Pemesanan & Tagihan Mandiri',
+    },
   ];
 
   const isItemActive = (itemId: string) => {
     if (currentView === itemId) return true;
+    if (itemId === 'portal_pelanggan' && (currentView === 'portal_pelanggan' || currentView === 'portal' || currentView === 'pelanggan')) return true;
     if (itemId === 'master_data' && (currentView === 'master' || currentView === 'master_data')) return true;
     if (itemId === 'produksi' && (currentView === 'production' || currentView === 'produksi')) return true;
     if (itemId === 'distribusi' && (currentView === 'distribution' || currentView === 'distribusi')) return true;

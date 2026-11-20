@@ -267,6 +267,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         No_Telp: '', 
         Alamat: '', 
         Level_Pelanggan: 'Agen', 
+        Email: '',
         Status: 'Aktif' 
       };
     } else if (activeTab === 'supplier') {
@@ -1170,6 +1171,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                 <tr>
                   <th className="p-3">ID Pelanggan</th>
                   <th className="p-3">Nama Pelanggan</th>
+                  <th className="p-3">Email Akun Google / Portal</th>
                   <th className="p-3">No. Telp</th>
                   <th className="p-3">Alamat</th>
                   <th className="p-3">Level Konsumen</th>
@@ -1179,11 +1181,21 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {customers
-                  .filter(c => c.Nama_Pelanggan?.toLowerCase().includes(searchQuery.toLowerCase()) || c.ID_Pelanggan?.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .filter(c => c.Nama_Pelanggan?.toLowerCase().includes(searchQuery.toLowerCase()) || c.ID_Pelanggan?.toLowerCase().includes(searchQuery.toLowerCase()) || (c.Email && c.Email.toLowerCase().includes(searchQuery.toLowerCase())))
                   .map(c => (
                     <tr key={c.ID_Pelanggan} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-blue-700">{c.ID_Pelanggan}</td>
                       <td className="p-3 font-semibold text-slate-900">{c.Nama_Pelanggan}</td>
+                      <td className="p-3">
+                        {c.Email ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-mono bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            {c.Email}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">Belum diset</span>
+                        )}
+                      </td>
                       <td className="p-3 font-mono text-slate-600">{c.No_Telp || '-'}</td>
                       <td className="p-3 text-slate-600">{c.Alamat || '-'}</td>
                       <td className="p-3">
@@ -2467,6 +2479,19 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       onChange={e => setFormData({ ...formData, Nama_Pelanggan: e.target.value })}
                       placeholder="Nama toko atau mitra"
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-slate-700">Email Akun Google (Login Portal Pelanggan)</label>
+                      <span className="text-[11px] text-blue-600">Digunakan untuk otorisasi Google & OTP</span>
+                    </div>
+                    <input
+                      type="email"
+                      value={formData.Email || ''}
+                      onChange={e => setFormData({ ...formData, Email: e.target.value })}
+                      placeholder="contoh: mambaulhikam@gmail.com"
+                      className="w-full px-3 py-1.5 border border-blue-200 focus:border-blue-500 rounded-lg font-mono text-sm"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
