@@ -575,6 +575,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Modals
   const [showAddDistModal, setShowAddDistModal] = useState(false);
   const [editingDist, setEditingDist] = useState<DistributionItem | null>(null);
+  const [realizingPlanId, setRealizingPlanId] = useState<string | null>(null);
 
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<DeliveryPlanItem | null>(null);
@@ -1047,6 +1048,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   // Open Add Distribution Modal
   const handleOpenAddDist = () => {
     setEditingDist(null);
+    setRealizingPlanId(null);
     const today = new Date().toISOString().slice(0, 10);
     const initialSj = generateSuratJalanNumber(today);
     const initialInv = formatInvoiceNumber('', today);
@@ -1085,6 +1087,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
     ]);
     setShowAddDistModal(true);
+  };
+
+  // Close Distribution Modal and reset realizing state
+  const handleCloseAddDistModal = () => {
+    setShowAddDistModal(false);
+    setRealizingPlanId(null);
+    setEditingDist(null);
   };
 
   // Open Edit Distribution Modal
@@ -1686,6 +1695,26 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         console.warn('[DistributionView] Direct Turso sync failed:', tursoErr);
       }
 
+      // Jika pengiriman ini berasal dari Realisasi Rencana Pesanan:
+      if (realizingPlanId) {
+        const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+        const updatedPlans = plans.map(p => 
+          p.ID_Rencana === realizingPlanId 
+            ? { 
+                ...p, 
+                Status: 'Realisasi' as const, 
+                Tanggal_Realisasi: formData.Tanggal,
+                Keterangan: p.Keterangan 
+                  ? `${p.Keterangan} (S.J: ${distRecord.No_Surat_Jalan})` 
+                  : `Telah direalisasikan ke S.J: ${distRecord.No_Surat_Jalan}`
+              } 
+            : p
+        );
+        setTableData('Rencana_Distribusi', updatedPlans);
+        setDeliveryPlans(updatedPlans);
+        setRealizingPlanId(null);
+      }
+
       setShowAddDistModal(false);
       setPlanRefreshKey(prev => prev + 1);
     onRefresh();
@@ -1878,172 +1907,84 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     );
   };
 
-  // Realize Order: Transfer Rencana Pesanan -> Distribusi Resmi
-  const handleExecutePlanToDistribution = async (plan: DeliveryPlanItem) => {
-    const totalQty = plan.Items ? plan.Items.reduce((acc, it) => acc + (Number(it.Qty) || 0), 0) : 0;
-    const totalNominal = plan.Items ? plan.Items.reduce((acc, it) => acc + (Number(it.Subtotal) || 0), 0) : 0;
+  // Realize Order: Muat Data Pesanan ke Form Pengiriman Distribusi
+  const handleExecutePlanToDistribution = (plan: DeliveryPlanItem) => {
+    setRealizingPlanId(plan.ID_Rencana);
+    setEditingDist(null);
 
-    const ok = await confirmAction({
-      title: 'Realisasi Pengiriman Resmi',
-      message: `Realisasikan pesanan ${plan.ID_Rencana} (${plan.Nama_Pelanggan}) menjadi pengiriman resmi? Surat jalan, invoice tagihan, dan draf piutang akan langsung diterbitkan secara otomatis.`,
-      confirmText: 'Realisasikan Sekarang',
-      cancelText: 'Batal',
-      type: 'success',
-      itemDetails: {
-        'No. Pesanan': plan.ID_Rencana,
-        'Pelanggan': `${plan.Nama_Pelanggan} (${plan.Level_Pelanggan || 'Distributor'})`,
-        'Total Muatan': `${totalQty} unit`,
-        'Estimasi Tagihan': `Rp ${totalNominal.toLocaleString('id-ID')}`,
-        'Metode Kirim': plan.Metode_Kirim,
-        'Alamat Tujuan': plan.Alamat_Tujuan || '-'
-      }
-    });
-    if (!ok) return;
-
+    const deliveryDate = plan.Tanggal_Rencana || new Date().toISOString().slice(0, 10);
     const currentDist = getTableData<DistributionItem>('Distribusi', []);
-    const currentItems = getTableData<DistributionProductDetail>('Distribusi_Item', []);
+    
+    // Auto-generate No Surat Jalan & No Invoice berdasarkan tanggal pengiriman
+    const nextSj = generateSuratJalanNumber(deliveryDate, currentDist);
+    const nextInv = formatInvoiceNumber('', deliveryDate, currentDist);
 
-    const d = new Date();
-    const yy = String(d.getFullYear()).slice(-2);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const prefix = `DST-${yy}${mm}${dd}`;
-    const count = currentDist.filter(dist => dist.ID_Distribusi.startsWith(prefix)).length;
-    const distId = `${prefix}${String(count + 1).padStart(3, '0')}`;
-    const sjNo = generateSuratJalanNumber(plan.Tanggal_Rencana, currentDist);
-    const invNo = formatInvoiceNumber(distId, plan.Tanggal_Rencana, currentDist);
+    // Cari pelanggan yang cocok di master data jika ada
+    let matchedCust = customers.find(c => c.ID_Pelanggan === plan.ID_Pelanggan);
+    if (!matchedCust && plan.Nama_Pelanggan) {
+      const q = plan.Nama_Pelanggan.trim().toLowerCase();
+      matchedCust = customers.find(c => c.Nama_Pelanggan && c.Nama_Pelanggan.trim().toLowerCase() === q);
+    }
+    const finalCustId = matchedCust?.ID_Pelanggan || plan.ID_Pelanggan || '';
+    const finalCustName = matchedCust?.Nama_Pelanggan || plan.Nama_Pelanggan || '';
+    const finalCustLevel = matchedCust?.Level_Pelanggan || plan.Level_Pelanggan || 'Distributor';
 
-    const distRecord: DistributionItem = {
-      ID_Distribusi: distId,
-      Tanggal: plan.Tanggal_Rencana,
-      ID_Pelanggan: plan.ID_Pelanggan,
-      Nama_Pelanggan: plan.Nama_Pelanggan,
-      Level_Pelanggan: plan.Level_Pelanggan,
-      Pengirim: isRadityaVariant(plan.Sopir) ? 'RADITYA' : (plan.Sopir || '-'),
+    // Set Form Data Pengiriman Distribusi
+    setFormData({
+      Tanggal: deliveryDate,
+      ID_Pelanggan: finalCustId,
+      Nama_Pelanggan: finalCustName,
+      Level_Pelanggan: finalCustLevel,
+      Pengirim: isRadityaVariant(plan.Sopir) ? 'RADITYA' : (plan.Sopir || ''),
       Penerima: 'Penerima Toko',
-      Tujuan: plan.Alamat_Tujuan,
-      Metode_Kirim: plan.Metode_Kirim,
-      No_Surat_Jalan: sjNo,
-      No_Invoice: invNo,
-      Keterangan: `Realisasi Pesanan: ${plan.ID_Rencana} - ${plan.Keterangan || ''}`
-    };
-
-    let totalTagihanAwal = 0;
-    let totalQtyCalc = 0;
-    const newDetails: DistributionProductDetail[] = plan.Items.map((it, idx) => {
-      totalTagihanAwal += it.Subtotal;
-      totalQtyCalc += it.Qty;
-      return {
-        ID_Detail: `${distId}-D${idx + 1}`,
-        ID_Distribusi: distId,
-        ID_Produk: it.ID_Produk,
-        Nama_Produk: it.Nama_Produk,
-        Qty: it.Qty,
-        Harga_Satuan: it.Harga_Satuan,
-        Subtotal: it.Subtotal
-      };
+      Tujuan: plan.Alamat_Tujuan || matchedCust?.Alamat || '',
+      Metode_Kirim: plan.Metode_Kirim || 'Kirim Armada',
+      No_Surat_Jalan: nextSj,
+      No_Invoice: nextInv,
+      Keterangan: plan.Keterangan ? `Pesanan ${plan.ID_Rencana}: ${plan.Keterangan}` : `Realisasi Pesanan: ${plan.ID_Rencana}`,
+      Galon_Kosong_Kembali: (plan as any).Galon_Kosong_Kembali !== undefined && (plan as any).Galon_Kosong_Kembali !== null ? (plan as any).Galon_Kosong_Kembali : (plan.Tipe_Transaksi_Galon === 'Tukar Galon' ? (plan.Items?.find(it => it.ID_Produk === 'ASH-GLN19L' || it.ID_Produk === 'G19')?.Qty || '') : ''),
+      Tipe_Transaksi_Galon: (plan as any).Tipe_Transaksi_Galon || (plan.Items?.some(it => it.ID_Produk === 'ASH-GLN19L' || it.ID_Produk === 'G19') ? 'Tukar Galon' : 'Non-Galon'),
+      Tarif_Penyusutan_Galon: (plan as any).Tarif_Penyusutan_Galon || getGallonDepreciationRate()
     });
 
-    // Nilai tagihan data distribusi tetap utuh/bruto (tidak dipotong 1.000 jika ambil sendiri)
-    const grandTotal = totalTagihanAwal;
-    distRecord.Total_Tagihan = grandTotal;
+    setCustomerSearchQuery(finalCustName);
+    setIsCustomerDropdownOpen(false);
 
-    // Sync direct product columns on distRecord (C120, C220, B330, B600, G19)
-    products.forEach(p => {
-      const code = getProductShortCode(p);
-      const itemMatch = newDetails.filter(it => it.ID_Produk === p.ID_Produk);
-      const sumQty = itemMatch.reduce((sum, it) => sum + it.Qty, 0);
-      distRecord[code] = sumQty;
-      distRecord[p.ID_Produk] = sumQty;
-    });
-
-    const galonKirim = Number(distRecord.G19 || distRecord['ASH-GLN19L'] || 0);
-    distRecord.Galon_Kosong_Kembali = plan.Galon_Kosong_Kembali !== undefined && plan.Galon_Kosong_Kembali !== null
-      ? plan.Galon_Kosong_Kembali
-      : (plan.Tipe_Transaksi_Galon === 'Tukar Galon' ? galonKirim : 0);
-    distRecord.Tipe_Transaksi_Galon = plan.Tipe_Transaksi_Galon || (galonKirim > 0 ? 'Tukar Galon' : 'Non-Galon');
-
-    // Perhitungan Penyusutan Galon Investasi Sekolah Mitra / Pinjam Galon
-    const isSekolahMitra = distRecord.Level_Pelanggan === 'Sekolah Mitra' || distRecord.Tipe_Transaksi_Galon === 'Pinjam Galon';
-    if (isSekolahMitra && galonKirim > 0) {
-      const depRate = Number(plan.Tarif_Penyusutan_Galon) > 0 ? Number(plan.Tarif_Penyusutan_Galon) : getGallonDepreciationRate();
-      const totalDep = Number(plan.Total_Penyusutan_Galon) > 0 ? Number(plan.Total_Penyusutan_Galon) : (galonKirim * depRate);
-      distRecord.Tarif_Penyusutan_Galon = depRate;
-      distRecord.Total_Penyusutan_Galon = totalDep;
-    }
-
-    // Save to Distribusi
-    setTableData('Distribusi', [...currentDist, distRecord]);
-    setTableData('Distribusi_Item', [...currentItems, ...newDetails]);
-
-    // Update Plan Status to 'Realisasi'
-    const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
-    const updatedPlans = plans.map(p => p.ID_Rencana === plan.ID_Rencana ? { ...p, Status: 'Realisasi' as const } : p);
-    setTableData('Rencana_Distribusi', updatedPlans);
-
-    // Create Draf Jurnal
-    const existingDrafts = getTableData<DraftJournalItem>('Draf_Jurnal', []);
-    const newDraft: DraftJournalItem = {
-      ID_Draf: `DRF-DST-${Date.now().toString().slice(-6)}`,
-      Sumber: 'Distribusi',
-      Tanggal: plan.Tanggal_Rencana,
-      Referensi: `${distId} / ${plan.Nama_Pelanggan}`,
-      Keterangan: `Penjualan ${totalQtyCalc} unit ke ${plan.Nama_Pelanggan} (SJ: ${sjNo})`,
-      Kode_Debit: '112-10',
-      Kode_Kredit: '411-10',
-      Nominal: grandTotal,
-      Status: 'Menunggu Verifikasi',
-      Waktu_Dibuat: new Date().toISOString()
-    };
-    const draftsToAdd: DraftJournalItem[] = [newDraft];
-    if (isSekolahMitra && distRecord.Total_Penyusutan_Galon && distRecord.Total_Penyusutan_Galon > 0) {
-      draftsToAdd.push({
-        ID_Draf: `DRF-DEP-${Date.now().toString().slice(-6)}`,
-        Sumber: 'Distribusi',
-        Tanggal: plan.Tanggal_Rencana,
-        Referensi: `${distId} / ${plan.Nama_Pelanggan}`,
-        Keterangan: `Penyusutan Galon Mitra (${galonKirim} Galon @ Rp ${(distRecord.Tarif_Penyusutan_Galon || 1250).toLocaleString('id-ID')}) - ${plan.Nama_Pelanggan}`,
-        Kode_Debit: '514-70',
-        Kode_Kredit: '122-70',
-        Nominal: distRecord.Total_Penyusutan_Galon,
-        Status: 'Menunggu Verifikasi',
-        Waktu_Dibuat: new Date().toISOString()
+    // Mapping items dari Rencana Distribusi ke Form Items Distribusi (lengkap dengan Kode Produksi auto yang bisa diedit)
+    const items = (plan.Items && plan.Items.length > 0) ? plan.Items.map(it => {
+      let prod = products.find(p => p.ID_Produk === it.ID_Produk);
+      if (!prod && it.Nama_Produk) {
+        const q = it.Nama_Produk.trim().toLowerCase();
+        prod = products.find(p => p.Nama_Produk && p.Nama_Produk.trim().toLowerCase() === q);
+      }
+      const pId = prod?.ID_Produk || it.ID_Produk || products[0]?.ID_Produk || 'ASH-CUP220';
+      const autoLot = getAutoProductionCode({
+        productId: pId,
+        productName: prod?.Nama_Produk || it.Nama_Produk,
+        qty: Number(it.Qty) || 0,
+        deliveryDate: deliveryDate
       });
-    }
-    setTableData('Draf_Jurnal', [...existingDrafts, ...draftsToAdd]);
+      return {
+        ID_Produk: pId,
+        Qty: Number(it.Qty) || 0,
+        Harga_Satuan: Number(it.Harga_Satuan) || 0,
+        Kode_Produksi: autoLot
+      };
+    }) : [
+      {
+        ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220',
+        Qty: '' as any,
+        Harga_Satuan: products[0]?.Harga_Distributor || 14500,
+        Kode_Produksi: ''
+      }
+    ];
 
-    // Create Piutang
-    const existingPiutang = getTableData<ReceivablePayableItem>('Data_Piutang_Utang', []);
-    const dueD = new Date(plan.Tanggal_Rencana);
-    dueD.setDate(dueD.getDate() + 14);
-    const newPiutang: ReceivablePayableItem = {
-      ID_DOKUMEN: distId,
-      ID_Transaksi: distId,
-      TIPE: 'Piutang',
-      Jenis: 'Piutang',
-      TANGGAL: plan.Tanggal_Rencana,
-      Tanggal: plan.Tanggal_Rencana,
-      JATUH_TEMPO: dueD.toISOString().slice(0, 10),
-      Tgl_Jatuh_Tempo: dueD.toISOString().slice(0, 10),
-      NAMA_ENTITAS: plan.Nama_Pelanggan,
-      Entitas: plan.Nama_Pelanggan,
-      TOTAL_TAGIHAN: grandTotal,
-      Nominal: grandTotal,
-      TOTAL_DIBAYAR: 0,
-      Terbayar: 0,
-      SISA_SALDO: grandTotal,
-      Sisa: grandTotal,
-      STATUS: 'Belum Lunas',
-      Status: 'Belum Lunas'
-    };
-    setTableData('Data_Piutang_Utang', [...existingPiutang, newPiutang]);
-
-    setPlanRefreshKey(prev => prev + 1);
-    onRefresh();
+    setFormItems(items);
+    setShowAddDistModal(true);
     showToast(
-      'Pengiriman Berhasil Direalisasikan', 
-      `Pesanan ${plan.ID_Rencana} (${plan.Nama_Pelanggan}) resmi diproses. No. Surat Jalan: ${sjNo}`, 
-      'success'
+      'Form Distribusi Dibuka',
+      `Data pesanan ${plan.ID_Rencana} (${plan.Nama_Pelanggan}) telah dimuat. Anda dapat memeriksa No. Surat Jalan, Kode Produksi, sopir, atau rincian muatan sebelum disimpan.`,
+      'info'
     );
   };
 
@@ -2914,7 +2855,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               return (
                 <div 
                   key={plan.ID_Rencana}
-                  className={`w-72 shrink-0 p-4 bg-white rounded-xl border shadow-xs flex flex-col justify-between ${
+                  className={`w-80 sm:w-[330px] shrink-0 p-4 bg-white rounded-xl border shadow-xs flex flex-col justify-between ${
                     isRealized ? 'border-slate-200 opacity-60 bg-slate-50' : 'border-t-4 border-t-amber-500 border-slate-200 hover:border-indigo-400'
                   }`}
                 >
@@ -2932,7 +2873,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       <span className="font-bold text-slate-700 block text-[10px] uppercase">Rincian Barang Dipesan:</span>
                       {plan.Items?.map((it, idx) => (
                         <div key={idx} className="flex justify-between text-slate-600 text-[10.5px]">
-                          <span className="truncate max-w-[150px]">{it.Nama_Produk}</span>
+                          <span className="truncate max-w-[170px]">{it.Nama_Produk}</span>
                           <span className="font-mono font-bold">{it.Qty} unit</span>
                         </div>
                       ))}
@@ -2943,57 +2884,79 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleDeletePlan(plan.ID_Rencana)}
-                        className="text-[11px] text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer font-medium"
-                      >
-                        <Trash2 size={12} /> Hapus
-                      </button>
-
-                      {!isRealized && (
+                  {/* Card Actions Footer: 2-Baris Rapi & Tidak Melebihi Batas Card */}
+                  <div className="mt-3.5 pt-2.5 border-t border-slate-100 space-y-2">
+                    {/* Baris 1: Utilitas (Hapus, Edit) & Status Badge */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-3">
                         <button
-                          onClick={() => handleOpenEditPlan(plan)}
-                          className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer font-medium"
+                          onClick={() => handleDeletePlan(plan.ID_Rencana)}
+                          className="text-[11px] text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer font-medium transition"
+                          title="Hapus Pesanan"
                         >
-                          <Edit2 size={12} /> Edit
+                          <Trash2 size={12} />
+                          <span>Hapus</span>
                         </button>
-                      )}
+
+                        {!isRealized && (
+                          <button
+                            onClick={() => handleOpenEditPlan(plan)}
+                            className="text-[11px] text-slate-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer font-medium transition"
+                            title="Edit Rencana Pesanan"
+                          >
+                            <Edit2 size={12} />
+                            <span>Edit</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Status Badge */}
+                      <div>
+                        {isRealized ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                            <CheckCircle2 size={11} />
+                            <span>Telah Dikirim</span>
+                          </span>
+                        ) : plan.Status === 'Disetujui' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1">
+                            <Clock size={11} />
+                            <span>Antrean Pabrik</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            <span>Menunggu</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {!isRealized && plan.Status === 'Menunggu' && (
-                        <button
-                          onClick={() => handleConfirmPlan(plan)}
-                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
-                          title="Konfirmasi Pesanan Diterima (Masuk Antrean Pabrik)"
-                        >
-                          <CheckCircle2 size={12} />
-                          <span>Konfirmasi</span>
-                        </button>
-                      )}
+                    {/* Baris 2: Tombol Eksekusi (Konfirmasi & Realisasikan) */}
+                    {!isRealized && (
+                      <div className="flex items-center gap-2 pt-0.5">
+                        {plan.Status === 'Menunggu' && (
+                          <button
+                            onClick={() => handleConfirmPlan(plan)}
+                            className="flex-1 py-1.5 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition active:scale-[0.98]"
+                            title="Konfirmasi Pesanan Diterima (Masuk Antrean Pabrik)"
+                          >
+                            <CheckCircle2 size={12} />
+                            <span>Konfirmasi</span>
+                          </button>
+                        )}
 
-                      {!isRealized && plan.Status === 'Disetujui' && (
-                        <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                          📋 Antrean Pabrik
-                        </span>
-                      )}
-
-                      {!isRealized ? (
                         <button
                           onClick={() => handleExecutePlanToDistribution(plan)}
-                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                          className={`py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition active:scale-[0.98] ${
+                            plan.Status === 'Menunggu' ? 'flex-1' : 'w-full'
+                          }`}
+                          title="Buka Form Pengiriman Distribusi untuk menyesuaikan No. Surat Jalan, Kode Produksi & Sopir"
                         >
                           <Send size={12} />
                           <span>Realisasikan</span>
                         </button>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          Telah Dikirim
-                        </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -4981,11 +4944,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
             <div className="flex items-center justify-between px-5 py-4 bg-slate-900 text-white">
-              <h3 className="font-bold text-xs uppercase tracking-wider">
-                {editingDist ? `Edit Pengiriman: ${editingDist.ID_Distribusi}` : 'Form Pengiriman Distribusi Langsung'}
+              <h3 className="font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                <Truck size={16} className="text-cyan-400" />
+                <span>
+                  {editingDist 
+                    ? `Edit Pengiriman: ${editingDist.ID_Distribusi}` 
+                    : (realizingPlanId ? `Realisasi Pengiriman Pesanan: ${realizingPlanId}` : 'Form Pengiriman Distribusi Langsung')}
+                </span>
               </h3>
-              <button onClick={() => setShowAddDistModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              <button onClick={handleCloseAddDistModal} className="text-slate-400 hover:text-white cursor-pointer"><X size={16} /></button>
             </div>
+
+            {realizingPlanId && (
+              <div className="mx-5 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-800">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <div className="flex-1 font-medium">
+                  Data berhasil ditarik dari antrean pesanan <strong>{realizingPlanId}</strong>. Anda dapat memeriksa & menyesuaikan No. Surat Jalan, Kode Produksi, nama sopir/armada, atau rincian muatan sebelum disimpan resmi.
+                </div>
+              </div>
+            )}
 
             <div className="p-5 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -5579,7 +5556,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                 <button 
                   type="button" 
                   disabled={isSavingDist} 
-                  onClick={() => setShowAddDistModal(false)} 
+                  onClick={handleCloseAddDistModal} 
                   className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 disabled:opacity-50 cursor-pointer"
                 >
                   Batal
