@@ -223,7 +223,7 @@ export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
   Histori_Perubahan_Harga: ['ID_Histori', 'Tanggal_Berlaku', 'Tipe_Item', 'ID_Item', 'Nama_Item', 'Keterangan', 'Dibuat_Oleh', 'Waktu_Input', 'Detail_Harga'],
   SPK: ['ID_SPK', 'Tanggal', 'Shift', 'ID_Produk', 'Target_Produksi', 'Keterangan', 'Status', 'Tipe_Tutup'],
   Produksi: ['ID_Produksi', 'Tanggal', 'Shift', 'ID_Produk', 'Jumlah', 'PIC_Produksi', 'Keterangan', 'Tipe_Tutup'],
-  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan', 'Galon_Kosong_Kembali', 'Tipe_Transaksi_Galon', 'Tarif_Penyusutan_Galon', 'Total_Penyusutan_Galon'],
+  Rencana_Distribusi: ['ID_Rencana', 'Tanggal_Rencana', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Metode_Kirim', 'Alamat_Tujuan', 'Sopir', 'Status', 'Catatan', 'Keterangan', 'Items', 'Galon_Kosong_Kembali', 'Tipe_Transaksi_Galon', 'Tarif_Penyusutan_Galon', 'Total_Penyusutan_Galon'],
   Distribusi: ['ID_Distribusi', 'Tanggal', 'ID_Pelanggan', 'Nama_Pelanggan', 'Level_Pelanggan', 'Pengirim', 'Penerima', 'Tujuan', 'Metode_Kirim', 'No_Surat_Jalan', 'No_Invoice', 'Total_Tagihan', 'Keterangan', 'C120', 'C220', 'B330', 'B600', 'G19', 'Galon_Kosong_Kembali', 'Tipe_Transaksi_Galon', 'Tarif_Penyusutan_Galon', 'Total_Penyusutan_Galon'],
   Distribusi_Item: ['ID_Detail', 'ID_Distribusi', 'Nama_Pelanggan', 'Tanggal', 'Level_Pelanggan', 'ID_Produk', 'Nama_Produk', 'Qty', 'Harga_Satuan', 'Subtotal'],
   Pembelian_Bahan: ['ID_Pembelian', 'Tanggal', 'ID_Bahan', 'Nama_Bahan', 'Supplier', 'Harga_Satuan', 'Qty', 'Keterangan'],
@@ -418,6 +418,13 @@ export function normalizeRowsForTurso(table: string, rows: any[]): any[] {
       No_Surat_Jalan_List: typeof r.No_Surat_Jalan_List === 'string' ? r.No_Surat_Jalan_List : JSON.stringify(r.No_Surat_Jalan_List || [])
     }));
   }
+  if (table === 'Rencana_Distribusi') {
+    return rows.map(r => ({
+      ...r,
+      Items: typeof r.Items === 'string' ? r.Items : JSON.stringify(r.Items || []),
+      Keterangan: r.Keterangan || r.Catatan || ''
+    }));
+  }
   return rows;
 }
 
@@ -526,6 +533,8 @@ export async function pushAllTablesToTurso(options?: {
         await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tipe_Transaksi_Galon" TEXT`, [], cfg).catch(() => {});
         await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tarif_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
         await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Total_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
+        await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Items" TEXT`, [], cfg).catch(() => {});
+        await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Keterangan" TEXT`, [], cfg).catch(() => {});
       }
 
       const quotedCols = columns.map(c => `"${c}"`).join(', ');
@@ -759,6 +768,17 @@ export function cleanPulledTableRows(
       No_Surat_Jalan_List: parseJsonSafe(r.No_Surat_Jalan_List, []),
       ID_Distribusi_List: parseJsonSafe(r.ID_Distribusi_List, [])
     }));
+  } else if (table === 'Rencana_Distribusi') {
+    const parseJsonSafe = (val: any, fallback: any = []) => {
+      if (!val) return fallback;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return fallback; }
+    };
+    cleanedRows = cleanedRows.map((r: any) => ({
+      ...r,
+      Items: parseJsonSafe(r.Items, []),
+      Keterangan: r.Keterangan || r.Catatan || ''
+    }));
   } else if (table === 'MD_BOM') {
     const localBoms = getTableData<any>('MD_BOM', []);
     const localBomMap = new Map<string, any>(localBoms.map(b => [String(b?.ID_BOM || '').trim().toLowerCase(), b]));
@@ -835,6 +855,8 @@ export async function pullTableFromTurso(
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tipe_Transaksi_Galon" TEXT`, [], cfg).catch(() => {});
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tarif_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Total_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Items" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Keterangan" TEXT`, [], cfg).catch(() => {});
     }
 
     const res = await executeTursoQuery(`SELECT * FROM "${table}"`, [], cfg);
@@ -1126,6 +1148,8 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tipe_Transaksi_Galon" TEXT`, [], cfg).catch(() => {});
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Tarif_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
       await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Total_Penyusutan_Galon" NUMERIC`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Items" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "Rencana_Distribusi" ADD COLUMN "Keterangan" TEXT`, [], cfg).catch(() => {});
     }
 
     const BATCH_SIZE = 100;

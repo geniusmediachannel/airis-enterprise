@@ -300,7 +300,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     try {
       const { pullTablesFromTurso } = await import('../services/tursoAdapter');
       await pullTablesFromTurso(['Distribusi', 'Distribusi_Item', 'Rencana_Distribusi']);
-      onRefresh();
+      setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
       showToast('Data Cloud Disinkronkan', 'Data distribusi berhasil diselaraskan dari database cloud.', 'success');
     } catch (e: any) {
       showToast('Gagal Sinkronisasi', e?.message || 'Gagal menyinkronkan data dari cloud.', 'error');
@@ -327,10 +328,12 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     }
   }, []);
 
+  const [planRefreshKey, setPlanRefreshKey] = useState(0);
+
   // Delivery Plans (Rencana Distribusi / List Pesanan)
   const deliveryPlans = useMemo(() => {
     return getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
-  }, []);
+  }, [planRefreshKey, distributions]);
 
   // Navigasi Sub-Tab Menu Distribusi: 'pengiriman' (Pengiriman & Logistik) vs 'rekap_galon' (Rekapitulasi Saldo Galon Mitra)
   const [activeSubTab, setActiveSubTab] = useState<'pengiriman' | 'rekap_galon'>('pengiriman');
@@ -577,12 +580,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const [editingPlan, setEditingPlan] = useState<DeliveryPlanItem | null>(null);
   const [planForm, setPlanForm] = useState({
     Tanggal_Rencana: new Date().toISOString().slice(0, 10),
-    ID_Pelanggan: customers[0]?.ID_Pelanggan || 'PLG-0001',
+    ID_Pelanggan: customers[0]?.ID_Pelanggan || '',
+    Nama_Pelanggan: customers[0]?.Nama_Pelanggan || '',
+    Level_Pelanggan: customers[0]?.Level_Pelanggan || 'Distributor',
     Metode_Kirim: 'Kirim Armada' as 'Kirim Armada' | 'Ambil Sendiri',
-    Alamat_Tujuan: '',
+    Alamat_Tujuan: customers[0]?.Alamat || '',
     Sopir: '',
     Keterangan: ''
   });
+  const [planCustomerSearchQuery, setPlanCustomerSearchQuery] = useState('');
+  const [isPlanCustomerDropdownOpen, setIsPlanCustomerDropdownOpen] = useState(false);
   const [planItems, setPlanItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number }[]>([
     { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: '' as any }
   ]);
@@ -631,7 +638,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
         `Tanda tangan digital ${role === 'penerima' ? 'penerima' : 'sopir'} untuk Surat Jalan ${updated.No_Surat_Jalan || updated.ID_Distribusi} berhasil dicatat.`,
         'success'
       );
-      onRefresh();
+      setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
     }
     setSignatureModalConfig(null);
   };
@@ -887,6 +895,35 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       (c.Level_Pelanggan && c.Level_Pelanggan.toLowerCase().includes(q))
     );
   }, [customers, customerSearchQuery]);
+
+  // Search filter list for Plan Customers in Rencana Distribusi modal
+  const filteredPlanCustomersList = useMemo(() => {
+    const q = planCustomerSearchQuery.trim().toLowerCase();
+    if (!q) return customers || [];
+    return (customers || []).filter(c => 
+      (c.Nama_Pelanggan && c.Nama_Pelanggan.toLowerCase().includes(q)) ||
+      (c.ID_Pelanggan && c.ID_Pelanggan.toLowerCase().includes(q)) ||
+      (c.Alamat && c.Alamat.toLowerCase().includes(q)) ||
+      (c.Level_Pelanggan && c.Level_Pelanggan.toLowerCase().includes(q))
+    );
+  }, [customers, planCustomerSearchQuery]);
+
+  const handlePlanCustomerSelect = (c: CustomerItem) => {
+    setPlanCustomerSearchQuery(c.Nama_Pelanggan);
+    setIsPlanCustomerDropdownOpen(false);
+    setPlanForm(prev => ({
+      ...prev,
+      ID_Pelanggan: c.ID_Pelanggan,
+      Nama_Pelanggan: c.Nama_Pelanggan,
+      Level_Pelanggan: c.Level_Pelanggan || 'Distributor',
+      Alamat_Tujuan: c.Alamat || prev.Alamat_Tujuan
+    }));
+    // Auto-update harga sesuai level pelanggan baru & harga khusus pada tanggal rencana
+    setPlanItems(prev => prev.map(item => ({
+      ...item,
+      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, c.ID_Pelanggan, planForm.Tanggal_Rencana)
+    })));
+  };
 
   // List of frequently used driver / pengirim names sorted by usage frequency
   const [isDriverDropdownOpen, setIsDriverDropdownOpen] = useState(false);
@@ -1197,6 +1234,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       await deleteTableRow('Distribusi_Item', itemsToDelete);
     }
 
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
     showToast('Pengiriman Dihapus', `Data pengiriman ${id} telah dihapus permanen.`, 'info');
   };
@@ -1290,7 +1328,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
       showToast('Penarikan Berhasil Disimpan', `Berhasil mencatat penarikan ${qtyTarik} galon kosong dari ${tarikGalonForm.Nama_Pelanggan}. Saldo tertahan otomatis berkurang.`, 'success');
       setShowTarikGalonModal(false);
-      onRefresh();
+      setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
     } catch (err: any) {
       showToast('Gagal Menyimpan', err?.message || 'Terjadi kesalahan saat menyimpan data penarikan.', 'danger');
     } finally {
@@ -1311,6 +1350,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     recordDeletedDistributionId(id);
     await deleteTableRow('Distribusi', id);
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
     showToast('Data Dihapus', `Catatan penarikan ${id} telah dihapus. Saldo galon diperbarui.`, 'info');
   };
@@ -1647,7 +1687,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       }
 
       setShowAddDistModal(false);
-      onRefresh();
+      setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
       showToast(
         editingDist ? 'Perubahan Disimpan' : 'Distribusi Disimpan',
         `Data pengiriman ${distId} berhasil disimpan ke database lokal dan Turso Cloud.`,
@@ -1670,12 +1711,16 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     const cust = customers[0];
     setPlanForm({
       Tanggal_Rencana: today,
-      ID_Pelanggan: cust?.ID_Pelanggan || 'PLG-0001',
+      ID_Pelanggan: cust?.ID_Pelanggan || '',
+      Nama_Pelanggan: cust?.Nama_Pelanggan || '',
+      Level_Pelanggan: cust?.Level_Pelanggan || 'Distributor',
       Metode_Kirim: 'Kirim Armada',
-      Alamat_Tujuan: '',
+      Alamat_Tujuan: cust?.Alamat || '',
       Sopir: '',
       Keterangan: ''
     });
+    setPlanCustomerSearchQuery(cust?.Nama_Pelanggan || '');
+    setIsPlanCustomerDropdownOpen(false);
     setPlanItems([
       { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: products[0] && cust ? getProductPriceForCustomer(products[0].ID_Produk, cust.ID_Pelanggan, today) : '' as any }
     ]);
@@ -1688,11 +1733,15 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     setPlanForm({
       Tanggal_Rencana: plan.Tanggal_Rencana,
       ID_Pelanggan: plan.ID_Pelanggan,
+      Nama_Pelanggan: plan.Nama_Pelanggan,
+      Level_Pelanggan: plan.Level_Pelanggan || 'Distributor',
       Metode_Kirim: plan.Metode_Kirim as 'Kirim Armada' | 'Ambil Sendiri',
       Alamat_Tujuan: plan.Alamat_Tujuan,
       Sopir: plan.Sopir || 'Tri Wahyudi',
       Keterangan: plan.Keterangan || ''
     });
+    setPlanCustomerSearchQuery(plan.Nama_Pelanggan || '');
+    setIsPlanCustomerDropdownOpen(false);
     if (plan.Items && plan.Items.length > 0) {
       setPlanItems(plan.Items.map(it => ({
         ID_Produk: it.ID_Produk,
@@ -1701,40 +1750,58 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       })));
     } else {
       setPlanItems([
-        { ID_Produk: products[0]?.ID_Produk || '', Qty: 50, Harga_Satuan: 12000 }
+        { ID_Produk: products[0]?.ID_Produk || '', Qty: '' as any, Harga_Satuan: 0 }
       ]);
     }
     setShowPlanModal(true);
   };
 
   const handleSavePlan = async () => {
-    const cust = customers.find(c => c.ID_Pelanggan === planForm.ID_Pelanggan);
+    const cust = customers.find(c => c.ID_Pelanggan === planForm.ID_Pelanggan || c.Nama_Pelanggan.trim().toLowerCase() === planForm.Nama_Pelanggan.trim().toLowerCase());
+    const finalCustName = cust?.Nama_Pelanggan || planForm.Nama_Pelanggan.trim();
+    if (!finalCustName) {
+      showToast('Pilih Pelanggan', 'Harap isi atau pilih nama pelanggan pemesan terlebih dahulu.', 'warning');
+      return;
+    }
+    const finalCustId = cust?.ID_Pelanggan || planForm.ID_Pelanggan || `PLG-${finalCustName.slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'UMUM'}`;
+    const finalCustLevel = cust?.Level_Pelanggan || planForm.Level_Pelanggan || 'Distributor';
+
+    const validItems = planItems
+      .filter(it => it.ID_Produk && Number(it.Qty) > 0)
+      .map(it => {
+        const p = products.find(prod => prod.ID_Produk === it.ID_Produk);
+        const qty = Number(it.Qty) || 0;
+        const harga = Number(it.Harga_Satuan) || 0;
+        return {
+          ID_Produk: it.ID_Produk,
+          Nama_Produk: p?.Nama_Produk || it.ID_Produk,
+          Qty: qty,
+          Harga_Satuan: harga,
+          Subtotal: qty * harga
+        };
+      });
+
+    if (validItems.length === 0) {
+      showToast('Jumlah Barang Kosong', 'Harap masukkan minimal 1 barang dengan jumlah pesanan lebih dari 0.', 'warning');
+      return;
+    }
+
     const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
     const planId = editingPlan ? editingPlan.ID_Rencana : `ORD-${Date.now().toString().slice(-6)}`;
-
-    const items = planItems.map(it => {
-      const p = products.find(prod => prod.ID_Produk === it.ID_Produk);
-      return {
-        ID_Produk: it.ID_Produk,
-        Nama_Produk: p?.Nama_Produk || it.ID_Produk,
-        Qty: it.Qty,
-        Harga_Satuan: it.Harga_Satuan,
-        Subtotal: it.Qty * it.Harga_Satuan
-      };
-    });
 
     const planRecord: DeliveryPlanItem = {
       ID_Rencana: planId,
       Tanggal_Rencana: planForm.Tanggal_Rencana,
-      ID_Pelanggan: planForm.ID_Pelanggan,
-      Nama_Pelanggan: cust?.Nama_Pelanggan || 'Pelanggan',
-      Level_Pelanggan: cust?.Level_Pelanggan || 'Distributor',
+      ID_Pelanggan: finalCustId,
+      Nama_Pelanggan: finalCustName,
+      Level_Pelanggan: finalCustLevel,
       Metode_Kirim: planForm.Metode_Kirim,
       Alamat_Tujuan: planForm.Alamat_Tujuan,
       Sopir: isRadityaVariant(planForm.Sopir) ? 'RADITYA' : (planForm.Sopir.trim() || '-'),
       Status: editingPlan ? editingPlan.Status : 'Menunggu',
       Keterangan: planForm.Keterangan,
-      Items: items
+      Catatan: planForm.Keterangan,
+      Items: validItems
     };
 
     let updatedPlans: DeliveryPlanItem[] = [];
@@ -1748,7 +1815,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       // Create new plan
       updatedPlans = [...plans, planRecord];
       setTableData('Rencana_Distribusi', updatedPlans);
-      showToast('Pesanan Disimpan', `Rencana pesanan ${planId} berhasil ditambahkan ke antrean.`, 'success');
+      showToast('Pesanan Disimpan', `Rencana pesanan ${planId} (${finalCustName}) berhasil ditambahkan ke antrean.`, 'success');
     }
 
     try {
@@ -1761,6 +1828,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
     setShowPlanModal(false);
     setEditingPlan(null);
+    setPlanRefreshKey(prev => prev + 1);
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
   };
 
@@ -1775,6 +1844,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     if (!ok) return;
     const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
     setTableData('Rencana_Distribusi', plans.filter(p => p.ID_Rencana !== id));
+    setPlanRefreshKey(prev => prev + 1);
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
     showToast('Pesanan Dibatalkan', `Rencana pesanan ${id} berhasil dihapus.`, 'info');
   };
@@ -1939,6 +2010,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     };
     setTableData('Data_Piutang_Utang', [...existingPiutang, newPiutang]);
 
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
     showToast(
       'Pengiriman Berhasil Direalisasikan', 
@@ -2428,6 +2500,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
       recordDeletedDistributionId(d.ID_Distribusi);
       await deleteTableRow('Distribusi', d.ID_Distribusi);
     }
+    setPlanRefreshKey(prev => prev + 1);
     onRefresh();
     showToast('Data Kosong Dibersihkan', `${zeroQtyDists.length} data pengiriman kosong berhasil dihapus permanen.`, 'success');
   };
@@ -5767,30 +5840,112 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Pelanggan Pemesan</label>
-                <select
-                  value={planForm.ID_Pelanggan}
-                  onChange={e => {
-                    const c = customers.find(cust => cust.ID_Pelanggan === e.target.value);
-                    setPlanForm({
-                      ...planForm,
-                      ID_Pelanggan: e.target.value,
-                      Alamat_Tujuan: c?.Alamat || planForm.Alamat_Tujuan
-                    });
-                    // Auto-update harga sesuai level pelanggan baru & harga khusus pada tanggal rencana
-                    setPlanItems(prev => prev.map(item => ({
-                      ...item,
-                      Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, e.target.value, planForm.Tanggal_Rencana)
-                    })));
-                  }}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-semibold"
-                >
-                  {customers.map(c => (
-                    <option key={c.ID_Pelanggan} value={c.ID_Pelanggan}>
-                      {c.Nama_Pelanggan} ({c.Level_Pelanggan})
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-700">Pelanggan Pemesan</label>
+                  {planForm.Level_Pelanggan && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      {planForm.Level_Pelanggan}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Ketik nama atau cari pelanggan..."
+                    value={isPlanCustomerDropdownOpen ? planCustomerSearchQuery : (planForm.Nama_Pelanggan || planCustomerSearchQuery)}
+                    onFocus={() => {
+                      setPlanCustomerSearchQuery(planForm.Nama_Pelanggan || '');
+                      setIsPlanCustomerDropdownOpen(true);
+                    }}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setPlanCustomerSearchQuery(val);
+                      setIsPlanCustomerDropdownOpen(true);
+                      setPlanForm(prev => ({ ...prev, Nama_Pelanggan: val }));
+                      const matched = customers.find(c => c.Nama_Pelanggan.toLowerCase() === val.toLowerCase().trim());
+                      if (matched) {
+                        setPlanForm(prev => ({
+                          ...prev,
+                          ID_Pelanggan: matched.ID_Pelanggan,
+                          Nama_Pelanggan: matched.Nama_Pelanggan,
+                          Level_Pelanggan: matched.Level_Pelanggan || 'Distributor',
+                          Alamat_Tujuan: matched.Alamat || prev.Alamat_Tujuan
+                        }));
+                        setPlanItems(prev => prev.map(item => ({
+                          ...item,
+                          Harga_Satuan: getProductPriceForCustomer(item.ID_Produk, matched.ID_Pelanggan, planForm.Tanggal_Rencana)
+                        })));
+                      }
+                    }}
+                    className="w-full pl-9 pr-8 py-1.5 border border-slate-300 rounded-lg outline-none font-semibold text-slate-800 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  />
+                  {(planForm.Nama_Pelanggan || planCustomerSearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanCustomerSearchQuery('');
+                        setPlanForm(prev => ({
+                          ...prev,
+                          ID_Pelanggan: '',
+                          Nama_Pelanggan: '',
+                          Level_Pelanggan: 'Distributor',
+                          Alamat_Tujuan: ''
+                        }));
+                        setIsPlanCustomerDropdownOpen(true);
+                      }}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title="Hapus pilihan pelanggan"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+
+                  {/* Dropdown Menu Pelanggan */}
+                  {isPlanCustomerDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-20" 
+                        onClick={() => setIsPlanCustomerDropdownOpen(false)}
+                      />
+                      <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xl divide-y divide-slate-100 text-xs">
+                        {filteredPlanCustomersList.length === 0 ? (
+                          <div className="p-3 text-center text-slate-400">
+                            <p className="font-medium">Tidak ada pelanggan cocok dengan "{planCustomerSearchQuery}".</p>
+                            <p className="text-[11px] text-blue-600 mt-1">Nama ini akan disimpan sebagai pelanggan baru.</p>
+                          </div>
+                        ) : (
+                          filteredPlanCustomersList.map(c => {
+                            const isSelected = c.ID_Pelanggan === planForm.ID_Pelanggan;
+                            return (
+                              <div
+                                key={c.ID_Pelanggan}
+                                onClick={() => handlePlanCustomerSelect(c)}
+                                className={`p-2.5 cursor-pointer transition flex items-center justify-between hover:bg-blue-50/80 ${
+                                  isSelected ? 'bg-blue-50 border-l-4 border-blue-600 font-bold' : ''
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                    <span>{c.Nama_Pelanggan}</span>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                      {c.Level_Pelanggan || 'Distributor'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10.5px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                    <span className="font-mono text-slate-400">{c.ID_Pelanggan}</span>
+                                    {c.Alamat && <span className="truncate max-w-[280px]">• {c.Alamat}</span>}
+                                  </div>
+                                </div>
+                                {isSelected && <Check size={14} className="text-blue-600 shrink-0" />}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -6425,7 +6580,8 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
                   if (changed) {
                     setTableData('Distribusi_Item', updatedAll);
-                    onRefresh();
+                    setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
                   }
                 };
 
