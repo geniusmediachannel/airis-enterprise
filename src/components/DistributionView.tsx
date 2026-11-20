@@ -1711,7 +1711,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             : p
         );
         setTableData('Rencana_Distribusi', updatedPlans);
-        setDeliveryPlans(updatedPlans);
+        notifyDbChange();
         setRealizingPlanId(null);
       }
 
