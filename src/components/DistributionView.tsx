@@ -580,18 +580,18 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const [editingPlan, setEditingPlan] = useState<DeliveryPlanItem | null>(null);
   const [planForm, setPlanForm] = useState({
     Tanggal_Rencana: new Date().toISOString().slice(0, 10),
-    ID_Pelanggan: customers[0]?.ID_Pelanggan || '',
-    Nama_Pelanggan: customers[0]?.Nama_Pelanggan || '',
-    Level_Pelanggan: customers[0]?.Level_Pelanggan || 'Distributor',
+    ID_Pelanggan: '',
+    Nama_Pelanggan: '',
+    Level_Pelanggan: '',
     Metode_Kirim: 'Kirim Armada' as 'Kirim Armada' | 'Ambil Sendiri',
-    Alamat_Tujuan: customers[0]?.Alamat || '',
+    Alamat_Tujuan: '',
     Sopir: '',
     Keterangan: ''
   });
   const [planCustomerSearchQuery, setPlanCustomerSearchQuery] = useState('');
   const [isPlanCustomerDropdownOpen, setIsPlanCustomerDropdownOpen] = useState(false);
   const [planItems, setPlanItems] = useState<{ ID_Produk: string; Qty: number; Harga_Satuan: number }[]>([
-    { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: '' as any }
+    { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: products[0]?.Harga_Distributor || 14500 }
   ]);
 
   const [viewDocModal, setViewDocModal] = useState<{ 
@@ -1708,21 +1708,25 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
   const handleOpenAddPlan = () => {
     setEditingPlan(null);
     const today = new Date().toISOString().slice(0, 10);
-    const cust = customers[0];
     setPlanForm({
       Tanggal_Rencana: today,
-      ID_Pelanggan: cust?.ID_Pelanggan || '',
-      Nama_Pelanggan: cust?.Nama_Pelanggan || '',
-      Level_Pelanggan: cust?.Level_Pelanggan || 'Distributor',
+      ID_Pelanggan: '',
+      Nama_Pelanggan: '',
+      Level_Pelanggan: '',
       Metode_Kirim: 'Kirim Armada',
-      Alamat_Tujuan: cust?.Alamat || '',
+      Alamat_Tujuan: '',
       Sopir: '',
       Keterangan: ''
     });
-    setPlanCustomerSearchQuery(cust?.Nama_Pelanggan || '');
+    setPlanCustomerSearchQuery('');
     setIsPlanCustomerDropdownOpen(false);
+    const defaultProd = products[0];
     setPlanItems([
-      { ID_Produk: products[0]?.ID_Produk || 'ASH-CUP220', Qty: '' as any, Harga_Satuan: products[0] && cust ? getProductPriceForCustomer(products[0].ID_Produk, cust.ID_Pelanggan, today) : '' as any }
+      { 
+        ID_Produk: defaultProd?.ID_Produk || 'ASH-CUP220', 
+        Qty: '' as any, 
+        Harga_Satuan: defaultProd?.Harga_Distributor || 14500 
+      }
     ]);
     setShowPlanModal(true);
   };
