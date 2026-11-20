@@ -10,8 +10,8 @@ import {
 import { UserAccount, UserRole, EmployeeItem, CustomerItem } from '../types';
 import { 
   signIn, registerAccount, 
-  signInCustomerWithGoogle, requestCustomerEmailOtp, 
-  verifyCustomerEmailOtp, signInAsCustomerDirect, registerNewCustomerMitra 
+  signInCustomerWithCredentials, signInCustomerWithGoogle, 
+  signInAsCustomerDirect, registerNewCustomerMitra 
 } from '../services/supabaseAuth';
 import { AVAILABLE_DIVISIONS, ROLE_INFO } from '../services/permissionService';
 import { getTableData } from '../services/dbAdapter';
@@ -22,22 +22,37 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+  // Cek apakah halaman dibuka khusus sebagai Portal Pelanggan Mandiri
+  const isStandalonePortal = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
+      return hash.includes('portal') || hash.includes('pelanggan') || hash.includes('mitra') ||
+             search.includes('portal') || search.includes('pelanggan') || search.includes('mitra') ||
+             path.includes('portal');
+    }
+    return false;
+  }, []);
+
   // Mode Utama: 'staff' (Manajemen & Pabrik) vs 'pelanggan' (Mitra / Pelanggan)
-  // Otomatis aktif jika URL mengandung #portal atau ?portal=pelanggan
   const [portalType, setPortalType] = useState<'staff' | 'pelanggan'>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
       const search = window.location.search.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
       if (hash.includes('portal') || hash.includes('pelanggan') || hash.includes('mitra') ||
-          search.includes('portal') || search.includes('pelanggan') || search.includes('mitra')) {
+          search.includes('portal') || search.includes('pelanggan') || search.includes('mitra') ||
+          path.includes('portal')) {
         return 'pelanggan';
       }
     }
     return 'staff';
   });
+
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
-  // Login Form States (Staff)
+  // Login Form States (Staff Pabrik)
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -61,12 +76,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [regLoading, setRegLoading] = useState(false);
 
   // States Khusus Portal Pelanggan
-  const [customerSubTab, setCustomerSubTab] = useState<'google' | 'otp' | 'demo' | 'register'>('google');
+  const [customerSubTab, setCustomerSubTab] = useState<'credentials' | 'google' | 'demo' | 'register'>('credentials');
+  const [custUsernameOrEmail, setCustUsernameOrEmail] = useState('');
+  const [custPassword, setCustPassword] = useState('');
+  const [showCustPassword, setShowCustPassword] = useState(false);
   const [custGoogleEmail, setCustGoogleEmail] = useState('');
-  const [custOtpEmail, setCustOtpEmail] = useState('');
-  const [custOtpCode, setCustOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpGeneratedDemo, setOtpGeneratedDemo] = useState<string | null>(null);
   const [custLoading, setCustLoading] = useState(false);
 
   // States Pendaftaran Mitra Baru
@@ -75,6 +89,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [newMitraAlamat, setNewMitraAlamat] = useState('');
   const [newMitraLevel, setNewMitraLevel] = useState('Agen');
   const [newMitraEmail, setNewMitraEmail] = useState('');
+  const [newMitraUsername, setNewMitraUsername] = useState('');
+  const [newMitraPassword, setNewMitraPassword] = useState('');
 
   // Data Karyawan & Pelanggan terdaftar
   const employees = getTableData<EmployeeItem>('MD_Karyawan', []);
@@ -256,7 +272,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   // HANDLERS PORTAL PELANGGAN / MITRA
   // -------------------------------------------------------------
 
-  // 1. Login Google Pelanggan
+  // 1. Login Pelanggan dengan Username / Email & Password
+  const handleCustomerCredentialLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!custUsernameOrEmail.trim() || !custPassword) {
+      setErrorMsg('Harap masukkan Username/Email dan Kata Sandi Anda.');
+      return;
+    }
+
+    setCustLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await signInCustomerWithCredentials(custUsernameOrEmail.trim(), custPassword);
+      setCustLoading(false);
+
+      if (res.success && res.session?.user) {
+        setSuccessMsg(res.message);
+        showToast('Login Berhasil!', res.message, 'success');
+        setTimeout(() => {
+          onLoginSuccess(res.session!.user!);
+        }, 700);
+      } else {
+        setErrorMsg(res.message);
+      }
+    } catch {
+      setCustLoading(false);
+      setErrorMsg('Gagal memproses login pelanggan. Coba lagi.');
+    }
+  };
+
+  // 2. Login Google Pelanggan
   const handleGoogleLogin = async (overrideEmail?: string) => {
     const targetEmail = overrideEmail || custGoogleEmail.trim();
     if (!targetEmail) {
@@ -281,7 +328,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       } else {
         setErrorMsg(res.message);
         if (res.notRegistered) {
-          // Arahkan ke form registrasi
           setNewMitraEmail(targetEmail);
           setCustomerSubTab('register');
         }
@@ -292,70 +338,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 2. Minta Kode OTP Email
-  const handleRequestOtp = async () => {
-    if (!custOtpEmail.trim()) {
-      setErrorMsg('Harap masukkan alamat email Anda.');
-      return;
-    }
-
-    setCustLoading(true);
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
-    try {
-      const res = await requestCustomerEmailOtp(custOtpEmail.trim());
-      setCustLoading(false);
-
-      if (res.success) {
-        setOtpSent(true);
-        setOtpGeneratedDemo(res.otpCode || null);
-        setSuccessMsg(res.message);
-        showToast('Kode OTP Terkirim!', `Kode verifikasi: ${res.otpCode}`, 'info', 8000);
-      } else {
-        setErrorMsg(res.message);
-        if (res.notRegistered) {
-          setNewMitraEmail(custOtpEmail.trim());
-          setCustomerSubTab('register');
-        }
-      }
-    } catch {
-      setCustLoading(false);
-      setErrorMsg('Gagal mengirimkan kode verifikasi OTP. Coba lagi.');
-    }
-  };
-
-  // 3. Verifikasi Kode OTP Email
-  const handleVerifyOtp = async () => {
-    if (!custOtpCode.trim()) {
-      setErrorMsg('Harap masukkan 6 digit kode OTP yang diterima.');
-      return;
-    }
-
-    setCustLoading(true);
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
-    try {
-      const res = await verifyCustomerEmailOtp(custOtpEmail.trim(), custOtpCode.trim());
-      setCustLoading(false);
-
-      if (res.success && res.session?.user) {
-        setSuccessMsg(res.message);
-        showToast('Verifikasi Berhasil!', res.message, 'success');
-        setTimeout(() => {
-          onLoginSuccess(res.session!.user!);
-        }, 800);
-      } else {
-        setErrorMsg(res.message);
-      }
-    } catch {
-      setCustLoading(false);
-      setErrorMsg('Gagal memverifikasi kode OTP.');
-    }
-  };
-
-  // 4. Login Langsung Cepat Mitra (1-Click Test Selector)
+  // 3. Login Langsung Cepat Mitra (1-Click Test Selector)
   const handleDirectCustomerLogin = async (customerId: string) => {
     setCustLoading(true);
     setErrorMsg(null);
@@ -374,7 +357,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 5. Pendaftaran Mitra Baru
+  // 4. Pendaftaran Mitra Baru
   const handleRegisterNewMitra = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMitraNama.trim()) {
@@ -437,9 +420,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base tracking-wider text-white">AIRIS</span>
+              <span className="font-extrabold text-base tracking-wider text-white">
+                {isStandalonePortal || portalType === 'pelanggan' 
+                  ? 'Portal Pelanggan Pemesanan As-Shofaa' 
+                  : 'AIRIS AMDK ENTERPRISE'}
+              </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
-                AMDK v3.5
+                {isStandalonePortal || portalType === 'pelanggan' ? 'As-Shofaa AMDK' : 'v3.5'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium">PT. ANUGERAH ILLAHI RABBI</p>
@@ -468,19 +455,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
                 <Sparkles size={13} className="text-cyan-400" />
                 <span>
-                  {portalType === 'pelanggan' ? 'Portal Layanan Mitra & Pelanggan' : 'Enterprise Manufacturing Portal'}
+                  {portalType === 'pelanggan' ? 'Portal Pelanggan Pemesanan As-Shofaa' : 'Enterprise Manufacturing Portal'}
                 </span>
               </div>
 
               <div>
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
                   {portalType === 'pelanggan' 
-                    ? 'Pemesanan & Tagihan Mandiri Mitra AMDK' 
+                    ? 'Pemesanan & Tagihan Mandiri Mitra AMDK As-Shofaa' 
                     : 'Pusat Kendali Pabrik & Distribusi AMDK'}
                 </h1>
                 <p className="text-sm text-slate-400 mt-2 leading-relaxed">
                   {portalType === 'pelanggan'
-                    ? 'Layanan terintegrasi bagi Distributor, Agen, dan Sekolah Mitra untuk melakukan pemesanan produk As-Shofaa, pantau jadwal kirim armada, unduh faktur invoice resmi, dan pantau saldo galon.'
+                    ? 'Layanan pemesanan mandiri untuk Distributor, Agen, dan Sekolah Mitra As-Shofaa. Pesan produk dengan harga kontrak resmi, pantau status pengiriman armada, unduh invoice, dan pantau saldo galon 19L.'
                     : 'Sistem operasional terpadu PT. Anugerah Illahi Rabbi untuk pengawasan mutu SNI 3553:2023, manajemen SPK mesin produksi, pergudangan, logistik armada, dan pembukuan keuangan.'}
                 </p>
               </div>
@@ -508,7 +495,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       <div>
                         <h2 className="text-xs font-bold text-white">Real-Time Order & Driver Tracking</h2>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          Pantau status pesanan, jadwal kirim pabrik, hingga nama sopir yang bertugas mengantar.
+                          Pantau antrean pesanan, konfirmasi pabrik, hingga nama sopir yang bertugas mengantar.
                         </p>
                       </div>
                     </div>
@@ -518,9 +505,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         <ShieldCheck size={16} />
                       </div>
                       <div>
-                        <h2 className="text-xs font-bold text-white">Login Aman Google & Email OTP</h2>
+                        <h2 className="text-xs font-bold text-white">Login Aman Username, Password & Google</h2>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                          Masuk cepat dan aman tanpa repot menghafal kata sandi dengan verifikasi akun terdaftar.
+                          Gunakan Username & Kata Sandi resmi atau masuk langsung dengan Akun Google terdaftar.
                         </p>
                       </div>
                     </div>
@@ -550,18 +537,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         </p>
                       </div>
                     </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0">
-                        <Database size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Dual Storage Engine</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Sinkronisasi otomatis basis data Cloud Supabase dan Indexed Persistence lokal offline.
-                        </p>
-                      </div>
-                    </div>
                   </>
                 )}
               </div>
@@ -572,7 +547,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <span>Keamanan Standar Industri AMDK</span>
               <span className="text-emerald-400 flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                Server Normal
+                Server Online
               </span>
             </div>
           </div>
@@ -581,45 +556,47 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="lg:col-span-6 bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-slate-800/80 p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative">
             <div>
               
-              {/* SAKLAR UTAMA: STAFF PABRIK vs PORTAL MITRA / PELANGGAN */}
-              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 mb-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPortalType('staff');
-                    setErrorMsg(null);
-                    setSuccessMsg(null);
-                  }}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    portalType === 'staff'
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Building2 size={14} />
-                  <span>Staff Pabrik</span>
-                </button>
+              {/* SAKLAR UTAMA: HANYA DITAMPILKAN JIKA BUKAN DIBUKA DARI LINK KHUSUS PORTAL */}
+              {!isStandalonePortal && (
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 mb-5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPortalType('staff');
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      portalType === 'staff'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Building2 size={14} />
+                    <span>Staff Pabrik</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPortalType('pelanggan');
-                    setErrorMsg(null);
-                    setSuccessMsg(null);
-                  }}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    portalType === 'pelanggan'
-                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Sparkles size={14} className="text-cyan-300" />
-                  <span>Portal Pelanggan</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPortalType('pelanggan');
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      portalType === 'pelanggan'
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Sparkles size={14} className="text-cyan-300" />
+                    <span>Portal Pelanggan As-Shofaa</span>
+                  </button>
+                </div>
+              )}
 
               {/* =========================================================
-                  JIKA MODE: PORTAL PELANGGAN / MITRA
+                  JIKA MODE: PORTAL PELANGGAN PEMESANAN AS-SHOFAA
               ========================================================= */}
               {portalType === 'pelanggan' ? (
                 <div className="space-y-4">
@@ -627,15 +604,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   <div>
                     <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
                       <ShoppingBag size={20} className="text-cyan-400" />
-                      <span>Pintu Masuk Mitra & Pelanggan</span>
+                      <span>Portal Pelanggan Pemesanan As-Shofaa</span>
                     </h2>
                     <p className="text-xs text-slate-400 mt-1">
-                      Pilih metode masuk menggunakan Google, Kode OTP Email, atau Akses Cepat Mitra.
+                      Silakan masuk dengan Username & Kata Sandi, atau menggunakan Akun Google terdaftar.
                     </p>
                   </div>
 
-                  {/* Sub-Tabs Pelanggan */}
+                  {/* Sub-Tabs Metode Login Pelanggan */}
                   <div className="flex items-center gap-1 border-b border-slate-800 pb-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => { setCustomerSubTab('credentials'); setErrorMsg(null); }}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
+                        customerSubTab === 'credentials' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Username & Sandi
+                    </button>
                     <button
                       type="button"
                       onClick={() => { setCustomerSubTab('google'); setErrorMsg(null); }}
@@ -643,16 +629,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         customerSubTab === 'google' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      Login Google
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerSubTab('otp'); setErrorMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                        customerSubTab === 'otp' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Verifikasi Email OTP
+                      Akun Google
                     </button>
                     <button
                       type="button"
@@ -689,32 +666,103 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     </div>
                   )}
 
-                  {/* 1. SUB-TAB GOOGLE SIGN-IN */}
+                  {/* 1. SUB-TAB USERNAME / EMAIL & PASSWORD (UTAMA) */}
+                  {customerSubTab === 'credentials' && (
+                    <form onSubmit={handleCustomerCredentialLogin} className="space-y-4 pt-1">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                          <User size={13} className="text-cyan-400" />
+                          <span>Username atau Email Pelanggan</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={custUsernameOrEmail}
+                          onChange={e => setCustUsernameOrEmail(e.target.value)}
+                          placeholder="Ketik username atau email terdaftar"
+                          disabled={custLoading}
+                          className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-medium"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                          <Lock size={13} className="text-cyan-400" />
+                          <span>Kata Sandi (Password)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showCustPassword ? 'text' : 'password'}
+                            value={custPassword}
+                            onChange={e => setCustPassword(e.target.value)}
+                            placeholder="Masukkan kata sandi portal Anda..."
+                            disabled={custLoading}
+                            className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCustPassword(!showCustPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1"
+                          >
+                            {showCustPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={custLoading}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                      >
+                        {custLoading ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            <span>Mengautentikasi Pelanggan...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LogIn size={15} />
+                            <span>Masuk ke Portal Pemesanan</span>
+                          </>
+                        )}
+                      </button>
+
+                      <div className="pt-2 text-center text-[11px] text-slate-400">
+                        Belum punya kata sandi? Hubungi admin pabrik atau gunakan{' '}
+                        <button
+                          type="button"
+                          onClick={() => setCustomerSubTab('google')}
+                          className="text-cyan-400 hover:underline font-bold"
+                        >
+                          Login Akun Google
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* 2. SUB-TAB GOOGLE SIGN-IN */}
                   {customerSubTab === 'google' && (
                     <div className="space-y-4 pt-1">
                       <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-xs text-slate-300 space-y-1">
                         <p className="font-bold text-white flex items-center gap-1.5">
                           <CheckCircle2 size={14} className="text-emerald-400" />
-                          <span>Login Sekali Klik Tanpa Password</span>
+                          <span>Login dengan Akun Google Resmi</span>
                         </p>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Sistem akan memverifikasi alamat email akun Google Anda secara otomatis terhadap basis data Mitra As-Shofaa.
+                          Sistem akan memverifikasi alamat email akun Google Anda secara langsung terhadap data kemitraan As-Shofaa.
                         </p>
                       </div>
 
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-slate-300">
-                          Ketik atau Pilih Akun Google Terdaftar:
+                          Masukkan Email Akun Google Anda:
                         </label>
-                        <div className="relative">
-                          <input
-                            type="email"
-                            value={custGoogleEmail}
-                            onChange={e => setCustGoogleEmail(e.target.value)}
-                            placeholder="contoh: mambaulhikam@gmail.com"
-                            className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
-                          />
-                        </div>
+                        <input
+                          type="email"
+                          value={custGoogleEmail}
+                          onChange={e => setCustGoogleEmail(e.target.value)}
+                          placeholder="contoh: mambaulhikam@gmail.com"
+                          className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
+                        />
                       </div>
 
                       {/* Tombol Resmi Masuk dengan Google */}
@@ -724,129 +772,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         disabled={custLoading}
                         className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-3 transition shadow-lg active:scale-[0.99] cursor-pointer"
                       >
-                        {/* Google Icon SVG */}
                         <svg className="w-4 h-4" viewBox="0 0 24 24">
-                          <path
-                            fill="#4285F4"
-                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                          />
-                          <path
-                            fill="#34A853"
-                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                          />
-                          <path
-                            fill="#FBBC05"
-                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                          />
-                          <path
-                            fill="#EA4335"
-                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                          />
+                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                         </svg>
-                        <span>{custLoading ? 'Memverifikasi Akun Google...' : 'Lanjutkan dengan Akun Google'}</span>
+                        <span>{custLoading ? 'Memverifikasi Google...' : 'Lanjutkan dengan Akun Google'}</span>
                       </button>
-
-                      {/* Email Cepat Contoh Terdaftar */}
-                      <div className="pt-2 border-t border-slate-800">
-                        <span className="text-[11px] text-slate-400 block mb-1.5">
-                          Atau klik email mitra resmi yang telah terdaftar:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {customers.filter(c => c.Email).slice(0, 4).map(c => (
-                            <button
-                              key={c.ID_Pelanggan}
-                              type="button"
-                              onClick={() => {
-                                setCustGoogleEmail(c.Email!);
-                                handleGoogleLogin(c.Email);
-                              }}
-                              className="text-[10px] font-mono px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
-                            >
-                              {c.Email} ({c.Nama_Pelanggan.split(' ')[0]})
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 2. SUB-TAB VERIFIKASI EMAIL OTP */}
-                  {customerSubTab === 'otp' && (
-                    <div className="space-y-4 pt-1">
-                      {!otpSent ? (
-                        <>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-300">
-                              Masukkan Alamat Email Terdaftar:
-                            </label>
-                            <input
-                              type="email"
-                              value={custOtpEmail}
-                              onChange={e => setCustOtpEmail(e.target.value)}
-                              placeholder="contoh: mambaulhikam@gmail.com"
-                              className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
-                            />
-                            <p className="text-[11px] text-slate-400">
-                              Sistem akan mengirimkan 6 digit kode OTP verifikasi ke email Anda.
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={handleRequestOtp}
-                            disabled={custLoading}
-                            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
-                          >
-                            <Send size={14} />
-                            <span>{custLoading ? 'Mengirim Kode...' : 'Kirim Kode Verifikasi OTP'}</span>
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="p-3 bg-cyan-950/40 border border-cyan-500/40 rounded-xl text-xs space-y-1">
-                            <p className="font-bold text-cyan-300">Kode Verifikasi Telah Dikirim ke:</p>
-                            <p className="font-mono text-white text-xs">{custOtpEmail}</p>
-                            {otpGeneratedDemo && (
-                              <p className="text-[11px] text-amber-300 pt-1 border-t border-cyan-500/20">
-                                🔑 Kode OTP Anda: <strong>{otpGeneratedDemo}</strong> (atau gunakan master kode <strong>123456</strong>)
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-300">
-                              Masukkan 6 Digit Kode OTP:
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={6}
-                              value={custOtpCode}
-                              onChange={e => setCustOtpCode(e.target.value)}
-                              placeholder="123456"
-                              className="w-full text-center tracking-widest text-lg font-mono px-3.5 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500"
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setOtpSent(false); setCustOtpCode(''); }}
-                              className="w-1/3 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-xs font-semibold"
-                            >
-                              Ganti Email
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleVerifyOtp}
-                              disabled={custLoading}
-                              className="w-2/3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
-                            >
-                              <CheckCircle2 size={14} />
-                              <span>{custLoading ? 'Memverifikasi...' : 'Verifikasi & Masuk'}</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
                     </div>
                   )}
 
@@ -971,6 +904,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                         <span>{custLoading ? 'Mendaftarkan...' : 'Daftar & Masuk ke Portal'}</span>
                       </button>
                     </form>
+                  )}
+
+                  {/* Navigasi darurat jika staff buka link portal */}
+                  {isStandalonePortal && (
+                    <div className="pt-3 text-center border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setPortalType('staff')}
+                        className="text-[11px] text-slate-500 hover:text-slate-300 transition"
+                      >
+                        Login sebagai Staff Internal Pabrik →
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -1281,7 +1227,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           © {new Date().getFullYear()} PT. Anugerah Illahi Rabbi • Hak Cipta Dilindungi Undang-Undang.
         </div>
         <div className="flex items-center gap-4">
-          <span>AIRIS AMDK Enterprise v3.5</span>
+          <span>Portal Pelanggan As-Shofaa AMDK</span>
           <span>•</span>
           <span>ISO 9001 & SNI 3553:2023 Compliant</span>
         </div>

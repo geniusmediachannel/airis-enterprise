@@ -1854,6 +1854,30 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
     showToast('Pesanan Dibatalkan', `Rencana pesanan ${id} berhasil dihapus.`, 'info');
   };
 
+  // Konfirmasi Pesanan Diterima (Masuk Antrean Proses Pabrik)
+  const handleConfirmPlan = async (plan: DeliveryPlanItem) => {
+    const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+    const updated = plans.map(p => {
+      if (p.ID_Rencana === plan.ID_Rencana) {
+        return { 
+          ...p, 
+          Status: 'Disetujui' as const,
+          Keterangan: p.Keterangan ? `${p.Keterangan} (Dikonfirmasi Pabrik)` : 'Dikonfirmasi Pabrik (Dalam Antrean)'
+        };
+      }
+      return p;
+    });
+    setTableData('Rencana_Distribusi', updated);
+    notifyDbChange();
+    setPlanRefreshKey(prev => prev + 1);
+    onRefresh();
+    showToast(
+      'Pesanan Dikonfirmasi!',
+      `Pesanan ${plan.ID_Rencana} (${plan.Nama_Pelanggan}) telah dikonfirmasi dan masuk ke antrean pengiriman. Pelanggan dapat memantau status pesanan telah disetujui di portalnya.`,
+      'success'
+    );
+  };
+
   // Realize Order: Transfer Rencana Pesanan -> Distribusi Resmi
   const handleExecutePlanToDistribution = async (plan: DeliveryPlanItem) => {
     const totalQty = plan.Items ? plan.Items.reduce((acc, it) => acc + (Number(it.Qty) || 0), 0) : 0;
@@ -2860,7 +2884,7 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
               <h3 className="text-sm font-bold text-slate-900">
-                Rencana Distribusi / List Pesanan ({deliveryPlans.filter(p => p.Status !== 'Realisasi').length} Aktif)
+                Rencana Distribusi / List Pesanan ({deliveryPlans.filter(p => p.Status !== 'Realisasi' && p.Status !== 'Dibatalkan').length} Aktif)
               </h3>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -2876,13 +2900,13 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
           </button>
         </div>
 
-        {deliveryPlans.length === 0 ? (
+        {deliveryPlans.filter(p => p.Status !== 'Dibatalkan').length === 0 ? (
           <div className="p-4 bg-white border border-slate-200 rounded-xl text-xs text-slate-400 italic">
             Belum ada rencana pesanan aktif. Klik "+ Input Pesanan Baru" di atas.
           </div>
         ) : (
           <div className="flex items-stretch gap-3 overflow-x-auto pb-2">
-            {deliveryPlans.map(plan => {
+            {deliveryPlans.filter(p => p.Status !== 'Dibatalkan').map(plan => {
               const totalUnit = plan.Items?.reduce((a, b) => a + b.Qty, 0) || 0;
               const totalNominal = plan.Items?.reduce((a, b) => a + b.Subtotal, 0) || 0;
               const isRealized = plan.Status === 'Realisasi';
@@ -2938,19 +2962,38 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
                       )}
                     </div>
 
-                    {!isRealized ? (
-                      <button
-                        onClick={() => handleExecutePlanToDistribution(plan)}
-                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
-                      >
-                        <Send size={12} />
-                        <span>Realisasikan</span>
-                      </button>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                        Telah Dikirim
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {!isRealized && plan.Status === 'Menunggu' && (
+                        <button
+                          onClick={() => handleConfirmPlan(plan)}
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                          title="Konfirmasi Pesanan Diterima (Masuk Antrean Pabrik)"
+                        >
+                          <CheckCircle2 size={12} />
+                          <span>Konfirmasi</span>
+                        </button>
+                      )}
+
+                      {!isRealized && plan.Status === 'Disetujui' && (
+                        <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          📋 Antrean Pabrik
+                        </span>
+                      )}
+
+                      {!isRealized ? (
+                        <button
+                          onClick={() => handleExecutePlanToDistribution(plan)}
+                          className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                        >
+                          <Send size={12} />
+                          <span>Realisasikan</span>
+                        </button>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          Telah Dikirim
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

@@ -213,7 +213,7 @@ export async function testTursoConnection(
 
 export const TURSO_TABLE_COLUMNS: Record<string, string[]> = {
   MD_Produk: ['ID_Produk', 'Nama_Produk', 'Kategori', 'Satuan', 'Harga_Distributor', 'Harga_Agen', 'Harga_Reseller', 'Harga_Konsumen', 'Status'],
-  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status', 'Email', 'Google_Id', 'Total_Saldo_Galon'],
+  MD_Pelanggan: ['ID_Pelanggan', 'Nama_Pelanggan', 'No_Telp', 'Alamat', 'Level_Pelanggan', 'Status', 'Email', 'Username', 'Password', 'Google_Id', 'Total_Saldo_Galon'],
   MD_Supplier: ['ID_Supplier', 'Nama_Supplier', 'PIC', 'No_Telp', 'Alamat', 'Status'],
   MD_BahanPenolong: ['ID_Bahan', 'Nama_Bahan', 'Kategori', 'Satuan', 'Harga_Satuan', 'Tgl_Update_Harga', 'Minimum_Stock'],
   MD_BOM: ['ID_BOM', 'ID_Produk', 'ID_Bahan', 'Jumlah_Dibutuhkan', 'Satuan', 'Keterangan', 'Varian'],
@@ -517,7 +517,13 @@ export async function pushAllTablesToTurso(options?: {
       if (columns.length === 0) continue;
 
       // Pastikan kolom baru otomatis ditambahkan ke skema Turso jika belum ada (ALTER TABLE ADD COLUMN)
-      if (table === 'MD_BOM') {
+      if (table === 'MD_Pelanggan') {
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Email" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Username" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Password" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Google_Id" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Total_Saldo_Galon" NUMERIC`, [], cfg).catch(() => {});
+    } else if (table === 'MD_BOM') {
         await executeTursoQuery(`ALTER TABLE "MD_BOM" ADD COLUMN "Varian" TEXT`, [], cfg).catch(() => {});
       } else if (table === 'SPK') {
         await executeTursoQuery(`ALTER TABLE "SPK" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});
@@ -717,6 +723,17 @@ export function cleanPulledTableRows(
       LetterDocSettings: parseJsonObj(r.LetterDocSettings),
       Penandatangan_List: parseJsonObj(r.Penandatangan_List)
     }));
+  } else if (table === 'MD_Pelanggan') {
+    const localCusts = (memoryTableCache['MD_Pelanggan'] || []) as any[];
+    cleanedRows = cleanedRows.map((r: any) => {
+      const local = localCusts.find(l => l.ID_Pelanggan === r.ID_Pelanggan);
+      return {
+        ...r,
+        Email: (r.Email !== undefined && r.Email !== null && String(r.Email).trim() !== '') ? r.Email : (local?.Email || ''),
+        Username: (r.Username !== undefined && r.Username !== null && String(r.Username).trim() !== '') ? r.Username : (local?.Username || ''),
+        Password: (r.Password !== undefined && r.Password !== null && String(r.Password).trim() !== '') ? r.Password : (local?.Password || '')
+      };
+    });
   } else if (table === 'Admin_PO') {
     const parseJsonObj = (val: any) => {
       if (!val) return undefined;
@@ -843,7 +860,13 @@ export async function pullTableFromTurso(
   }
 
   try {
-    if (table === 'MD_BOM') {
+    if (table === 'MD_Pelanggan') {
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Email" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Username" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Password" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Google_Id" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Total_Saldo_Galon" NUMERIC`, [], cfg).catch(() => {});
+    } else if (table === 'MD_BOM') {
       await executeTursoQuery(`ALTER TABLE "MD_BOM" ADD COLUMN "Varian" TEXT`, [], cfg).catch(() => {});
     } else if (table === 'Distribusi') {
       await executeTursoQuery(`ALTER TABLE "Distribusi" ADD COLUMN "Galon_Kosong_Kembali" NUMERIC`, [], cfg).catch(() => {});
@@ -1132,7 +1155,13 @@ export async function syncTableToTurso(tableName: string, data: any[], previousD
     await executeTursoQuery(`CREATE TABLE IF NOT EXISTS "${tableName}" (${colDefs})`, [], cfg).catch(() => {});
 
     // Pastikan kolom baru yang mungkin belum ada di tabel SQLite lama langsung ditambahkan
-    if (tableName === 'MD_BOM') {
+    if (tableName === 'MD_Pelanggan') {
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Email" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Username" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Password" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Google_Id" TEXT`, [], cfg).catch(() => {});
+      await executeTursoQuery(`ALTER TABLE "MD_Pelanggan" ADD COLUMN "Total_Saldo_Galon" NUMERIC`, [], cfg).catch(() => {});
+    } else if (tableName === 'MD_BOM') {
       await executeTursoQuery(`ALTER TABLE "MD_BOM" ADD COLUMN "Varian" TEXT`, [], cfg).catch(() => {});
     } else if (tableName === 'SPK') {
       await executeTursoQuery(`ALTER TABLE "SPK" ADD COLUMN "Tipe_Tutup" TEXT`, [], cfg).catch(() => {});

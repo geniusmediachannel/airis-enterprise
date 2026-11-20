@@ -139,6 +139,8 @@ export interface CustomerItem {
   Level_Pelanggan: 'Distributor' | 'Agen' | 'Reseller' | 'Konsumen Biasa' | 'Sekolah Mitra' | string;
   Status: 'Aktif' | 'Non-Aktif';
   Email?: string;
+  Username?: string;
+  Password?: string;
   Google_Id?: string;
   Total_Saldo_Galon?: number;
 }

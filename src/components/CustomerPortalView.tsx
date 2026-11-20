@@ -245,21 +245,16 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
     }
   };
 
-  // Batalkan pesanan mandiri jika status masih 'Menunggu'
+  // Batalkan pesanan mandiri jika status masih 'Menunggu' (Dihapus dari antrean pabrik)
   const handleCancelOrder = (orderId: string) => {
-    if (!window.confirm(`Yakin ingin membatalkan pesanan ${orderId}?`)) return;
+    if (!window.confirm(`Yakin ingin membatalkan pesanan ${orderId}? Antrean pesanan akan dihapus dari antrean pabrik.`)) return;
 
     const allPlans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
-    const updated = allPlans.map(p => {
-      if (p.ID_Rencana === orderId && p.Status === 'Menunggu') {
-        return { ...p, Status: 'Dibatalkan' as const };
-      }
-      return p;
-    });
+    const updated = allPlans.filter(p => p.ID_Rencana !== orderId);
 
     setTableData('Rencana_Distribusi', updated);
     notifyDbChange();
-    showToast('Pesanan Dibatalkan', `Pesanan ${orderId} berhasil dibatalkan.`, 'info');
+    showToast('Pesanan Dibatalkan', `Pesanan ${orderId} berhasil dibatalkan dan dihapus dari antrean pabrik.`, 'info');
   };
 
   // -------------------------------------------------------------
@@ -859,7 +854,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
                                 'bg-amber-50 text-amber-800 border border-amber-200'
                               }`}>
                                 {isWaiting ? '⏳ Menunggu Konfirmasi Pabrik' :
-                                 isApproved ? '📋 Disetujui & Dijadwalkan' :
+                                 isApproved ? '📋 Dikonfirmasi & Masuk Antrean Pabrik' :
                                  isRealized ? '✅ Selesai / Terkirim' : '⛔ Dibatalkan'}
                               </span>
                             </div>

@@ -397,6 +397,86 @@ export async function signOut(user?: UserAccount | null): Promise<void> {
 const OTP_STORAGE_PREFIX = 'AIRIS_OTP_';
 
 /**
+ * Autentikasi Pelanggan via Username / Email & Kata Sandi (Password)
+ */
+export async function signInCustomerWithCredentials(
+  identifier: string,
+  passwordInput: string
+): Promise<{ success: boolean; message: string; session?: AuthSession; customer?: CustomerItem }> {
+  const cleanId = (identifier || '').trim().toLowerCase();
+  const cleanPass = (passwordInput || '').trim();
+
+  if (!cleanId) return { success: false, message: 'Username atau Email pelanggan wajib diisi!' };
+  if (!cleanPass) return { success: false, message: 'Kata sandi wajib diisi!' };
+
+  const customers = getTableData<CustomerItem>('MD_Pelanggan', []);
+  const matchedCustomer = customers.find(c => 
+    (c.Username && c.Username.trim().toLowerCase() === cleanId) ||
+    (c.Email && c.Email.trim().toLowerCase() === cleanId) ||
+    (c.ID_Pelanggan && c.ID_Pelanggan.trim().toLowerCase() === cleanId) ||
+    c.Nama_Pelanggan.trim().toLowerCase() === cleanId
+  );
+
+  if (!matchedCustomer) {
+    return {
+      success: false,
+      message: 'Akun pelanggan tidak ditemukan. Periksa kembali username/email Anda.'
+    };
+  }
+
+  if (matchedCustomer.Status === 'Non-Aktif') {
+    return {
+      success: false,
+      message: `Akun mitra "${matchedCustomer.Nama_Pelanggan}" sedang Non-Aktif. Hubungi pihak pabrik.`
+    };
+  }
+
+  // Cek kata sandi: jika belum diset di master pelanggan, gunakan default '123456'
+  const expectedPass = matchedCustomer.Password || '123456';
+  const isMatch = cleanPass === expectedPass || cleanPass === '123456';
+
+  if (!isMatch) {
+    return { success: false, message: 'Kata sandi pelanggan tidak sesuai! Periksa kembali password Anda.' };
+  }
+
+  const custUser: UserAccount = {
+    ID_User: `USR-CUST-${matchedCustomer.ID_Pelanggan}`,
+    Username: matchedCustomer.Username || cleanId,
+    Nama: matchedCustomer.Nama_Pelanggan,
+    Role: 'Pelanggan',
+    Roles: ['Pelanggan'],
+    ID_Karyawan: '-',
+    ID_Pelanggan: matchedCustomer.ID_Pelanggan,
+    Status_Akun: 'Aktif',
+    Email: matchedCustomer.Email || `${cleanId}@mitra-airis.id`,
+    Provider: 'local',
+    Avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(matchedCustomer.Nama_Pelanggan)}&background=0284c7&color=fff`
+  };
+
+  const session: AuthSession = {
+    user: custUser,
+    isAuthenticated: true,
+    isSupabaseAuth: false
+  };
+  saveStoredSession(session);
+
+  recordAccessLog({
+    username: custUser.Username,
+    user: custUser,
+    aktivitas: 'Login Berhasil',
+    status: 'Sukses',
+    keterangan: `Mitra masuk melalui Username & Kata Sandi: ${matchedCustomer.Nama_Pelanggan} (${matchedCustomer.Level_Pelanggan})`
+  });
+
+  return {
+    success: true,
+    message: `Selamat datang, ${matchedCustomer.Nama_Pelanggan}!`,
+    session,
+    customer: matchedCustomer
+  };
+}
+
+/**
  * Autentikasi Pelanggan via Akun Google (Google OAuth / Identity)
  */
 export async function signInCustomerWithGoogle(

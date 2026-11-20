@@ -268,6 +268,8 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
         Alamat: '', 
         Level_Pelanggan: 'Agen', 
         Email: '',
+        Username: '',
+        Password: '',
         Status: 'Aktif' 
       };
     } else if (activeTab === 'supplier') {
@@ -2484,7 +2486,7 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block font-semibold text-slate-700">Email Akun Google (Login Portal Pelanggan)</label>
-                      <span className="text-[11px] text-blue-600">Digunakan untuk otorisasi Google & OTP</span>
+                      <span className="text-[11px] text-blue-600">Digunakan untuk otorisasi Google & Login</span>
                     </div>
                     <input
                       type="email"
@@ -2493,6 +2495,28 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
                       placeholder="contoh: mambaulhikam@gmail.com"
                       className="w-full px-3 py-1.5 border border-blue-200 focus:border-blue-500 rounded-lg font-mono text-sm"
                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Username Login Portal</label>
+                      <input
+                        type="text"
+                        value={formData.Username || ''}
+                        onChange={e => setFormData({ ...formData, Username: e.target.value })}
+                        placeholder="contoh: mambaulhikam"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Kata Sandi / Password Portal</label>
+                      <input
+                        type="text"
+                        value={formData.Password || ''}
+                        onChange={e => setFormData({ ...formData, Password: e.target.value })}
+                        placeholder="contoh: mitra123"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg font-mono text-sm"
+                      />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
