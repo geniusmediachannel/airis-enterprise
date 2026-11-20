@@ -16,7 +16,7 @@ import {
   CustomerItem, SpecialPriceItem, DraftJournalItem, ReceivablePayableItem,
   DeliveryPlanItem, DocumentTemplateSettings
 } from '../types';
-import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant, getGallonDepreciationRate } from '../services/dbAdapter';
+import { getTableData, setTableData, deleteTableRow, recordDeletedDistributionId, getDeletedDistributionIds, isRadityaVariant, getGallonDepreciationRate, notifyDbChange } from '../services/dbAdapter';
 import { exportDataToExcel } from '../services/excelService';
 import { 
   generateInvoicePDF, printInvoicePDF, generateSuratJalanPDF, printSuratJalanPDF, generateDistributionReportPDF, generateTableReportPDF, sanitizeFilename, angkaKeTerbilang, formatRupiahSen, formatPdfDisplayDate 
@@ -1697,27 +1697,43 @@ export const DistributionView: React.FC<DistributionViewProps> = ({
 
       // Jika pengiriman ini berasal dari Realisasi Rencana Pesanan:
       if (realizingPlanId) {
-        const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
-        const updatedPlans = plans.map(p => 
-          p.ID_Rencana === realizingPlanId 
-            ? { 
-                ...p, 
-                Status: 'Realisasi' as const, 
-                Tanggal_Realisasi: formData.Tanggal,
-                Keterangan: p.Keterangan 
-                  ? `${p.Keterangan} (S.J: ${distRecord.No_Surat_Jalan})` 
-                  : `Telah direalisasikan ke S.J: ${distRecord.No_Surat_Jalan}`
-              } 
-            : p
-        );
-        setTableData('Rencana_Distribusi', updatedPlans);
-        notifyDbChange();
-        setRealizingPlanId(null);
+        try {
+          const plans = getTableData<DeliveryPlanItem>('Rencana_Distribusi', []);
+          const updatedPlans = plans.map(p => 
+            p.ID_Rencana === realizingPlanId 
+              ? { 
+                  ...p, 
+                  Status: 'Realisasi' as const, 
+                  Tanggal_Realisasi: formData.Tanggal,
+                  Keterangan: p.Keterangan 
+                    ? `${p.Keterangan} (S.J: ${distRecord.No_Surat_Jalan})` 
+                    : `Telah direalisasikan ke S.J: ${distRecord.No_Surat_Jalan}`
+                } 
+              : p
+          );
+          setTableData('Rencana_Distribusi', updatedPlans);
+          notifyDbChange('Rencana_Distribusi');
+
+          // Sinkronkan perubahan status rencana ke Turso jika terhubung
+          try {
+            const { getTursoConfig, syncTableToTurso } = await import('../services/tursoAdapter');
+            const tursoCfg = getTursoConfig();
+            if (tursoCfg.isConnected && tursoCfg.autoSync) {
+              await syncTableToTurso('Rencana_Distribusi', updatedPlans, plans);
+            }
+          } catch (tursoPlanErr) {
+            console.warn('[DistributionView] Turso sync plan status failed:', tursoPlanErr);
+          }
+        } catch (planErr) {
+          console.warn('[DistributionView] Gagal update status rencana distribusi:', planErr);
+        } finally {
+          setRealizingPlanId(null);
+        }
       }
 
       setShowAddDistModal(false);
       setPlanRefreshKey(prev => prev + 1);
-    onRefresh();
+      onRefresh();
       showToast(
         editingDist ? 'Perubahan Disimpan' : 'Distribusi Disimpan',
         `Data pengiriman ${distId} berhasil disimpan ke database lokal dan Turso Cloud.`,
