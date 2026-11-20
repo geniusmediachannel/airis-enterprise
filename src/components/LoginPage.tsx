@@ -405,41 +405,90 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const isCustomerTheme = portalType === 'pelanggan';
+
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden select-none font-sans">
+    <div className={`min-h-screen w-full flex flex-col justify-between relative overflow-hidden select-none font-sans transition-colors duration-500 ${
+      isCustomerTheme 
+        ? 'bg-gradient-to-b from-[#021308] via-[#041a0d] to-[#010b05] text-emerald-50' 
+        : 'bg-slate-950 text-slate-100'
+    }`}>
       {/* Background Decorative Ambient Glows */}
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+      {isCustomerTheme ? (
+        <>
+          <div className="absolute -top-32 -left-32 w-[420px] h-[420px] bg-emerald-600/20 rounded-full blur-[100px] pointer-events-none animate-pulse" />
+          <div className="absolute -bottom-32 -right-32 w-[450px] h-[450px] bg-green-500/15 rounded-full blur-[110px] pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-teal-500/10 rounded-full blur-[130px] pointer-events-none" />
+        </>
+      ) : (
+        <>
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+          <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+        </>
+      )}
 
       {/* Top Header Bar */}
-      <header className="relative z-10 px-6 py-4 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 backdrop-blur-md">
+      <header className={`relative z-10 px-5 sm:px-8 py-3.5 flex items-center justify-between border-b backdrop-blur-md transition-colors ${
+        isCustomerTheme 
+          ? 'border-emerald-900/40 bg-[#021308]/70' 
+          : 'border-slate-800/80 bg-slate-950/40'
+      }`}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-            <Droplets className="text-white" size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base tracking-wider text-white">
-                {isStandalonePortal || portalType === 'pelanggan' 
-                  ? 'Portal Pelanggan Pemesanan As-Shofaa' 
-                  : 'AIRIS AMDK ENTERPRISE'}
-              </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
-                {isStandalonePortal || portalType === 'pelanggan' ? 'As-Shofaa AMDK' : 'v3.5'}
-              </span>
+          {isCustomerTheme ? (
+            <div className="flex items-center gap-3">
+              <img 
+                src="/logo-asshofaa.png" 
+                alt="Logo As-Shofaa" 
+                className="h-9 sm:h-10 w-auto object-contain drop-shadow" 
+              />
+              <div className="border-l border-emerald-800/60 pl-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-xs sm:text-sm tracking-wider text-white">
+                    PORTAL PELANGGAN AS-SHOFAA
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
+                    MITRA
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-400/80 font-medium">PT. ANUGERAH ILLAHI RABBI</p>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium">PT. ANUGERAH ILLAHI RABBI</p>
-          </div>
+          ) : (
+            <>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <Droplets className="text-white" size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-base tracking-wider text-white">
+                    AIRIS AMDK ENTERPRISE
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
+                    v3.5
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium">PT. ANUGERAH ILLAHI RABBI</p>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="hidden sm:flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5 text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
-            <ShieldCheck size={14} className="text-emerald-400" />
-            <span className="font-mono text-emerald-400 font-bold">TLS 256-Bit Encrypted</span>
+        <div className="hidden sm:flex items-center gap-3 text-xs">
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
+            isCustomerTheme 
+              ? 'text-emerald-300 bg-[#062012]/80 border-emerald-800/50' 
+              : 'text-slate-400 bg-slate-900/80 border-slate-800'
+          }`}>
+            <ShieldCheck size={14} className={isCustomerTheme ? 'text-emerald-400' : 'text-emerald-400'} />
+            <span className="font-mono font-bold text-[11px]">{isCustomerTheme ? 'Layanan Terenkripsi 256-Bit' : 'TLS 256-Bit Encrypted'}</span>
           </div>
-          <div className="flex items-center gap-1.5 text-slate-300 font-mono bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
-            <Clock size={14} className="text-blue-400" />
+          <div className={`flex items-center gap-1.5 font-mono px-3 py-1.5 rounded-lg border ${
+            isCustomerTheme 
+              ? 'text-emerald-300 bg-[#062012]/80 border-emerald-800/50' 
+              : 'text-slate-300 bg-slate-900/80 border-slate-800'
+          }`}>
+            <Clock size={14} className={isCustomerTheme ? 'text-emerald-400' : 'text-blue-400'} />
             <span>{currentTime} WIB</span>
           </div>
         </div>
@@ -447,130 +496,468 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       {/* Center Main Login Section */}
       <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
-        <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          
-          {/* Left Column: Factory Information & Security Features */}
-          <div className="lg:col-span-6 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-blue-950/40 backdrop-blur-xl rounded-2xl border border-slate-800/80 p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden">
-            <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
-                <Sparkles size={13} className="text-cyan-400" />
-                <span>
-                  {portalType === 'pelanggan' ? 'Portal Pelanggan Pemesanan As-Shofaa' : 'Enterprise Manufacturing Portal'}
-                </span>
-              </div>
+        {isCustomerTheme ? (
+          /* =========================================================
+              TAMPILAN KHUSUS PELANGGAN: MINIMALIS, ELEGAN & TEMA HIJAU
+              DENGAN LOGO AS-SHOFAA'
+          ========================================================= */
+          <div className="w-full max-w-[440px] mx-auto animate-fadeIn">
+            {/* Kartu Login Minimalis Hijau */}
+            <div className="bg-gradient-to-b from-[#082315]/95 via-[#051c10]/95 to-[#03130a]/95 backdrop-blur-2xl rounded-3xl border border-emerald-500/30 p-6 sm:p-8 shadow-2xl shadow-black/80 relative overflow-hidden">
+              
+              {/* Garis Aksen Gradien Hijau di Atas Kartu */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-green-400 to-teal-400" />
 
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
-                  {portalType === 'pelanggan' 
-                    ? 'Pemesanan & Tagihan Mandiri Mitra AMDK As-Shofaa' 
-                    : 'Pusat Kendali Pabrik & Distribusi AMDK'}
+              {/* Logo & Judul Minimalis As-Shofaa */}
+              <div className="text-center mb-6 pt-1">
+                <div className="inline-block p-2.5 rounded-2xl bg-white/5 border border-emerald-500/20 shadow-inner mb-3">
+                  <img 
+                    src="/logo-asshofaa.png" 
+                    alt="Logo As-Shofaa" 
+                    className="h-16 sm:h-20 w-auto max-w-[220px] mx-auto object-contain filter drop-shadow-md hover:scale-105 transition-transform duration-300" 
+                  />
+                </div>
+                <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                  Portal Pelanggan
                 </h1>
-                <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-                  {portalType === 'pelanggan'
-                    ? 'Layanan pemesanan mandiri untuk Distributor, Agen, dan Sekolah Mitra As-Shofaa. Pesan produk dengan harga kontrak resmi, pantau status pengiriman armada, unduh invoice, dan pantau saldo galon 19L.'
-                    : 'Sistem operasional terpadu PT. Anugerah Illahi Rabbi untuk pengawasan mutu SNI 3553:2023, manajemen SPK mesin produksi, pergudangan, logistik armada, dan pembukuan keuangan.'}
+                <p className="text-xs text-emerald-400 font-medium mt-1">
+                  Pemesanan Mandiri AMDK As-Shofaa
                 </p>
+                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[11px] font-medium">
+                  <Sparkles size={12} className="text-emerald-400" />
+                  <span>Layanan Cepat 24 Jam • Harga Kontrak Resmi</span>
+                </div>
               </div>
 
-              {/* Highlight Features */}
-              <div className="space-y-3 pt-2">
-                {portalType === 'pelanggan' ? (
-                  <>
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
-                        <ShoppingBag size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Self-Service Order 24 Jam</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Katalog resmi produk As-Shofaa dengan harga otomatis sesuai kontrak kemitraan Anda.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
-                        <Truck size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Real-Time Order & Driver Tracking</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Pantau antrean pesanan, konfirmasi pabrik, hingga nama sopir yang bertugas mengantar.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0">
-                        <ShieldCheck size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Login Aman Username, Password & Google</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Gunakan Username & Kata Sandi resmi atau masuk langsung dengan Akun Google terdaftar.
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
-                        <KeyRound size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Multi-Tier Role-Based Security</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Setiap pengguna hanya dapat membuka menu dan fitur yang telah diotorisasi sesuai divisi tugasnya.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
-                      <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
-                        <History size={16} />
-                      </div>
-                      <div>
-                        <h2 className="text-xs font-bold text-white">Audit Trail & Histori Akses 90 Hari</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Pencatatan aktivitas login, logout, dan otorisasi dengan kebijakan auto-reset setiap 3 bulan.
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                )}
+              {/* Tab Selector Metode Login Minimalis */}
+              <div className="grid grid-cols-4 gap-1 p-1 bg-black/40 rounded-xl border border-emerald-900/50 mb-5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => { setCustomerSubTab('credentials'); setErrorMsg(null); }}
+                  className={`py-1.5 px-1 rounded-lg font-bold text-center transition truncate text-[11px] cursor-pointer ${
+                    customerSubTab === 'credentials'
+                      ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-sm shadow-emerald-700/50'
+                      : 'text-emerald-300/70 hover:text-white'
+                  }`}
+                  title="Login dengan Username / Email & Sandi"
+                >
+                  Sandi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCustomerSubTab('google'); setErrorMsg(null); }}
+                  className={`py-1.5 px-1 rounded-lg font-bold text-center transition truncate text-[11px] cursor-pointer ${
+                    customerSubTab === 'google'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-emerald-300/70 hover:text-white'
+                  }`}
+                  title="Login Akun Google"
+                >
+                  Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCustomerSubTab('demo'); setErrorMsg(null); }}
+                  className={`py-1.5 px-1 rounded-lg font-bold text-center transition truncate text-[11px] cursor-pointer ${
+                    customerSubTab === 'demo'
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'text-emerald-300/70 hover:text-white'
+                  }`}
+                  title="Akses Cepat Mitra Demo"
+                >
+                  Demo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCustomerSubTab('register'); setErrorMsg(null); }}
+                  className={`py-1.5 px-1 rounded-lg font-bold text-center transition truncate text-[11px] cursor-pointer ${
+                    customerSubTab === 'register'
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'text-emerald-300/70 hover:text-white'
+                  }`}
+                  title="Daftar Mitra Baru"
+                >
+                  Daftar
+                </button>
               </div>
+
+              {/* Alert Error / Success */}
+              {errorMsg && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-300">
+                  <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 font-medium">{errorMsg}</div>
+                </div>
+              )}
+
+              {successMsg && (
+                <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-300">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 font-medium">{successMsg}</div>
+                </div>
+              )}
+
+              {/* 1. Sub-tab Username & Sandi */}
+              {customerSubTab === 'credentials' && (
+                <form onSubmit={handleCustomerCredentialLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-emerald-200 flex items-center gap-1.5">
+                      <User size={13} className="text-emerald-400" />
+                      <span>Username atau Email Pelanggan</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={custUsernameOrEmail}
+                      onChange={e => setCustUsernameOrEmail(e.target.value)}
+                      placeholder="Ketik username atau email terdaftar"
+                      disabled={custLoading}
+                      className="w-full px-3.5 py-2.5 bg-black/40 border border-emerald-800/60 rounded-xl text-xs text-white placeholder-emerald-400/40 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-medium transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-emerald-200 flex items-center gap-1.5">
+                      <Lock size={13} className="text-emerald-400" />
+                      <span>Kata Sandi (Password)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCustPassword ? 'text' : 'password'}
+                        value={custPassword}
+                        onChange={e => setCustPassword(e.target.value)}
+                        placeholder="Masukkan kata sandi portal Anda..."
+                        disabled={custLoading}
+                        className="w-full px-3.5 py-2.5 bg-black/40 border border-emerald-800/60 rounded-xl text-xs text-white placeholder-emerald-400/40 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-mono pr-10 transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCustPassword(!showCustPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400/70 hover:text-emerald-200 transition-colors p-1"
+                      >
+                        {showCustPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={custLoading}
+                    className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-950/60 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2 hover:scale-[1.01] active:scale-[0.99]"
+                  >
+                    {custLoading ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Memverifikasi Pelanggan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <LogIn size={15} />
+                        <span>Masuk ke Portal Pemesanan</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="pt-2 text-center text-[11px] text-emerald-400/70">
+                    Belum punya sandi?{' '}
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSubTab('google')}
+                      className="text-emerald-300 hover:underline font-bold"
+                    >
+                      Gunakan Akun Google
+                    </button>
+                    {' '}atau{' '}
+                    <button
+                      type="button"
+                      onClick={() => setCustomerSubTab('demo')}
+                      className="text-emerald-300 hover:underline font-bold"
+                    >
+                      Pilih Mitra Demo
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* 2. Sub-tab Akun Google */}
+              {customerSubTab === 'google' && (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-xs text-emerald-200 space-y-1">
+                    <p className="font-bold text-white flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-emerald-400" />
+                      <span>Login Otomatis Akun Google</span>
+                    </p>
+                    <p className="text-[11px] text-emerald-300/70 leading-relaxed">
+                      Sistem akan memverifikasi email akun Google Anda secara langsung terhadap data kemitraan As-Shofaa.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-emerald-200">
+                      Email Akun Google Anda:
+                    </label>
+                    <input
+                      type="email"
+                      value={custGoogleEmail}
+                      onChange={e => setCustGoogleEmail(e.target.value)}
+                      placeholder="contoh: mambaulhikam@gmail.com"
+                      className="w-full px-3.5 py-2.5 bg-black/40 border border-emerald-800/60 rounded-xl text-xs text-white placeholder-emerald-400/40 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleGoogleLogin()}
+                    disabled={custLoading}
+                    className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-3 transition shadow-lg active:scale-[0.99] cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                    </svg>
+                    <span>{custLoading ? 'Memverifikasi Google...' : 'Lanjutkan dengan Akun Google'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* 3. Sub-tab Akun Demo */}
+              {customerSubTab === 'demo' && (
+                <div className="space-y-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-xs text-emerald-200">
+                    <p className="font-bold flex items-center gap-1.5 text-emerald-300">
+                      <Store size={14} />
+                      <span>Akses Cepat Pengujian Mitra</span>
+                    </p>
+                    <p className="text-[11px] text-emerald-400/70 mt-0.5">
+                      Pilih nama mitra di bawah untuk langsung mencoba:
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {customers.map(c => (
+                      <div
+                        key={c.ID_Pelanggan}
+                        onClick={() => handleDirectCustomerLogin(c.ID_Pelanggan)}
+                        className="p-3 rounded-xl bg-black/40 hover:bg-emerald-950/60 border border-emerald-900/60 hover:border-emerald-500 cursor-pointer transition flex items-center justify-between text-xs group"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white group-hover:text-emerald-300 transition">
+                              {c.Nama_Pelanggan}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                              {c.Level_Pelanggan}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-400/70 font-mono mt-0.5">
+                            {c.Email || `${c.ID_Pelanggan.toLowerCase()}@mitra-airis.id`}
+                          </p>
+                        </div>
+                        <ChevronRight size={16} className="text-emerald-600 group-hover:text-emerald-300 group-hover:translate-x-1 transition" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Sub-tab Daftar Baru */}
+              {customerSubTab === 'register' && (
+                <form onSubmit={handleRegisterNewMitra} className="space-y-2.5 max-h-[55vh] overflow-y-auto pr-1 text-xs">
+                  <div className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-[11px] text-emerald-200">
+                    <strong>Daftarkan Toko / Pesantren / Lembaga Baru</strong>
+                    <p className="text-emerald-300/70 mt-0.5">Setelah mendaftar, Anda langsung terhubung ke sistem pemesanan.</p>
+                  </div>
+
+                  <div>
+                    <label className="text-emerald-200 font-semibold block mb-1">Nama Toko / Mitra / Lembaga *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newMitraNama}
+                      onChange={e => setNewMitraNama(e.target.value)}
+                      placeholder="Contoh: PP. Al-Barokah / Toko Berkah"
+                      className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-emerald-200 font-semibold block mb-1">No. WhatsApp *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newMitraTelp}
+                        onChange={e => setNewMitraTelp(e.target.value)}
+                        placeholder="08123456789"
+                        className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-emerald-200 font-semibold block mb-1">Level Kemitraan</label>
+                      <select
+                        value={newMitraLevel}
+                        onChange={e => setNewMitraLevel(e.target.value)}
+                        className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                      >
+                        <option value="Distributor">Distributor</option>
+                        <option value="Agen">Agen</option>
+                        <option value="Reseller">Reseller</option>
+                        <option value="Sekolah Mitra">Sekolah Mitra</option>
+                        <option value="Konsumen Biasa">Konsumen Biasa</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-emerald-200 font-semibold block mb-1">Email Akun Google (Login) *</label>
+                    <input
+                      type="email"
+                      required
+                      value={newMitraEmail}
+                      onChange={e => setNewMitraEmail(e.target.value)}
+                      placeholder="mitra@gmail.com"
+                      className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-emerald-200 font-semibold block mb-1">Username Login</label>
+                      <input
+                        type="text"
+                        value={newMitraUsername}
+                        onChange={e => setNewMitraUsername(e.target.value)}
+                        placeholder="username mitra"
+                        className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-emerald-200 font-semibold block mb-1">Kata Sandi</label>
+                      <input
+                        type="password"
+                        value={newMitraPassword}
+                        onChange={e => setNewMitraPassword(e.target.value)}
+                        placeholder="sandi portal"
+                        className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-emerald-200 font-semibold block mb-1">Alamat Pengiriman Lengkap *</label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={newMitraAlamat}
+                      onChange={e => setNewMitraAlamat(e.target.value)}
+                      placeholder="Jalan, RT/RW, Desa, Kecamatan, Klaten..."
+                      className="w-full px-3 py-2 bg-black/40 border border-emerald-800/60 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={custLoading}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg mt-2 cursor-pointer transition"
+                  >
+                    <UserPlus size={14} />
+                    <span>{custLoading ? 'Mendaftarkan...' : 'Daftar & Masuk ke Portal'}</span>
+                  </button>
+                </form>
+              )}
+
+              {/* Tombol switch ke Staff Pabrik */}
+              <div className="pt-4 mt-5 text-center border-t border-emerald-900/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPortalType('staff');
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="text-[11px] text-emerald-400/80 hover:text-emerald-200 transition font-medium inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Bukan pelanggan? Masuk sebagai Staff Internal Pabrik</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
+
             </div>
 
-            {/* Bottom Note */}
-            <div className="pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500 font-medium">
-              <span>Keamanan Standar Industri AMDK</span>
-              <span className="text-emerald-400 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                Server Online
-              </span>
+            {/* Footer Kecil di Bawah Card */}
+            <div className="text-center mt-4 text-[11px] text-emerald-500/70 font-medium">
+              PT. Anugerah Illahi Rabbi • Air Minum Dalam Kemasan As-Shofaa
             </div>
           </div>
+        ) : (
+          /* =========================================================
+              TAMPILAN KHUSUS STAFF PABRIK: ENTERPRISE 2-COLUMN
+          ========================================================= */
+          <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fadeIn">
+            
+            {/* Left Column: Factory Information & Security Features */}
+            <div className="lg:col-span-6 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-blue-950/40 backdrop-blur-xl rounded-2xl border border-slate-800/80 p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden">
+              <div className="space-y-6">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
+                  <Sparkles size={13} className="text-cyan-400" />
+                  <span>Enterprise Manufacturing Portal</span>
+                </div>
 
-          {/* Right Column: Interactive Login & Auth Container */}
-          <div className="lg:col-span-6 bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-slate-800/80 p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative">
-            <div>
-              
-              {/* SAKLAR UTAMA: HANYA DITAMPILKAN JIKA BUKAN DIBUKA DARI LINK KHUSUS PORTAL */}
-              {!isStandalonePortal && (
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
+                    Pusat Kendali Pabrik & Distribusi AMDK
+                  </h1>
+                  <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+                    Sistem operasional terpadu PT. Anugerah Illahi Rabbi untuk pengawasan mutu SNI 3553:2023, manajemen SPK mesin produksi, pergudangan, logistik armada, dan pembukuan keuangan.
+                  </p>
+                </div>
+
+                {/* Highlight Features */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
+                    <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
+                      <KeyRound size={16} />
+                    </div>
+                    <div>
+                      <h2 className="text-xs font-bold text-white">Multi-Tier Role-Based Security</h2>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Setiap pengguna hanya dapat membuka menu dan fitur yang telah diotorisasi sesuai divisi tugasnya.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-800/60">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
+                      <History size={16} />
+                    </div>
+                    <div>
+                      <h2 className="text-xs font-bold text-white">Audit Trail & Histori Akses 90 Hari</h2>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Pencatatan aktivitas login, logout, dan otorisasi dengan kebijakan auto-reset setiap 3 bulan.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Note */}
+              <div className="pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500 font-medium">
+                <span>Keamanan Standar Industri AMDK</span>
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  Server Online
+                </span>
+              </div>
+            </div>
+
+            {/* Right Column: Interactive Login Staff Container */}
+            <div className="lg:col-span-6 bg-slate-900/90 backdrop-blur-xl rounded-2xl border border-slate-800/80 p-6 sm:p-8 flex flex-col justify-between shadow-2xl relative">
+              <div>
+                {/* Switcher ke Portal Pelanggan */}
                 <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 mb-5">
                   <button
                     type="button"
-                    onClick={() => {
-                      setPortalType('staff');
-                      setErrorMsg(null);
-                      setSuccessMsg(null);
-                    }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      portalType === 'staff'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
+                    className="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-md shadow-blue-600/30"
                   >
                     <Building2 size={14} />
                     <span>Staff Pabrik</span>
@@ -583,348 +970,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      portalType === 'pelanggan'
-                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-600/30'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
+                    className="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 text-emerald-400 hover:text-emerald-200 hover:bg-emerald-950/40 cursor-pointer"
                   >
-                    <Sparkles size={14} className="text-cyan-300" />
-                    <span>Portal Pelanggan As-Shofaa</span>
+                    <Sparkles size={14} className="text-emerald-400" />
+                    <span>Portal Pelanggan</span>
                   </button>
                 </div>
-              )}
 
-              {/* =========================================================
-                  JIKA MODE: PORTAL PELANGGAN PEMESANAN AS-SHOFAA
-              ========================================================= */}
-              {portalType === 'pelanggan' ? (
-                <div className="space-y-4">
-                  {/* Header Portal Pelanggan */}
-                  <div>
-                    <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                      <ShoppingBag size={20} className="text-cyan-400" />
-                      <span>Portal Pelanggan Pemesanan As-Shofaa</span>
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Silakan masuk dengan Username & Kata Sandi, atau menggunakan Akun Google terdaftar.
-                    </p>
-                  </div>
-
-                  {/* Sub-Tabs Metode Login Pelanggan */}
-                  <div className="flex items-center gap-1 border-b border-slate-800 pb-2 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerSubTab('credentials'); setErrorMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                        customerSubTab === 'credentials' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Username & Sandi
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerSubTab('google'); setErrorMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                        customerSubTab === 'google' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Akun Google
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerSubTab('demo'); setErrorMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                        customerSubTab === 'demo' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Pilih Mitra Demo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerSubTab('register'); setErrorMsg(null); }}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                        customerSubTab === 'register' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Daftar Baru
-                    </button>
-                  </div>
-
-                  {/* Alert Error / Success */}
-                  {errorMsg && (
-                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-300">
-                      <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
-                      <div className="flex-1 font-medium">{errorMsg}</div>
-                    </div>
-                  )}
-
-                  {successMsg && (
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-300">
-                      <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
-                      <div className="flex-1 font-medium">{successMsg}</div>
-                    </div>
-                  )}
-
-                  {/* 1. SUB-TAB USERNAME / EMAIL & PASSWORD (UTAMA) */}
-                  {customerSubTab === 'credentials' && (
-                    <form onSubmit={handleCustomerCredentialLogin} className="space-y-4 pt-1">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                          <User size={13} className="text-cyan-400" />
-                          <span>Username atau Email Pelanggan</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={custUsernameOrEmail}
-                          onChange={e => setCustUsernameOrEmail(e.target.value)}
-                          placeholder="Ketik username atau email terdaftar"
-                          disabled={custLoading}
-                          className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-medium"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                          <Lock size={13} className="text-cyan-400" />
-                          <span>Kata Sandi (Password)</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showCustPassword ? 'text' : 'password'}
-                            value={custPassword}
-                            onChange={e => setCustPassword(e.target.value)}
-                            placeholder="Masukkan kata sandi portal Anda..."
-                            disabled={custLoading}
-                            className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono pr-10"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowCustPassword(!showCustPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1"
-                          >
-                            {showCustPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={custLoading}
-                        className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
-                      >
-                        {custLoading ? (
-                          <>
-                            <RefreshCw size={14} className="animate-spin" />
-                            <span>Mengautentikasi Pelanggan...</span>
-                          </>
-                        ) : (
-                          <>
-                            <LogIn size={15} />
-                            <span>Masuk ke Portal Pemesanan</span>
-                          </>
-                        )}
-                      </button>
-
-                      <div className="pt-2 text-center text-[11px] text-slate-400">
-                        Belum punya kata sandi? Hubungi admin pabrik atau gunakan{' '}
-                        <button
-                          type="button"
-                          onClick={() => setCustomerSubTab('google')}
-                          className="text-cyan-400 hover:underline font-bold"
-                        >
-                          Login Akun Google
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* 2. SUB-TAB GOOGLE SIGN-IN */}
-                  {customerSubTab === 'google' && (
-                    <div className="space-y-4 pt-1">
-                      <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-xs text-slate-300 space-y-1">
-                        <p className="font-bold text-white flex items-center gap-1.5">
-                          <CheckCircle2 size={14} className="text-emerald-400" />
-                          <span>Login dengan Akun Google Resmi</span>
-                        </p>
-                        <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Sistem akan memverifikasi alamat email akun Google Anda secara langsung terhadap data kemitraan As-Shofaa.
-                        </p>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-300">
-                          Masukkan Email Akun Google Anda:
-                        </label>
-                        <input
-                          type="email"
-                          value={custGoogleEmail}
-                          onChange={e => setCustGoogleEmail(e.target.value)}
-                          placeholder="contoh: mambaulhikam@gmail.com"
-                          className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
-                        />
-                      </div>
-
-                      {/* Tombol Resmi Masuk dengan Google */}
-                      <button
-                        type="button"
-                        onClick={() => handleGoogleLogin()}
-                        disabled={custLoading}
-                        className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-3 transition shadow-lg active:scale-[0.99] cursor-pointer"
-                      >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24">
-                          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                        </svg>
-                        <span>{custLoading ? 'Memverifikasi Google...' : 'Lanjutkan dengan Akun Google'}</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* 3. SUB-TAB 1-CLICK MITRA DEMO (PILIH LANGSUNG) */}
-                  {customerSubTab === 'demo' && (
-                    <div className="space-y-3 pt-1">
-                      <div className="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/30 text-xs text-blue-200">
-                        <p className="font-bold flex items-center gap-1.5 text-blue-300">
-                          <Store size={14} />
-                          <span>Akses Cepat Pengujian Mitra</span>
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Klik langsung nama mitra di bawah untuk menguji tampilan portal pelanggan:
-                        </p>
-                      </div>
-
-                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                        {customers.map(c => (
-                          <div
-                            key={c.ID_Pelanggan}
-                            onClick={() => handleDirectCustomerLogin(c.ID_Pelanggan)}
-                            className="p-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 cursor-pointer transition flex items-center justify-between text-xs group"
-                          >
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-white group-hover:text-cyan-300 transition">
-                                  {c.Nama_Pelanggan}
-                                </span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">
-                                  {c.Level_Pelanggan}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                                {c.Email || `${c.ID_Pelanggan.toLowerCase()}@mitra-airis.id`}
-                              </p>
-                            </div>
-                            <ChevronRight size={16} className="text-slate-500 group-hover:text-cyan-400 group-hover:translate-x-1 transition" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 4. SUB-TAB PENDAFTARAN MITRA BARU */}
-                  {customerSubTab === 'register' && (
-                    <form onSubmit={handleRegisterNewMitra} className="space-y-2.5 max-h-[55vh] overflow-y-auto pr-1 text-xs">
-                      <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-200">
-                        <strong>Daftarkan Toko / Pesantren / Lembaga Baru</strong>
-                        <p className="text-slate-400 mt-0.5">Setelah mendaftar, Anda langsung terhubung ke sistem pabrik.</p>
-                      </div>
-
-                      <div>
-                        <label className="text-slate-300 font-semibold block mb-1">Nama Toko / Mitra / Pesantren *</label>
-                        <input
-                          type="text"
-                          required
-                          value={newMitraNama}
-                          onChange={e => setNewMitraNama(e.target.value)}
-                          placeholder="Contoh: PP. Al-Barokah Klaten"
-                          className="w-full px-3 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500 font-medium"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-slate-300 font-semibold block mb-1">No. WhatsApp *</label>
-                          <input
-                            type="text"
-                            required
-                            value={newMitraTelp}
-                            onChange={e => setNewMitraTelp(e.target.value)}
-                            placeholder="08123456789"
-                            className="w-full px-3 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-slate-300 font-semibold block mb-1">Level Kemitraan</label>
-                          <select
-                            value={newMitraLevel}
-                            onChange={e => setNewMitraLevel(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500 font-medium"
-                          >
-                            <option value="Distributor">Distributor</option>
-                            <option value="Agen">Agen</option>
-                            <option value="Reseller">Reseller</option>
-                            <option value="Sekolah Mitra">Sekolah Mitra</option>
-                            <option value="Konsumen Biasa">Konsumen Biasa</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-slate-300 font-semibold block mb-1">Email Akun Google (Login) *</label>
-                        <input
-                          type="email"
-                          required
-                          value={newMitraEmail}
-                          onChange={e => setNewMitraEmail(e.target.value)}
-                          placeholder="mitra@gmail.com"
-                          className="w-full px-3 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500 font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-slate-300 font-semibold block mb-1">Alamat Pengiriman Lengkap *</label>
-                        <textarea
-                          rows={2}
-                          required
-                          value={newMitraAlamat}
-                          onChange={e => setNewMitraAlamat(e.target.value)}
-                          placeholder="Jalan, RT/RW, Desa, Kecamatan, Klaten..."
-                          className="w-full px-3 py-2 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={custLoading}
-                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg mt-2"
-                      >
-                        <UserPlus size={14} />
-                        <span>{custLoading ? 'Mendaftarkan...' : 'Daftar & Masuk ke Portal'}</span>
-                      </button>
-                    </form>
-                  )}
-
-                  {/* Navigasi darurat jika staff buka link portal */}
-                  {isStandalonePortal && (
-                    <div className="pt-3 text-center border-t border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setPortalType('staff')}
-                        className="text-[11px] text-slate-500 hover:text-slate-300 transition"
-                      >
-                        Login sebagai Staff Internal Pabrik →
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* =========================================================
-                    JIKA MODE: STAFF PABRIK (INTERNAL)
-                ========================================================= */
-                <>
-                  {/* Tab Selector: Masuk vs Daftar Karyawan */}
+                {/* Tab Selector: Masuk vs Daftar Karyawan */}
                   <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800 mb-5">
                     <button
                       type="button"
@@ -1194,12 +1247,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       </button>
                     </form>
                   )}
-                </>
-              )}
-
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+        )}
       </main>
 
       {/* Pop-up Overlay Visual Notifikasi Login Berhasil */}
@@ -1222,12 +1273,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       )}
 
       {/* Footer */}
-      <footer className="relative z-10 px-6 py-3 border-t border-slate-800/60 bg-slate-950/60 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+      <footer className={`relative z-10 px-6 py-3 border-t backdrop-blur-md flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2 transition-colors ${
+        isCustomerTheme 
+          ? 'border-emerald-950/70 bg-[#021006]/85 text-emerald-500/70' 
+          : 'border-slate-800/60 bg-slate-950/60 text-slate-500'
+      }`}>
         <div>
           © {new Date().getFullYear()} PT. Anugerah Illahi Rabbi • Hak Cipta Dilindungi Undang-Undang.
         </div>
         <div className="flex items-center gap-4">
-          <span>Portal Pelanggan As-Shofaa AMDK</span>
+          <span>{isCustomerTheme ? 'Air Minum Dalam Kemasan As-Shofaa' : 'Portal Manajemen Pabrik AMDK'}</span>
           <span>•</span>
           <span>ISO 9001 & SNI 3553:2023 Compliant</span>
         </div>

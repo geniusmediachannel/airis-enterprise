@@ -349,15 +349,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
             
             {/* Logo Brand As-Shofaa */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                <span className="font-extrabold text-xl sm:text-2xl tracking-tighter">AIR</span>
-              </div>
-              <div>
+              <img 
+                src="/logo-asshofaa.png" 
+                alt="Logo As-Shofaa" 
+                className="h-10 sm:h-12 w-auto object-contain drop-shadow-xs" 
+              />
+              <div className="border-l border-slate-200 pl-3">
                 <div className="flex items-center gap-2">
                   <h1 className="font-extrabold text-slate-900 text-base sm:text-lg tracking-tight">
                     PORTAL MITRA AS-SHOFAA
                   </h1>
-                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     Self-Service AMDK
                   </span>
                 </div>
